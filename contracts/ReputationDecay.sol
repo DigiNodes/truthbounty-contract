@@ -25,6 +25,16 @@ contract ReputationDecay is Ownable {
     /// @notice Last activity timestamp for each user
     mapping(address => uint256) public lastActivityTimestamp;
 
+    // ============ Merkle Root Storage ============
+
+    /// @notice Merkle roots for reputation snapshots by epoch
+    /// @dev epoch => merkle root (immutable once set)
+    mapping(uint256 => bytes32) public reputationRoots;
+
+    /// @notice Track which epochs have been committed
+    /// @dev epoch => committed (true if root exists for this epoch)
+    mapping(uint256 => bool) public epochCommitted;
+
     // ============ Decay Parameters ============
 
     /// @notice Percentage of reputation lost per epoch (in basis points, e.g., 100 = 1%)
@@ -63,11 +73,21 @@ contract ReputationDecay is Ownable {
         uint256 maxDecay
     );
 
+    /// @notice Emitted when a reputation Merkle root is submitted
+    event ReputationRootSubmitted(
+        bytes32 indexed root,
+        uint256 indexed epoch,
+        address indexed submitter,
+        uint256 timestamp
+    );
+
     // ============ Errors ============
 
     error InvalidDecayRate();
     error InvalidEpochDuration();
     error InvalidMaxDecayPercent();
+    error EpochAlreadyCommitted();
+    error InvalidMerkleRoot();
 
     // ============ Constructor ============
 
@@ -180,6 +200,42 @@ contract ReputationDecay is Ownable {
             newReputation,
             block.timestamp
         );
+    }
+
+    // ============ Merkle Root Functions ============
+
+    /**
+     * @notice Submit a Merkle root for reputation scores at a specific epoch
+     * @dev Roots are immutable once committed. Prevents duplicate epoch submissions.
+     * @param root The Merkle root of reputation scores
+     * @param epoch The epoch number for this root
+     */
+    function submitReputationRoot(bytes32 root, uint256 epoch) external onlyOwner {
+        // Validate root is not zero
+        if (root == bytes32(0)) {
+            revert InvalidMerkleRoot();
+        }
+
+        // Prevent duplicate epoch submissions
+        if (epochCommitted[epoch]) {
+            revert EpochAlreadyCommitted();
+        }
+
+        // Store the root and mark epoch as committed
+        reputationRoots[epoch] = root;
+        epochCommitted[epoch] = true;
+
+        emit ReputationRootSubmitted(root, epoch, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @notice Check if an epoch has been committed
+     * @param epoch The epoch number to check
+     * @return committed True if a root exists for this epoch
+     * @dev Note: reputationRoots mapping is public, so use reputationRoots(epoch) to get the root
+     */
+    function isEpochCommitted(uint256 epoch) external view returns (bool committed) {
+        return epochCommitted[epoch];
     }
 
     // ============ Admin Functions ============
