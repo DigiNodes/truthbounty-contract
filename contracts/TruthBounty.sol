@@ -12,6 +12,29 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  */
 contract TruthBountyToken is ERC20 {
     address public owner;
+    address public settlementContract;
+
+    uint256 public slashPercentage; // e.g. 10 = 10%
+
+    mapping(address => uint256) public verifierStake;
+
+    event StakeDeposited(address indexed verifier, uint256 amount);
+    event StakeWithdrawn(address indexed verifier, uint256 amount);
+    event VerifierSlashed(
+        address indexed verifier,
+        uint256 slashedAmount,
+        uint256 remainingStake
+    );
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    modifier onlySettlement() {
+        require(msg.sender == settlementContract, "Unauthorized slashing");
+        _;
+    }
 
     constructor() ERC20("TruthBounty", "BOUNTY") {
         owner = msg.sender;
