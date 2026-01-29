@@ -24,7 +24,7 @@ contract TruthBountyToken is ERC20, Ownable {
         _;
     }
 
-    constructor() ERC20("TruthBounty", "BOUNTY") {
+    constructor() ERC20("TruthBounty", "BOUNTY") Ownable(msg.sender) {
         _mint(msg.sender, 10_000_000 * 10 ** decimals());
     }
 
@@ -58,10 +58,10 @@ contract TruthBountyToken is ERC20, Ownable {
         address verifier,
         string calldata reason
     ) external onlySettlement {
-        uint256 stake = verifierStake[verifier];
-        require(stake > 0, "No stake to slash");
+        uint256 verifierStakeAmount = verifierStake[verifier];
+        require(verifierStakeAmount > 0, "No stake to slash");
 
-        uint256 slashedAmount = (stake * slashPercentage) / 100;
+        uint256 slashedAmount = (verifierStakeAmount * slashPercentage) / 100;
         verifierStake[verifier] -= slashedAmount;
 
         _burn(address(this), slashedAmount);
