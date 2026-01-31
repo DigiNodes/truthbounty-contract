@@ -12,6 +12,9 @@ contract Staking is ReentrancyGuard, Ownable {
 
     // Duration in seconds that tokens must be locked after staking
     uint256 public lockDuration;
+    
+    // Address authorized to slash stakes (VerifierSlashing contract)
+    address public slashingContract;
 
     struct StakeInfo {
         uint256 amount;      // Total amount currently staked
@@ -25,6 +28,8 @@ contract Staking is ReentrancyGuard, Ownable {
     event Staked(address indexed user, uint256 amount, uint256 totalStaked, uint256 unlockTime);
     event Unstaked(address indexed user, uint256 amount, uint256 remainingStake);
     event LockDurationUpdated(uint256 newDuration);
+    event StakeSlashed(address indexed user, uint256 amount, uint256 remainingStake);
+    event SlashingContractUpdated(address newSlashingContract);
 
     /**
      * @param _stakingToken Address of the TruthBountyToken
@@ -98,5 +103,36 @@ contract Staking is ReentrancyGuard, Ownable {
     function setLockDuration(uint256 _duration) external onlyOwner {
         lockDuration = _duration;
         emit LockDurationUpdated(_duration);
+    }
+    
+    /**
+     * @dev Set the authorized slashing contract
+     * @param _slashingContract Address of the VerifierSlashing contract
+     */
+    function setSlashingContract(address _slashingContract) external onlyOwner {
+        require(_slashingContract != address(0), "Invalid slashing contract");
+        slashingContract = _slashingContract;
+        emit SlashingContractUpdated(_slashingContract);
+    }
+    
+    /**
+     * @dev Force slash a verifier's stake (only callable by slashing contract)
+     * @param user Address of the user to slash
+     * @param amount Amount to slash from their stake
+     */
+    function forceSlash(address user, uint256 amount) external {
+        require(msg.sender == slashingContract, "Only slashing contract can slash");
+        require(slashingContract != address(0), "Slashing contract not set");
+        
+        StakeInfo storage info = stakes[user];
+        require(info.amount >= amount, "Insufficient stake to slash");
+        
+        // Reduce the staked amount
+        info.amount -= amount;
+        
+        // Keep the slashed tokens in the contract (effectively burning them from circulation)
+        // Alternative: Transfer to a burn address or treasury
+        
+        emit StakeSlashed(user, amount, info.amount);
     }
 }
