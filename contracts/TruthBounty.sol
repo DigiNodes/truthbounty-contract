@@ -1,10 +1,77 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+contract TruthBountyToken is ERC20, Ownable {
+    address public settlementContract;
+    uint256 public slashPercentage = 10; // 10%
+
+    mapping(address => uint256) public verifierStake;
+
+    event StakeDeposited(address indexed verifier, uint256 amount);
+    event StakeWithdrawn(address indexed verifier, uint256 amount);
+    event VerifierSlashed(
+        address indexed verifier,
+        uint256 slashedAmount,
+        uint256 remainingStake,
+        string reason
+    );
+
+    modifier onlySettlement() {
+        require(msg.sender == settlementContract, "Unauthorized slashing");
+        _;
+    }
+
+    constructor() ERC20("TruthBounty", "BOUNTY") Ownable(msg.sender) {
+        _mint(msg.sender, 10_000_000 * 10 ** decimals());
+    }
+
+    function setSettlementContract(address _settlement) external onlyOwner {
+        settlementContract = _settlement;
+    }
+
+    function setSlashPercentage(uint256 percentage) external onlyOwner {
+        require(percentage <= 100, "Invalid percentage");
+        slashPercentage = percentage;
+    }
+
+    function stake(uint256 amount) external {
+        require(amount > 0, "Invalid amount");
+        _transfer(msg.sender, address(this), amount);
+        verifierStake[msg.sender] += amount;
+
+        emit StakeDeposited(msg.sender, amount);
+    }
+
+    function withdrawStake(uint256 amount) external {
+        require(verifierStake[msg.sender] >= amount, "Insufficient stake");
+
+        verifierStake[msg.sender] -= amount;
+        _transfer(address(this), msg.sender, amount);
+
+        emit StakeWithdrawn(msg.sender, amount);
+    }
+
+    function slashVerifier(
+        address verifier,
+        string calldata reason
+    ) external onlySettlement {
+        uint256 verifierStakeAmount = verifierStake[verifier];
+        require(verifierStakeAmount > 0, "No stake to slash");
+
+        uint256 slashedAmount = (verifierStakeAmount * slashPercentage) / 100;
+        verifierStake[verifier] -= slashedAmount;
+
+        _burn(address(this), slashedAmount);
+
+        emit VerifierSlashed(
+            verifier,
+            slashedAmount,
+            verifierStake[verifier],
+            reason
+        );
 /**
  * @title TruthBounty
  * @notice Main contract for handling verifications with dispute windows
