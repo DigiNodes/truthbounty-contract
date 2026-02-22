@@ -1,12 +1,13 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Contract, Signer } from "ethers";
+import { Signer } from "ethers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 
 describe("TruthBountyWeighted", function () {
-  let truthBounty: Contract;
-  let bountyToken: Contract;
-  let mockOracle: Contract;
+  let truthBounty: any;
+  let bountyToken: any;
+  let mockOracle: any;
   let owner: Signer;
   let submitter: Signer;
   let verifier1: Signer;
@@ -222,11 +223,11 @@ describe("TruthBountyWeighted", function () {
         .to.emit(truthBounty, "ClaimSettled")
         .withArgs(
           claimId,
-          true, // passed
-          ethers.parseEther("300"), // weighted for
-          ethers.parseEther("100"), // weighted against
-          expect.anything(),
-          expect.anything()
+          true,
+          ethers.parseEther("300"),
+          ethers.parseEther("100"),
+          anyValue,
+          anyValue
         );
 
       const settlement = await truthBounty.settlementResults(claimId);
@@ -264,7 +265,6 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should distribute rewards proportional to effective stake", async function () {
-      // Setup equal raw stakes but different reputations
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("2")); // 2x
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1")); // 1x
 
@@ -291,13 +291,13 @@ describe("TruthBountyWeighted", function () {
       const verifier2RewardShare = (totalRewards * 100n) / 300n;
 
       // Claim rewards
-      const balanceBefore1 = await bountyToken.balanceOf(await verifier1.getAddress());
+      const balanceBefore1: bigint = await bountyToken.balanceOf(await verifier1.getAddress());
       await truthBounty.connect(verifier1).claimSettlementRewards(claimId);
-      const balanceAfter1 = await bountyToken.balanceOf(await verifier1.getAddress());
+      const balanceAfter1: bigint = await bountyToken.balanceOf(await verifier1.getAddress());
 
-      const balanceBefore2 = await bountyToken.balanceOf(await verifier2.getAddress());
+      const balanceBefore2: bigint = await bountyToken.balanceOf(await verifier2.getAddress());
       await truthBounty.connect(verifier2).claimSettlementRewards(claimId);
-      const balanceAfter2 = await bountyToken.balanceOf(await verifier2.getAddress());
+      const balanceAfter2: bigint = await bountyToken.balanceOf(await verifier2.getAddress());
 
       // Check proportional distribution (allowing for rounding)
       const reward1 = balanceAfter1 - balanceBefore1 - stakeAmount; // Subtract returned stake
@@ -305,6 +305,67 @@ describe("TruthBountyWeighted", function () {
 
       expect(reward1).to.be.closeTo(verifier1RewardShare, ethers.parseEther("0.01"));
       expect(reward2).to.be.closeTo(verifier2RewardShare, ethers.parseEther("0.01"));
+    });
+
+    it("Should slash losing stake when withdrawing settled stake", async function () {
+      await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("1"));
+
+      const stakeAmount = ethers.parseEther("200");
+
+      await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
+      await truthBounty.connect(verifier2).vote(claimId, true, stakeAmount);
+      await truthBounty.connect(verifier3).vote(claimId, false, stakeAmount);
+
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(claimId);
+
+      const settlement = await truthBounty.settlementResults(claimId);
+
+      const expectedLoserRawStake = ethers.parseEther("200");
+      const expectedTotalSlashed = (expectedLoserRawStake * 20n) / 100n;
+
+      expect(settlement.totalSlashed).to.equal(expectedTotalSlashed);
+
+      const loserAddress = await verifier3.getAddress();
+
+      const balanceBefore = await bountyToken.balanceOf(loserAddress);
+
+      await expect(
+        truthBounty.connect(verifier3).withdrawSettledStake(claimId)
+      )
+        .to.emit(truthBounty, "StakeSlashed")
+        .withArgs(claimId, loserAddress, expectedTotalSlashed);
+
+      const balanceAfter = await bountyToken.balanceOf(loserAddress);
+
+      const returnedStake = balanceAfter - balanceBefore;
+      const expectedReturnedStake = stakeAmount - expectedTotalSlashed;
+
+      expect(returnedStake).to.equal(expectedReturnedStake);
+
+      const updatedSettlement = await truthBounty.settlementResults(claimId);
+      expect(updatedSettlement.totalSlashed).to.equal(expectedTotalSlashed);
+    });
+
+    it("Should prevent double withdrawal of settled stake", async function () {
+      await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1"));
+
+      const stakeAmount = ethers.parseEther("200");
+
+      await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
+      await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
+
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(claimId);
+
+      await truthBounty.connect(verifier2).withdrawSettledStake(claimId);
+
+      await expect(
+        truthBounty.connect(verifier2).withdrawSettledStake(claimId)
+      ).to.be.revertedWith("Stake already returned");
     });
   });
 
@@ -405,6 +466,37 @@ describe("TruthBountyWeighted", function () {
 
       const vote = await truthBounty.getVote(0, await verifier1.getAddress());
       expect(vote.reputationScore).to.equal(ethers.parseEther("1")); // Default
+    });
+
+    it("Should prevent withdrawing stake locked in an active claim", async function () {
+      const tx = await truthBounty.connect(submitter).createClaim("QmLockedStake");
+      const lockedClaimId = 0n;
+
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+
+      const stakeAmount = ethers.parseEther("400");
+      await truthBounty.connect(verifier1).vote(lockedClaimId, true, stakeAmount);
+
+      await expect(
+        truthBounty.connect(verifier1).withdrawStake(ethers.parseEther("700"))
+      ).to.be.revertedWith("Insufficient available stake");
+    });
+
+    it("Should revert withdrawing settled stake for non-voters", async function () {
+      const tx = await truthBounty.connect(submitter).createClaim("QmNoVote");
+      const noVoteClaimId = 0n;
+
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+
+      const stakeAmount = ethers.parseEther("200");
+      await truthBounty.connect(verifier1).vote(noVoteClaimId, true, stakeAmount);
+
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(noVoteClaimId);
+
+      await expect(
+        truthBounty.connect(verifier2).withdrawSettledStake(noVoteClaimId)
+      ).to.be.revertedWith("No vote cast");
     });
   });
 });

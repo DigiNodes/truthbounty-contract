@@ -3,21 +3,20 @@ import { ethers } from "hardhat";
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("VerifierSlashing", function () {
-  // Fixture for deploying contracts
-  async function deploySlashingFixture() {
+  async function deploySlashingFixture(): Promise<any> {
     const [owner, admin, settlement, verifier1, verifier2, unauthorized] = await ethers.getSigners();
 
     // Deploy TruthBountyToken
     const TruthBountyToken = await ethers.getContractFactory("TruthBountyToken");
-    const token = await TruthBountyToken.deploy();
+    const token: any = await TruthBountyToken.deploy();
 
     // Deploy Staking contract
     const Staking = await ethers.getContractFactory("Staking");
-    const staking = await Staking.deploy(await token.getAddress(), 86400); // 1 day lock
+    const staking: any = await Staking.deploy(await token.getAddress(), 86400);
 
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
+    const slashing: any = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
 
     // Set up the slashing contract in staking
     await staking.setSlashingContract(await slashing.getAddress());
@@ -327,6 +326,91 @@ describe("VerifierSlashing", function () {
       expect(finalStake).to.equal(stakeAmount - expectedSlashAmount);
     });
   });
+
+  describe("Adversarial Scenarios", function () {
+    it("Should support multiple partial slashes over time", async function () {
+      const { slashing, staking, settlement, verifier1, stakeAmount } = await loadFixture(deploySlashingFixture);
+
+      const firstPercentage = 30;
+      const secondPercentage = 20;
+
+      const firstExpectedSlash = (stakeAmount * BigInt(firstPercentage)) / BigInt(100);
+
+      await slashing.connect(settlement).slash(verifier1.address, firstPercentage, "First partial slash");
+
+      const [stakeAfterFirst] = await staking.stakes(verifier1.address);
+      expect(stakeAfterFirst).to.equal(stakeAmount - firstExpectedSlash);
+      expect(await slashing.totalSlashed(verifier1.address)).to.equal(firstExpectedSlash);
+
+      await time.increase(3601);
+
+      const secondExpectedSlash = (stakeAfterFirst * BigInt(secondPercentage)) / BigInt(100);
+
+      await slashing.connect(settlement).slash(verifier1.address, secondPercentage, "Second partial slash");
+
+      const [stakeAfterSecond] = await staking.stakes(verifier1.address);
+      expect(stakeAfterSecond).to.equal(stakeAfterFirst - secondExpectedSlash);
+      expect(await slashing.totalSlashed(verifier1.address)).to.equal(firstExpectedSlash + secondExpectedSlash);
+
+      const history = await slashing.getSlashHistory(verifier1.address);
+      expect(history.length).to.equal(2);
+      expect(history[0].reason).to.equal("First partial slash");
+      expect(history[1].reason).to.equal("Second partial slash");
+    });
+
+    it("Should enforce cooldown across multiple settlement addresses", async function () {
+    const { slashing, admin, settlement, verifier1, unauthorized } = await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(admin).grantSettlementRole(unauthorized.address);
+
+      await slashing.connect(settlement).slash(verifier1.address, 10, "First slash");
+
+      await expect(
+        slashing.connect(unauthorized).slash(verifier1.address, 10, "Second slash from other settlement")
+      ).to.be.revertedWithCustomError(slashing, "SlashingTooFrequent");
+    });
+
+    it("Should prevent withdrawing stake that has been slashed", async function () {
+      const { slashing, staking, settlement, verifier1, stakeAmount } = await loadFixture(deploySlashingFixture);
+
+      await time.increase(86401);
+
+      const slashPercentage = 40;
+      const expectedSlashAmount = (stakeAmount * BigInt(slashPercentage)) / BigInt(100);
+
+      await slashing.connect(settlement).slash(verifier1.address, slashPercentage, "Slash before withdraw");
+
+      const [stakeAfterSlash] = await staking.stakes(verifier1.address);
+      expect(stakeAfterSlash).to.equal(stakeAmount - expectedSlashAmount);
+
+      const overWithdrawAmount = stakeAfterSlash + 1n;
+
+      await expect(
+        staking.connect(verifier1).unstake(overWithdrawAmount)
+      ).to.be.revertedWith("Insufficient staked balance");
+
+      await staking.connect(verifier1).unstake(stakeAfterSlash);
+
+      const [finalStake] = await staking.stakes(verifier1.address);
+      expect(finalStake).to.equal(0n);
+    });
+
+    it("Should revert batch slash when one verifier has zero stake", async function () {
+      const { slashing, settlement, verifier1, unauthorized } = await loadFixture(deploySlashingFixture);
+
+      const verifiers = [verifier1.address, unauthorized.address];
+      const percentages = [10, 10];
+      const reasons = ["Has stake", "No stake"];
+
+      await expect(
+        slashing.connect(settlement).batchSlash(verifiers, percentages, reasons)
+      ).to.be.revertedWithCustomError(slashing, "NoStakeToSlash");
+
+      expect(await slashing.getSlashCount(verifier1.address)).to.equal(0);
+      expect(await slashing.getSlashCount(unauthorized.address)).to.equal(0);
+    });
+  });
+
 
   describe("Edge Cases", function () {
     it("Should handle slashing when stake is very small", async function () {
