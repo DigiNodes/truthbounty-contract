@@ -2,8 +2,9 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IReputationOracle.sol";
 
 /**
@@ -17,7 +18,13 @@ import "./IReputationOracle.sol";
  * - Prevents low-reputation dominance
  * - Maintains backward compatibility with equal-weight fallback
  */
-contract TruthBountyWeighted is Ownable, ReentrancyGuard {
+contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
+    bytes32 public constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     // ============ State Variables ============
 
@@ -152,13 +159,23 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
 
     constructor(
         address _bountyToken,
-        address _reputationOracle
-    ) Ownable(msg.sender) {
+        address _reputationOracle,
+        address initialAdmin
+    ) {
         require(_bountyToken != address(0), "Invalid token address");
         require(_reputationOracle != address(0), "Invalid oracle address");
-
+        require(initialAdmin != address(0), "Invalid admin address");
+        
         bountyToken = IERC20(_bountyToken);
         reputationOracle = IReputationOracle(_reputationOracle);
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        _grantRole(PAUSER_ROLE, initialAdmin);
+        
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
     }
 
     // ============ Core Functions ============
@@ -168,7 +185,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
      * @param content IPFS hash or content reference
      * @return claimId The ID of the newly created claim
      */
-    function createClaim(string memory content) external returns (uint256) {
+    function createClaim(string memory content) external whenNotPaused returns (uint256) {
         uint256 claimId = claimCounter++;
         uint256 verificationWindowEnd = block.timestamp + VERIFICATION_WINDOW_DURATION;
 
@@ -192,7 +209,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
      * @notice Stake tokens to participate in verification
      * @param amount Amount of tokens to stake
      */
-    function stake(uint256 amount) external nonReentrant {
+    function stake(uint256 amount) external nonReentrant whenNotPaused {
         require(amount >= MIN_STAKE_AMOUNT, "Stake below minimum");
         require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
@@ -211,7 +228,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
         uint256 claimId,
         bool support,
         uint256 stakeAmount
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.id == claimId, "Claim does not exist");
         require(block.timestamp < claim.verificationWindowEnd, "Verification window closed");
@@ -509,7 +526,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
     /**
      * @notice Update the reputation oracle
      */
-    function setReputationOracle(address _newOracle) external onlyOwner {
+    function setReputationOracle(address _newOracle) external onlyRole(ADMIN_ROLE) {
         if (_newOracle == address(0)) revert InvalidReputationOracle();
 
         address oldOracle = address(reputationOracle);
@@ -521,7 +538,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
     /**
      * @notice Update reputation score bounds
      */
-    function setReputationBounds(uint256 _minScore, uint256 _maxScore) external onlyOwner {
+    function setReputationBounds(uint256 _minScore, uint256 _maxScore) external onlyRole(ADMIN_ROLE) {
         if (_minScore == 0 || _minScore >= _maxScore) revert InvalidReputationBounds();
 
         minReputationScore = _minScore;
@@ -533,7 +550,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
     /**
      * @notice Toggle weighted staking on/off
      */
-    function setWeightedStakingEnabled(bool _enabled) external onlyOwner {
+    function setWeightedStakingEnabled(bool _enabled) external onlyRole(ADMIN_ROLE) {
         weightedStakingEnabled = _enabled;
         emit WeightedStakingToggled(_enabled);
     }
@@ -541,7 +558,7 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
     /**
      * @notice Set default reputation score
      */
-    function setDefaultReputationScore(uint256 _defaultScore) external onlyOwner {
+    function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
         require(_defaultScore > 0, "Invalid default");
         defaultReputationScore = _defaultScore;
     }
@@ -569,5 +586,15 @@ contract TruthBountyWeighted is Ownable, ReentrancyGuard {
     ) external view returns (uint256 effectiveStake, uint256 reputationScore) {
         reputationScore = _getReputationScore(user);
         effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
+    }
+
+    // ============ Admin & Pauser Functions ============
+
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
     }
 }
