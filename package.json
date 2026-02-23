@@ -10,6 +10,7 @@
     "compile": "hardhat compile",
     "compile:forge": "forge build",
     "deploy": "hardhat run scripts/deploySlashing.ts",
+    "verify": "hardhat run scripts/verify.ts",
     "fuzz:campaign": "./scripts/run-fuzz-tests.sh"
   },
   "keywords": ["blockchain", "ethereum", "solidity", "staking", "fuzz-testing", "foundry"],
