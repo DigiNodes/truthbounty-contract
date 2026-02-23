@@ -4,13 +4,18 @@
   "main": "index.js",
   "scripts": {
     "test": "hardhat test",
+    "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv",
+    "test:fuzz:extended": "forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv && forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv",
+    "test:coverage": "forge coverage --report lcov",
     "compile": "hardhat compile",
-    "deploy": "hardhat run scripts/deploySlashing.ts"
+    "compile:forge": "forge build",
+    "deploy": "hardhat run scripts/deploySlashing.ts",
+    "fuzz:campaign": "./scripts/run-fuzz-tests.sh"
   },
-  "keywords": [],
+  "keywords": ["blockchain", "ethereum", "solidity", "staking", "fuzz-testing", "foundry"],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "TruthBounty smart contracts with comprehensive fuzz testing",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "hardhat": "^3.1.5"
