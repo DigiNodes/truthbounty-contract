@@ -1,0 +1,24 @@
+[profile.default]
+src = "test"
+out = "out"
+libs = ["lib"]
+test = "test"
+cache_path = "cache"
+
+# See more config options https://github.com/foundry-rs/foundry/tree/master/config
+
+[profile.default.optimizer]
+enabled = true
+runs = 200
+
+[profile.default.model_checker]
+contracts = { "contracts/WeightedStaking.sol" = [ "WeightedStaking" ], "contracts/staking.sol" = [ "Staking" ] }
+engine = "chc"
+timeout = 10000
+targets = [ "assert" ]
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+int_types = "long"
