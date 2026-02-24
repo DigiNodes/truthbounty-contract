@@ -82,6 +82,27 @@ TruthBounty treats smart contracts as **portable logic**, not ecosystem lock-in.
 
 ## 🛠️ Development Setup
 
+## 🛠️ Development Setup
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in the required values:
+
+```
+PRIVATE_KEY=your_private_key_here
+OPTIMISM_SEPOLIA_RPC_URL=https://sepolia.optimism.io
+OPTIMISM_SEPOLIA_GAS_PRICE=10000000
+OPTIMISM_MAINNET_RPC_URL=https://mainnet.optimism.io
+OPTIMISM_MAINNET_GAS_PRICE=10000000
+OPTIMISM_ETHERSCAN_API_KEY=your_optimism_etherscan_api_key
+```
+
+**Notes:**
+- Never commit your real private key.
+- Gas price can be omitted for auto, or set for custom deployments.
+- Use the correct RPC endpoints for your provider (Infura, Alchemy, etc).
+
+
 ### Prerequisites
 
 - Node.js v18+

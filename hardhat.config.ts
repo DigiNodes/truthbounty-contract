@@ -8,14 +8,20 @@ dotenv.config();
 const config: HardhatUserConfig = {
   solidity: "0.8.28",
   networks: {
-    optimism: {
-      url: process.env.OPTIMISM_RPC_URL || "https://mainnet.optimism.io",
+    optimismSepolia: {
+      url: process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 11155420,
+      gas: "auto",
+      gasPrice: process.env.OPTIMISM_SEPOLIA_GAS_PRICE ? parseInt(process.env.OPTIMISM_SEPOLIA_GAS_PRICE) : undefined,
     },
-    optimism_sepolia: {  // Testnet
-      url: "https://sepolia.optimism.io",
+    optimismMainnet: {
+      url: process.env.OPTIMISM_MAINNET_RPC_URL || "https://mainnet.optimism.io",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-    }
+      chainId: 10,
+      gas: "auto",
+      gasPrice: process.env.OPTIMISM_MAINNET_GAS_PRICE ? parseInt(process.env.OPTIMISM_MAINNET_GAS_PRICE) : undefined,
+    },
   },
   etherscan: {
     apiKey: {
