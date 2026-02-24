@@ -22,3 +22,9 @@ line_length = 120
 tab_width = 4
 bracket_spacing = true
 int_types = "long"
+
+
+[invariant]
+runs = 500
+depth = 20
+fail_on_revert = true
