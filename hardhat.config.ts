@@ -3,6 +3,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import "hardhat-gas-reporter";
 import "@nomicfoundation/hardhat-ignition-ethers";
 import * as dotenv from "dotenv";
+import "@openzeppelin/hardhat-upgrades";
 
 dotenv.config();
 
