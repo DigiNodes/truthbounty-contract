@@ -1,0 +1,71 @@
+name: Fuzz Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  fuzz-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v0.0.1
+      with:
+        version: nightly
+        
+    - name: Install dependencies
+      run: forge install
+      
+    - name: Run fuzz tests - WeightedStaking
+      run: forge test --match-contract WeightedStakingFuzzTest -vvv
+      
+    - name: Run fuzz tests - Staking  
+      run: forge test --match-contract StakingFuzzTest -vvv
+      
+    - name: Run fuzz tests - Integration
+      run: forge test --match-contract IntegrationFuzzTest -vvv
+      
+    - name: Run extended fuzz campaign
+      run: |
+        echo "Running extended fuzz tests with higher iterations..."
+        forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv
+        forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv
+        
+    - name: Generate coverage report
+      run: forge coverage --report lcov
+      
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./lcov.info
+        flags: fuzz-tests
+        name: fuzz-coverage
+        
+  property-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v0.0.1
+      with:
+        version: nightly
+        
+    - name: Install dependencies
+      run: forge install
+      
+    - name: Run property-based tests
+      run: |
+        echo "Running property-based tests with model checker..."
+        forge test --match-contract WeightedStakingFuzzTest --no-match-test testFuzz_ -vv
+        
+    - name: Run invariant tests
+      run: |
+        echo "Running invariant tests..."
+        forge test --match-test invariant -vv
