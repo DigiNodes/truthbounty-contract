@@ -12,7 +12,13 @@
     "compile": "hardhat compile",
     "compile:forge": "forge build",
     "deploy": "hardhat run scripts/deploySlashing.ts",
-    "fuzz:campaign": "./scripts/run-fuzz-tests.sh"
+    "fuzz:campaign": "./scripts/run-fuzz-tests.sh",
+    "deploy:local": "npx hardhat ignition deploy ignition/modules/FullDeploy.ts",
+    "deploy:testnet": "npx hardhat ignition deploy ignition/modules/FullDeploy.ts --network optimism_sepolia --parameters ignition/parameters/optimism_sepolia.json",
+    "deploy:mainnet": "npx hardhat ignition deploy ignition/modules/FullDeploy.ts --network optimism --parameters ignition/parameters/optimism_mainnet.json",
+    "deploy:token": "npx hardhat ignition deploy ignition/modules/TruthBounty.ts --network optimism_sepolia",
+    "deploy:staking": "npx hardhat ignition deploy ignition/modules/Staking.ts --network optimism_sepolia",
+    "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia"
   },
   "keywords": [
     "blockchain",
@@ -26,6 +32,8 @@
   "license": "ISC",
   "description": "TruthBounty smart contracts with comprehensive fuzz testing",
   "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^3.0.7",
+    "@nomicfoundation/hardhat-ignition-ethers": "^3.0.7",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@types/node": "^20.0.0",
     "hardhat": "^2.22.17",
