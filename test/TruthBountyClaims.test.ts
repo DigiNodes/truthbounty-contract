@@ -9,11 +9,11 @@ describe("TruthBountyClaims", function () {
 
     // Deploy Token
     const Token = await hre.ethers.getContractFactory("TruthBountyToken");
-    const token = await Token.deploy();
+    const token = await Token.deploy(owner.address);
 
     // Deploy Claims Contract
     const Claims = await hre.ethers.getContractFactory("TruthBountyClaims");
-    const claims = await Claims.deploy(token.target);
+    const claims = await Claims.deploy(token.target, owner.address);
 
     // Fund the Claims contract
     // The Token contract mints initial supply to 'owner' (msg.sender)
@@ -84,8 +84,7 @@ describe("TruthBountyClaims", function () {
       await expect(
         claims.connect(otherAccount).settleClaim(beneficiary1.address, 100),
       )
-        .to.be.revertedWithCustomError(claims, "OwnableUnauthorizedAccount")
-        .withArgs(otherAccount.address);
+        .to.be.revertedWithCustomError(claims, "AccessControlUnauthorizedAccount");
     });
 
     it("Gas comparison (Log only)", async function () {

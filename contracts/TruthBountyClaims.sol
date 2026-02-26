@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -10,7 +10,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev Handles batched claim settlements for TruthBounty protocols.
  *      Focuses on gas efficiency and loop safety.
  */
-contract TruthBountyClaims is Ownable, ReentrancyGuard {
+contract TruthBountyClaims is AccessControl, ReentrancyGuard {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
     IERC20 public immutable bountyToken;
 
     event ClaimSettled(address indexed beneficiary, uint256 amount);
@@ -19,9 +23,17 @@ contract TruthBountyClaims is Ownable, ReentrancyGuard {
     // Max batch size to prevent out-of-gas errors
     uint256 public constant MAX_BATCH_SIZE = 200;
 
-    constructor(address _tokenAddress) Ownable(msg.sender) {
+    constructor(address _tokenAddress, address initialAdmin) {
         require(_tokenAddress != address(0), "Invalid token address");
+        require(initialAdmin != address(0), "Invalid admin address");
+        
         bountyToken = IERC20(_tokenAddress);
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        _grantRole(TREASURY_ROLE, initialAdmin); // Default admin also gets treasury role
+        
+        _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
     }
 
     /**
@@ -29,7 +41,7 @@ contract TruthBountyClaims is Ownable, ReentrancyGuard {
      * @param beneficiary The address receiving the bounty.
      * @param amount The amount of tokens to transfer.
      */
-    function settleClaim(address beneficiary, uint256 amount) external onlyOwner nonReentrant {
+    function settleClaim(address beneficiary, uint256 amount) external onlyRole(TREASURY_ROLE) nonReentrant {
         _settle(beneficiary, amount);
     }
 
@@ -38,7 +50,7 @@ contract TruthBountyClaims is Ownable, ReentrancyGuard {
      * @param beneficiaries Array of addresses receiving bounties.
      * @param amounts Array of amounts to transfer.
      */
-    function settleClaimsBatch(address[] calldata beneficiaries, uint256[] calldata amounts) external onlyOwner nonReentrant {
+    function settleClaimsBatch(address[] calldata beneficiaries, uint256[] calldata amounts) external onlyRole(TREASURY_ROLE) nonReentrant {
         uint256 length = beneficiaries.length;
         require(length == amounts.length, "Arrays length mismatch");
         require(length > 0, "No claims to settle");
@@ -77,7 +89,7 @@ contract TruthBountyClaims is Ownable, ReentrancyGuard {
      * @param to The recipient address.
      * @param amount The amount to transfer.
      */
-    function rescueTokens(address token, address to, uint256 amount) external onlyOwner {
+    function rescueTokens(address token, address to, uint256 amount) external onlyRole(TREASURY_ROLE) {
         IERC20(token).transfer(to, amount);
     }
 }

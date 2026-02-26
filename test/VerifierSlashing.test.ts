@@ -9,18 +9,18 @@ describe("VerifierSlashing", function () {
 
     // Deploy TruthBountyToken
     const TruthBountyToken = await ethers.getContractFactory("TruthBountyToken");
-    const token = await TruthBountyToken.deploy();
+    const token = await TruthBountyToken.deploy(owner.address);
 
     // Deploy Staking contract
     const Staking = await ethers.getContractFactory("Staking");
-    const staking = await Staking.deploy(await token.getAddress(), 86400); // 1 day lock
+    const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address); // 1 day lock
 
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
     const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
 
     // Set up the slashing contract in staking
-    await staking.setSlashingContract(await slashing.getAddress());
+    await staking.connect(owner).setSlashingContract(await slashing.getAddress());
 
     // Grant settlement role
     const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
@@ -34,7 +34,7 @@ describe("VerifierSlashing", function () {
     // Approve and stake
     await token.connect(verifier1).approve(await staking.getAddress(), stakeAmount);
     await token.connect(verifier2).approve(await staking.getAddress(), stakeAmount);
-    
+
     await staking.connect(verifier1).stake(stakeAmount);
     await staking.connect(verifier2).stake(stakeAmount);
 
@@ -237,7 +237,7 @@ describe("VerifierSlashing", function () {
 
       // Slash twice with cooldown
       await slashing.connect(settlement).slash(verifier1.address, 10, "First reason");
-      
+
       await time.increase(3601);
       await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
 

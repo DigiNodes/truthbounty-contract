@@ -16,15 +16,16 @@ describe("ReputationDecay", function () {
         const [owner, user1, user2, otherAccount] = await hre.ethers.getSigners();
 
         const ReputationDecay = await hre.ethers.getContractFactory("ReputationDecay");
-        const reputationDecay = await ReputationDecay.deploy();
+        const reputationDecay = await ReputationDecay.deploy(owner.address);
 
         return { reputationDecay, owner, user1, user2, otherAccount };
     }
 
     describe("Deployment", function () {
-        it("Should set the correct owner", async function () {
+        it("Should set the correct admin", async function () {
             const { reputationDecay, owner } = await loadFixture(deployReputationDecayFixture);
-            expect(await reputationDecay.owner()).to.equal(owner.address);
+            const ADMIN_ROLE = await reputationDecay.ADMIN_ROLE();
+            expect(await reputationDecay.hasRole(ADMIN_ROLE, owner.address)).to.be.true;
         });
 
         it("Should initialize with default decay parameters", async function () {
@@ -300,21 +301,21 @@ describe("ReputationDecay", function () {
             const { reputationDecay, user1, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
             await expect(reputationDecay.connect(otherAccount).setReputation(user1.address, 1000))
-                .to.be.revertedWithCustomError(reputationDecay, "OwnableUnauthorizedAccount");
+                .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
 
         it("Should reject non-owner from recording activity", async function () {
             const { reputationDecay, user1, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
             await expect(reputationDecay.connect(otherAccount).recordActivity(user1.address))
-                .to.be.revertedWithCustomError(reputationDecay, "OwnableUnauthorizedAccount");
+                .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
 
         it("Should reject non-owner from updating parameters", async function () {
             const { reputationDecay, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
             await expect(reputationDecay.connect(otherAccount).setDecayRatePerEpoch(200))
-                .to.be.revertedWithCustomError(reputationDecay, "OwnableUnauthorizedAccount");
+                .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
     });
 

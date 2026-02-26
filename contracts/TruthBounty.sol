@@ -3,14 +3,22 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title TruthBountyToken
  * @notice ERC20 token for TruthBounty rewards with staking capabilities
  */
-contract TruthBountyToken is ERC20, Ownable {
+contract TruthBountyToken is ERC20, AccessControl {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
+    
+    // Legacy mapping
+    bytes32 public constant SETTLEMENT_ROLE = RESOLVER_ROLE;
     address public settlementContract;
     uint256 public slashPercentage = 10; // 10%
 
@@ -25,20 +33,29 @@ contract TruthBountyToken is ERC20, Ownable {
         string reason
     );
 
-    modifier onlySettlement() {
-        require(msg.sender == settlementContract, "Unauthorized slashing");
+    // Restricts access to the resolver (formerly settlement) role
+    modifier onlyResolver() {
+        _checkRole(RESOLVER_ROLE, msg.sender);
         _;
     }
 
-    constructor() ERC20("TruthBounty", "BOUNTY") Ownable(msg.sender) {
-        _mint(msg.sender, 10_000_000 * 10 ** decimals());
+    constructor(address initialAdmin) ERC20("TruthBounty", "BOUNTY") {
+        require(initialAdmin != address(0), "Invalid admin address");
+        _mint(initialAdmin, 10_000_000 * 10 ** decimals());
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
     }
 
-    function setSettlementContract(address _settlement) external onlyOwner {
+    function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
         settlementContract = _settlement;
+        // Automatically grant RESOLVER_ROLE to the settlement contract
+        _grantRole(RESOLVER_ROLE, _settlement);
     }
 
-    function setSlashPercentage(uint256 percentage) external onlyOwner {
+    function setSlashPercentage(uint256 percentage) external onlyRole(ADMIN_ROLE) {
         require(percentage <= 100, "Invalid percentage");
         slashPercentage = percentage;
     }
@@ -63,7 +80,7 @@ contract TruthBountyToken is ERC20, Ownable {
     function slashVerifier(
         address verifier,
         string calldata reason
-    ) external onlySettlement {
+    ) external onlyResolver {
         uint256 verifierStakeAmount = verifierStake[verifier];
         require(verifierStakeAmount > 0, "No stake to slash");
 
@@ -85,7 +102,13 @@ contract TruthBountyToken is ERC20, Ownable {
  * @title TruthBounty
  * @notice Main contract for claim verification, voting, and settlement
  */
-contract TruthBounty is Ownable, ReentrancyGuard {
+contract TruthBounty is AccessControl, ReentrancyGuard, Pausable {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
+    bytes32 public constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     // Token contract
     IERC20 public immutable bountyToken;
 
@@ -155,12 +178,22 @@ contract TruthBounty is Ownable, ReentrancyGuard {
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event RewardsClaimed(address indexed verifier, uint256 amount);
 
-    constructor(address _bountyToken) Ownable(msg.sender) {
+    constructor(address _bountyToken, address initialAdmin) {
         require(_bountyToken != address(0), "Invalid token address");
+        require(initialAdmin != address(0), "Invalid admin address");
+        
         bountyToken = IERC20(_bountyToken);
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        _grantRole(PAUSER_ROLE, initialAdmin);
+        
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
     }
 
-    function createClaim(string memory content) external returns (uint256) {
+    function createClaim(string memory content) external whenNotPaused returns (uint256) {
         uint256 claimId = claimCounter++;
         uint256 verificationWindowEnd = block.timestamp + VERIFICATION_WINDOW_DURATION;
 
@@ -180,7 +213,7 @@ contract TruthBounty is Ownable, ReentrancyGuard {
         return claimId;
     }
 
-    function stake(uint256 amount) external nonReentrant {
+    function stake(uint256 amount) external nonReentrant whenNotPaused {
         require(amount >= MIN_STAKE_AMOUNT, "Stake below minimum");
         require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
@@ -189,7 +222,7 @@ contract TruthBounty is Ownable, ReentrancyGuard {
         emit StakeDeposited(msg.sender, amount);
     }
 
-    function vote(uint256 claimId, bool support, uint256 stakeAmount) external nonReentrant {
+    function vote(uint256 claimId, bool support, uint256 stakeAmount) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.id == claimId, "Claim does not exist");
         require(block.timestamp < claim.verificationWindowEnd, "Verification window closed");
@@ -306,5 +339,15 @@ contract TruthBounty is Ownable, ReentrancyGuard {
 
     function getVerifierStake(address verifier) external view returns (VerifierStake memory) {
         return verifierStakes[verifier];
+    }
+
+    // ============ Admin & Pauser Functions ============
+
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
     }
 }

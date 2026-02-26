@@ -25,7 +25,7 @@ describe("WeightedStaking", function () {
 
     // Deploy WeightedStaking
     const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
-    weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress());
+    weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress(), await owner.getAddress());
     await weightedStaking.waitForDeployment();
   });
 
@@ -46,7 +46,7 @@ describe("WeightedStaking", function () {
     it("Should revert if oracle address is zero", async function () {
       const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
       await expect(
-        WeightedStaking.deploy(ethers.ZeroAddress)
+        WeightedStaking.deploy(ethers.ZeroAddress, await owner.getAddress())
       ).to.be.revertedWithCustomError(weightedStaking, "InvalidReputationOracle");
     });
   });

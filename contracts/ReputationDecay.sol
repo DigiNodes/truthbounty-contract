@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title ReputationDecay
@@ -16,7 +16,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   decayPercent = min(effectiveInactiveEpochs * decayRatePerEpoch, maxDecayPercent)
  *   effectiveReputation = baseReputation * (100 - decayPercent) / 100
  */
-contract ReputationDecay is Ownable {
+contract ReputationDecay is AccessControl {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");
     // ============ Storage ============
 
     /// @notice Base reputation scores (before decay calculation)
@@ -71,7 +75,14 @@ contract ReputationDecay is Ownable {
 
     // ============ Constructor ============
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address initialAdmin) {
+        require(initialAdmin != address(0), "Invalid admin address");
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        _grantRole(ORACLE_ROLE, initialAdmin);
+        
+        _setRoleAdmin(ORACLE_ROLE, ADMIN_ROLE);
+    }
 
     // ============ Core Functions ============
 
@@ -123,7 +134,7 @@ contract ReputationDecay is Ownable {
      * @notice Record activity for a user (resets decay timer)
      * @param user The address to record activity for
      */
-    function recordActivity(address user) external onlyOwner {
+    function recordActivity(address user) external onlyRole(ORACLE_ROLE) {
         lastActivityTimestamp[user] = block.timestamp;
         emit ActivityRecorded(user, block.timestamp);
     }
@@ -133,7 +144,7 @@ contract ReputationDecay is Ownable {
      * @param user The address to set reputation for
      * @param amount The new base reputation amount
      */
-    function setReputation(address user, uint256 amount) external onlyOwner {
+    function setReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
         baseReputation[user] = amount;
         lastActivityTimestamp[user] = block.timestamp;
@@ -147,7 +158,7 @@ contract ReputationDecay is Ownable {
      * @param user The address to add reputation to
      * @param amount The amount to add
      */
-    function addReputation(address user, uint256 amount) external onlyOwner {
+    function addReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
         uint256 newReputation = oldReputation + amount;
         baseReputation[user] = newReputation;
@@ -167,7 +178,7 @@ contract ReputationDecay is Ownable {
      * @param user The address to deduct reputation from
      * @param amount The amount to deduct
      */
-    function deductReputation(address user, uint256 amount) external onlyOwner {
+    function deductReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
         uint256 newReputation = oldReputation > amount
             ? oldReputation - amount
@@ -188,7 +199,7 @@ contract ReputationDecay is Ownable {
      * @notice Set the decay rate per epoch
      * @param rate The new decay rate in basis points (e.g., 100 = 1%)
      */
-    function setDecayRatePerEpoch(uint256 rate) external onlyOwner {
+    function setDecayRatePerEpoch(uint256 rate) external onlyRole(ADMIN_ROLE) {
         if (rate > BASIS_POINTS) revert InvalidDecayRate();
         decayRatePerEpoch = rate;
         emit DecayParametersUpdated(
@@ -203,7 +214,7 @@ contract ReputationDecay is Ownable {
      * @notice Set the epoch duration
      * @param duration The new epoch duration in seconds
      */
-    function setEpochDuration(uint256 duration) external onlyOwner {
+    function setEpochDuration(uint256 duration) external onlyRole(ADMIN_ROLE) {
         if (duration == 0) revert InvalidEpochDuration();
         epochDuration = duration;
         emit DecayParametersUpdated(
@@ -218,7 +229,7 @@ contract ReputationDecay is Ownable {
      * @notice Set the inactivity threshold (grace period in epochs)
      * @param threshold The number of epochs before decay starts
      */
-    function setInactivityThreshold(uint256 threshold) external onlyOwner {
+    function setInactivityThreshold(uint256 threshold) external onlyRole(ADMIN_ROLE) {
         inactivityThreshold = threshold;
         emit DecayParametersUpdated(
             decayRatePerEpoch,
@@ -232,7 +243,7 @@ contract ReputationDecay is Ownable {
      * @notice Set the maximum decay percentage
      * @param maxDecay The maximum decay in basis points (e.g., 5000 = 50%)
      */
-    function setMaxDecayPercent(uint256 maxDecay) external onlyOwner {
+    function setMaxDecayPercent(uint256 maxDecay) external onlyRole(ADMIN_ROLE) {
         if (maxDecay > BASIS_POINTS) revert InvalidMaxDecayPercent();
         maxDecayPercent = maxDecay;
         emit DecayParametersUpdated(
