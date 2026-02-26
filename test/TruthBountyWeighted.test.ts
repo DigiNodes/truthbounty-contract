@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 
 describe("TruthBountyWeighted", function () {
   let truthBounty: Contract;
@@ -22,7 +23,7 @@ describe("TruthBountyWeighted", function () {
 
     // Deploy Token
     const TruthBountyToken = await ethers.getContractFactory("TruthBountyToken");
-    bountyToken = await TruthBountyToken.deploy();
+    bountyToken = await TruthBountyToken.deploy(await owner.getAddress());
     await bountyToken.waitForDeployment();
 
     // Deploy Mock Oracle
@@ -34,7 +35,8 @@ describe("TruthBountyWeighted", function () {
     const TruthBountyWeighted = await ethers.getContractFactory("TruthBountyWeighted");
     truthBounty = await TruthBountyWeighted.deploy(
       await bountyToken.getAddress(),
-      await mockOracle.getAddress()
+      await mockOracle.getAddress(),
+      await owner.getAddress()
     );
     await truthBounty.waitForDeployment();
 
@@ -225,8 +227,8 @@ describe("TruthBountyWeighted", function () {
           true, // passed
           ethers.parseEther("300"), // weighted for
           ethers.parseEther("100"), // weighted against
-          expect.anything(),
-          expect.anything()
+          anyValue,
+          anyValue
         );
 
       const settlement = await truthBounty.settlementResults(claimId);

@@ -3,9 +3,13 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract Staking is ReentrancyGuard, Ownable {
+contract Staking is ReentrancyGuard, AccessControl {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
     
     // The token being staked (TruthBountyToken)
     IERC20 public stakingToken;
@@ -35,10 +39,17 @@ contract Staking is ReentrancyGuard, Ownable {
      * @param _stakingToken Address of the TruthBountyToken
      * @param _initialLockDuration Initial lock time in seconds (e.g., 86400 for 1 day)
      */
-    constructor(address _stakingToken, uint256 _initialLockDuration) Ownable(msg.sender) {
+    constructor(address _stakingToken, uint256 _initialLockDuration, address initialAdmin) {
         require(_stakingToken != address(0), "Invalid token address");
+        require(initialAdmin != address(0), "Invalid admin address");
+        
         stakingToken = IERC20(_stakingToken);
         lockDuration = _initialLockDuration;
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
     }
 
     /**
@@ -100,7 +111,7 @@ contract Staking is ReentrancyGuard, Ownable {
     /**
      * @dev Admin function to update the lock duration for FUTURE stakes.
      */
-    function setLockDuration(uint256 _duration) external onlyOwner {
+    function setLockDuration(uint256 _duration) external onlyRole(ADMIN_ROLE) {
         lockDuration = _duration;
         emit LockDurationUpdated(_duration);
     }
@@ -109,9 +120,17 @@ contract Staking is ReentrancyGuard, Ownable {
      * @dev Set the authorized slashing contract
      * @param _slashingContract Address of the VerifierSlashing contract
      */
-    function setSlashingContract(address _slashingContract) external onlyOwner {
+    function setSlashingContract(address _slashingContract) external onlyRole(ADMIN_ROLE) {
         require(_slashingContract != address(0), "Invalid slashing contract");
+        
+        // Revoke role from old slashing contract if it exists
+        if (slashingContract != address(0)) {
+            _revokeRole(RESOLVER_ROLE, slashingContract);
+        }
+        
         slashingContract = _slashingContract;
+        _grantRole(RESOLVER_ROLE, _slashingContract);
+        
         emit SlashingContractUpdated(_slashingContract);
     }
     
@@ -121,7 +140,10 @@ contract Staking is ReentrancyGuard, Ownable {
      * @param amount Amount to slash from their stake
      */
     function forceSlash(address user, uint256 amount) external {
-        require(msg.sender == slashingContract, "Only slashing contract can slash");
+        if (!hasRole(RESOLVER_ROLE, msg.sender)) {
+            revert("Only authorized resolvers can slash");
+        }
+        // Slashing contract check as secondary safeguard
         require(slashingContract != address(0), "Slashing contract not set");
         
         StakeInfo storage info = stakes[user];

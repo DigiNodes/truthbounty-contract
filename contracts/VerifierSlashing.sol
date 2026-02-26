@@ -20,8 +20,12 @@ interface IStaking {
 contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
     
     // Role definitions
-    bytes32 public constant SETTLEMENT_ROLE = keccak256("SETTLEMENT_ROLE");
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    
+    // Legacy mapping for backward compatibility
+    bytes32 public constant SETTLEMENT_ROLE = RESOLVER_ROLE;
     
     // Maximum slashing percentage (100%)
     uint256 public constant MAX_SLASH_PERCENTAGE = 100;
@@ -92,9 +96,11 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ADMIN_ROLE, _admin);
+        _grantRole(PAUSER_ROLE, _admin);
         
-        // Admin can grant/revoke settlement role
-        _setRoleAdmin(SETTLEMENT_ROLE, ADMIN_ROLE);
+        // Admin can grant/revoke resolver role
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
     }
     
     /**
@@ -109,7 +115,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
         string calldata reason
     ) external nonReentrant whenNotPaused {
         // Access control check
-        if (!hasRole(SETTLEMENT_ROLE, msg.sender)) {
+        if (!hasRole(RESOLVER_ROLE, msg.sender)) {
             revert UnauthorizedSlashing();
         }
         
@@ -181,7 +187,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
         uint256[] calldata percentages,
         string[] calldata reasons
     ) external nonReentrant whenNotPaused {
-        if (!hasRole(SETTLEMENT_ROLE, msg.sender)) {
+        if (!hasRole(RESOLVER_ROLE, msg.sender)) {
             revert UnauthorizedSlashing();
         }
         
@@ -337,7 +343,23 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
     }
     
     /**
-     * @dev Grant settlement role to an address (typically the settlement contract)
+     * @dev Grant resolver role to an address (typically the settlement contract)
+     * @param account Address to grant the role to
+     */
+    function grantResolverRole(address account) external onlyRole(ADMIN_ROLE) {
+        _grantRole(RESOLVER_ROLE, account);
+    }
+    
+    /**
+     * @dev Revoke resolver role from an address
+     * @param account Address to revoke the role from
+     */
+    function revokeResolverRole(address account) external onlyRole(ADMIN_ROLE) {
+        _revokeRole(RESOLVER_ROLE, account);
+    }
+
+    /**
+     * @dev Grant settlement role to an address (Legacy alias)
      * @param account Address to grant the role to
      */
     function grantSettlementRole(address account) external onlyRole(ADMIN_ROLE) {
@@ -345,7 +367,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
     }
     
     /**
-     * @dev Revoke settlement role from an address
+     * @dev Revoke settlement role from an address (Legacy alias)
      * @param account Address to revoke the role from
      */
     function revokeSettlementRole(address account) external onlyRole(ADMIN_ROLE) {
@@ -355,14 +377,14 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable {
     /**
      * @dev Emergency pause function
      */
-    function pause() external onlyRole(ADMIN_ROLE) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
     
     /**
      * @dev Unpause function
      */
-    function unpause() external onlyRole(ADMIN_ROLE) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 }

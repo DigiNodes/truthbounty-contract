@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IReputationOracle.sol";
 
@@ -17,7 +17,10 @@ import "./IReputationOracle.sol";
  * - Prevents low-reputation dominance through minimum thresholds
  * - Emergency fallback to equal weighting
  */
-contract WeightedStaking is Ownable, ReentrancyGuard {
+contract WeightedStaking is AccessControl, ReentrancyGuard {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     // ============ State Variables ============
 
@@ -77,9 +80,14 @@ contract WeightedStaking is Ownable, ReentrancyGuard {
      * @notice Initialize the weighted staking contract
      * @param _reputationOracle Address of the reputation oracle contract
      */
-    constructor(address _reputationOracle) Ownable(msg.sender) {
+    constructor(address _reputationOracle, address initialAdmin) {
         if (_reputationOracle == address(0)) revert InvalidReputationOracle();
+        require(initialAdmin != address(0), "Invalid admin address");
+        
         reputationOracle = IReputationOracle(_reputationOracle);
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
     }
 
     // ============ Core Functions ============
@@ -220,7 +228,7 @@ contract WeightedStaking is Ownable, ReentrancyGuard {
      * @notice Update the reputation oracle address
      * @param _newOracle Address of the new reputation oracle
      */
-    function setReputationOracle(address _newOracle) external onlyOwner {
+    function setReputationOracle(address _newOracle) external onlyRole(ADMIN_ROLE) {
         if (_newOracle == address(0)) revert InvalidReputationOracle();
 
         address oldOracle = address(reputationOracle);
@@ -234,7 +242,7 @@ contract WeightedStaking is Ownable, ReentrancyGuard {
      * @param _minScore New minimum reputation score
      * @param _maxScore New maximum reputation score
      */
-    function setReputationBounds(uint256 _minScore, uint256 _maxScore) external onlyOwner {
+    function setReputationBounds(uint256 _minScore, uint256 _maxScore) external onlyRole(ADMIN_ROLE) {
         if (_minScore == 0 || _minScore >= _maxScore) revert InvalidReputationBounds();
 
         minReputationScore = _minScore;
@@ -247,7 +255,7 @@ contract WeightedStaking is Ownable, ReentrancyGuard {
      * @notice Update the default reputation score for users without reputation
      * @param _defaultScore New default reputation score
      */
-    function setDefaultReputationScore(uint256 _defaultScore) external onlyOwner {
+    function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
         if (_defaultScore == 0) revert InvalidDefaultReputation();
 
         defaultReputationScore = _defaultScore;
@@ -259,7 +267,7 @@ contract WeightedStaking is Ownable, ReentrancyGuard {
      * @notice Enable or disable weighted staking (emergency toggle)
      * @param _enabled Whether to enable weighted staking
      */
-    function setWeightedStakingEnabled(bool _enabled) external onlyOwner {
+    function setWeightedStakingEnabled(bool _enabled) external onlyRole(ADMIN_ROLE) {
         weightedStakingEnabled = _enabled;
 
         emit WeightedStakingToggled(_enabled);
