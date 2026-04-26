@@ -4,7 +4,7 @@
 //   1. TruthBountyToken  — The ERC20 token (no constructor args)
 //   2. TruthBounty       — The main claim/vote/settlement contract
 //
-// DEPLOYMENT ORDER:
+// DEPLOYMENT ORDER:createSnapshot(
 //   Token first → then TruthBounty (needs token address)
 //   → then wires them: token.setSettlementContract(truthBounty)
 //
