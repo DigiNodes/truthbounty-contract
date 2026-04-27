@@ -101,6 +101,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable {
     mapping(uint256 => SettlementResult) public settlementResults;
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(address => VerifierStake) public verifierStakes;
+    mapping(uint256 => address[]) private claimVoters;  // Track all voters per claim for settlement
 
     uint256 public claimCounter;
     uint256 public totalSlashed;
@@ -260,6 +261,9 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable {
             stakeReturned: false,
             slashAmount: 0
         });
+
+        // Track this voter for settlement calculations
+        claimVoters[claimId].push(msg.sender);
 
         // Update claim totals with WEIGHTED stakes
         if (support) {
