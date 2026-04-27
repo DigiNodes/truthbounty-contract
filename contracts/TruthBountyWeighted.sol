@@ -79,6 +79,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable {
         uint256 reputationScore;       // Reputation score at vote time (NEW)
         bool rewardClaimed;
         bool stakeReturned;
+        uint256 slashAmount;           // Per-vote slash amount calculated at settlement (prevents double-slash)
     }
 
     struct SettlementResult {
