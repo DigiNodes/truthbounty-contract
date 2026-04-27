@@ -331,6 +331,39 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         }
     }
 
+    function withdrawSettledStake(uint256 claimId) external nonReentrant {
+        Claim storage claim = claims[claimId];
+        require(claim.settled, "Claim not settled");
+
+        Vote storage vote = votes[claimId][msg.sender];
+        require(vote.voted, "No vote cast");
+        require(!vote.stakeReturned, "Stake already returned");
+
+        SettlementResult storage settlement = settlementResults[claimId];
+
+        bool isWinner = (vote.support == settlement.passed);
+        require(!isWinner, "Winners should use claimSettlementRewards");
+
+        // Calculate slashed portion
+        uint256 slashedAmount = (vote.stakeAmount * slashPercent) / 100;
+        uint256 returnAmount = vote.stakeAmount - slashedAmount;
+
+        vote.stakeReturned = true;
+
+        // Update accounting
+        verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+
+        // Transfer remaining stake
+        if (returnAmount > 0) {
+            require(
+                bountyToken.transfer(msg.sender, returnAmount),
+                "Stake transfer failed"
+            );
+        }
+
+        emit StakeWithdrawn(msg.sender, returnAmount);
+    }
+
     function withdrawStake(uint256 amount) external nonReentrant {
         VerifierStake storage stake = verifierStakes[msg.sender];
         require(stake.totalStaked >= stake.activeStakes + amount, "Insufficient available stake");
