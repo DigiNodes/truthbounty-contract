@@ -260,7 +260,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         emit VoteCast(claimId, msg.sender, support, stakeAmount);
     }
 
-    function settleClaim(uint256 claimId) external nonReentrant {
+    function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(block.timestamp >= claim.verificationWindowEnd, "Verification window not closed");
@@ -302,7 +302,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         });
     }
 
-    function claimSettlementRewards(uint256 claimId) external nonReentrant {
+    function claimSettlementRewards(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.settled, "Claim not settled");
 
@@ -364,7 +364,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         emit StakeWithdrawn(msg.sender, returnAmount);
     }
 
-    function withdrawStake(uint256 amount) external nonReentrant {
+    function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
         VerifierStake storage stake = verifierStakes[msg.sender];
         require(stake.totalStaked >= stake.activeStakes + amount, "Insufficient available stake");
 
