@@ -292,7 +292,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @notice Settle a claim after verification window closes
      * @param claimId The ID of the claim to settle
      */
-    function settleClaim(uint256 claimId) external nonReentrant {
+    function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(block.timestamp >= claim.verificationWindowEnd, "Verification window not closed");
@@ -324,7 +324,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @notice Claim rewards for winning a vote
      * @param claimId The ID of the settled claim
      */
-    function claimSettlementRewards(uint256 claimId) external nonReentrant {
+    function claimSettlementRewards(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(claim.settled, "Claim not settled");
@@ -405,7 +405,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     /**
      * @notice Withdraw available stake (not locked in active claims)
      */
-    function withdrawStake(uint256 amount) external nonReentrant {
+    function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
         VerifierStake storage stake = verifierStakes[msg.sender];
         require(
             stake.totalStaked >= stake.activeStakes + amount,
@@ -541,7 +541,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             
             if (isLoser) {
                 // Calculate slash as 20% of their RAW stake
-                uint256 slashAmount = (vote.stakeAmount * SLASH_PERCENT) / 100;
+                uint256 slashAmount = (vote.stakeAmount * slashPercent) / 100;
                 vote.slashAmount = slashAmount;
                 totalSlashed += slashAmount;
             } else {
