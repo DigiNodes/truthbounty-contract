@@ -170,7 +170,12 @@ interface GovernanceHooks {
     /**
      * @notice Get proposal details
      * @param proposalId The proposal ID to query
-     * @return paramType, oldValue, newValue, newAddress, status, proposer
+     * @return paramType The proposal parameter type
+     * @return oldValue The old value before the proposal
+     * @return newValue The proposed new value
+     * @return newAddress The proposed new address value
+     * @return status The proposal status code
+     * @return proposer The account that created the proposal
      */
     function getProposalDetails(bytes32 proposalId) external view returns (
         ParameterType paramType,
