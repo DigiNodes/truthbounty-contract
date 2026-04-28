@@ -275,7 +275,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         emit ClaimSettled(claimId, passed, claim.totalStakedFor, claim.totalStakedAgainst, rewardAmount, slashedAmount);
     }
 
-    function _determineOutcome(uint256 stakedFor, uint256 stakedAgainst) internal pure returns (bool) {
+    function _determineOutcome(uint256 stakedFor, uint256 stakedAgainst) internal view returns (bool) {
         uint256 totalStake = stakedFor + stakedAgainst;
         if (totalStake == 0) return false;
         uint256 forPercent = (stakedFor * 100) / totalStake;

@@ -41,7 +41,7 @@ async function main() {
   // 4. Deploy TruthBountyWeighted
   console.log("📝 Step 4/4: Deploying TruthBountyWeighted...");
   const TruthBountyWeighted = await ethers.getContractFactory("TruthBountyWeighted");
-  const truthBounty = await TruthBountyWeighted.deploy(tokenAddress, oracleAddress);
+  const truthBounty = await TruthBountyWeighted.deploy(tokenAddress, oracleAddress, deployer.address, deployer.address);
   await truthBounty.waitForDeployment();
   const truthBountyAddress = await truthBounty.getAddress();
   console.log("   ✅ TruthBountyWeighted deployed to:", truthBountyAddress);

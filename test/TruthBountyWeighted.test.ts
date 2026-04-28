@@ -36,6 +36,7 @@ describe("TruthBountyWeighted", function () {
     truthBounty = await TruthBountyWeighted.deploy(
       await bountyToken.getAddress(),
       await mockOracle.getAddress(),
+      await owner.getAddress(),
       await owner.getAddress()
     );
     await truthBounty.waitForDeployment();
@@ -385,6 +386,29 @@ describe("TruthBountyWeighted", function () {
         .withArgs(false);
 
       expect(await truthBounty.weightedStakingEnabled()).to.equal(false);
+    });
+
+    it("Should allow owner to update minimum stake amount and enforce it for new votes", async function () {
+      const newMinStake = ethers.parseEther("200");
+
+      await expect(truthBounty.setMinStakeAmount(newMinStake))
+        .to.emit(truthBounty, "ParameterUpdatedByGovernance")
+        .withArgs(
+          await truthBounty.GOVERNANCE_PARAM_MIN_STAKE(),
+          ethers.parseEther("100"),
+          newMinStake
+        );
+
+      expect(await truthBounty.minStakeAmount()).to.equal(newMinStake);
+
+      // Stake below the new minimum should fail
+      await expect(truthBounty.connect(verifier1).stake(ethers.parseEther("150")))
+        .to.be.revertedWith("Stake below minimum");
+
+      // Stake equal to the new minimum should succeed
+      await expect(truthBounty.connect(verifier1).stake(newMinStake))
+        .to.emit(truthBounty, "StakeDeposited")
+        .withArgs(await verifier1.getAddress(), newMinStake);
     });
   });
 

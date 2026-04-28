@@ -23,6 +23,7 @@ library GovernorAccess {
     error NotProposalExecutor(address caller);
     error RoleAlreadyGranted(address account, bytes32 role);
     error RoleNotGranted(address account, bytes32 role);
+    error AccessDenied(address account);
     error NullProposalId();
     error ProposalNotPending(bytes32 proposalId);
     error ProposalAlreadyExecuted(bytes32 proposalId);
@@ -40,6 +41,9 @@ library GovernorAccess {
     
     /// @notice Role for emergency actions
     bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
+
+    /// @notice Default admin role identifier used for comparisons
+    bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x0000000000000000000000000000000000000000000000000000000000000000;
 
     // ============ Data Structures ============
 
@@ -139,7 +143,7 @@ library GovernorAccess {
         if (role == PROPOSAL_EXECUTOR_ROLE) return "PROPOSAL_EXECUTOR";
         if (role == PARAMETER_MANAGER_ROLE) return "PARAMETER_MANAGER";
         if (role == EMERGENCY_ROLE) return "EMERGENCY";
-        if (role == AccessControl.DEFAULT_ADMIN_ROLE) return "DEFAULT_ADMIN";
+        if (role == DEFAULT_ADMIN_ROLE) return "DEFAULT_ADMIN";
         return "UNKNOWN";
     }
 }
@@ -300,7 +304,7 @@ abstract contract GovernorAccessControl is AccessControl {
         
         // Only proposer or admin can cancel
         if (proposal.proposer != msg.sender && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
-            revert AccessControl.AccessDenied();
+            revert("Not authorized");
         }
         
         proposal.executed = true; // Mark as cancelled
@@ -311,7 +315,13 @@ abstract contract GovernorAccessControl is AccessControl {
     /**
      * @notice Get role proposal details
      * @param proposalId The proposal ID to query
-     * @return The role proposal details
+     * @return account The account for the role proposal
+     * @return role The role identifier
+     * @return grant Whether the proposal grants the role
+     * @return executeAfter The earliest execution timestamp
+     * @return executed Whether the proposal has been executed
+     * @return proposer The account that proposed the role change
+     * @return createdAt The timestamp when the proposal was created
      */
     function getRoleProposal(bytes32 proposalId) external view returns (
         address account,
