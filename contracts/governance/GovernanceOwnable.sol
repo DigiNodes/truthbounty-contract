@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./GovernanceHooks.sol";
 
 /**
@@ -17,7 +18,7 @@ import "./GovernanceHooks.sol";
  * - Upgrade authorization flow
  * - Role management integration
  */
-abstract contract GovernanceOwnable is AccessControl {
+abstract contract GovernanceOwnable is AccessControl, Pausable {
     // ============ Constants ============
     
     bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
@@ -96,7 +97,7 @@ abstract contract GovernanceOwnable is AccessControl {
         
         // Grant roles
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(GOVERVERNANCE_ADMIN_ROLE, _admin);
+        _grantRole(GOVERNANCE_ADMIN_ROLE, _admin);
         
         if (_governanceController != address(0)) {
             _grantRole(GOVERNANCE_ROLE, _governanceController);
@@ -175,7 +176,7 @@ abstract contract GovernanceOwnable is AccessControl {
         
         // Revoke old governance role
         if (oldController != address(0)) {
-            _revokeRole(GOVERVERNANCE_ROLE, oldController);
+            _revokeRole(GOVERNANCE_ROLE, oldController);
         }
         
         governanceController = _newController;

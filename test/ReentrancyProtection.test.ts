@@ -55,6 +55,7 @@ describe("Reentrancy Protection Tests", function () {
     const truthBounty = await TruthBountyWeighted.deploy(
       await token.getAddress(),
       await oracle.getAddress(),
+      owner.address,
       owner.address
     );
 

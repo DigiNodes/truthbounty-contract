@@ -17,7 +17,7 @@ import "./GovernorAccess.sol";
  * 3. Once approved, proposal can be executed here
  * 4. Execution updates the target contract parameters
  */
-contract GovernanceController is AccessControl, ReentrancyGuard, GovernanceHooks {
+contract GovernanceController is GovernorAccessControl, ReentrancyGuard, GovernanceHooks {
     // ============ Constants ============
     
     uint256 public constant MIN_PROPOSAL_DELAY = 1 hours;
@@ -173,7 +173,7 @@ contract GovernanceController is AccessControl, ReentrancyGuard, GovernanceHooks
         
         uint256 oldValue = proposal.paramType == ParameterType.REPUTATION_ORACLE ||
                          proposal.paramType == ParameterType.STAKING_CONTRACT
-            ? uint256(proposals[proposalId].newAddress)
+            ? uint256(uint160(proposals[proposalId].newAddress))
             : proposal.oldValue;
             
         // Update stored value
@@ -208,7 +208,7 @@ contract GovernanceController is AccessControl, ReentrancyGuard, GovernanceHooks
         
         // Only proposer or admin can cancel
         if (proposal.proposer != msg.sender && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
-            revert AccessControl.AccessDenied();
+            revert("Not authorized");
         }
         
         proposal.status = 2;
@@ -342,8 +342,13 @@ contract GovernanceController is AccessControl, ReentrancyGuard, GovernanceHooks
 
     /**
      * @notice Get proposal details
-     * @param proposalId The proposal ID
-     * @return paramType, oldValue, newValue, newAddress, status, proposer
+     * @param proposalId The proposal ID to query
+     * @return paramType The proposal parameter type
+     * @return oldValue The old value before the proposal
+     * @return newValue The proposed new value
+     * @return newAddress The proposed new address value
+     * @return status The proposal status code
+     * @return proposer The account that created the proposal
      */
     function getProposalDetails(bytes32 proposalId) external view returns (
         ParameterType paramType,
