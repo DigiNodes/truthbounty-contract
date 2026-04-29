@@ -311,6 +311,49 @@ describe("TruthBountyWeighted", function () {
     });
   });
 
+  describe("Pause Guards", function () {
+    let claimId: bigint;
+
+    beforeEach(async function () {
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+      await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
+
+      await truthBounty.connect(submitter).createClaim("QmPausedClaim");
+      claimId = 0n;
+
+      await truthBounty.connect(verifier1).vote(claimId, true, ethers.parseEther("100"));
+      await truthBounty.connect(verifier2).vote(claimId, false, ethers.parseEther("100"));
+    });
+
+    it("Should revert settleClaim when paused", async function () {
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.pause();
+
+      await expect(truthBounty.settleClaim(claimId)).to.be.revertedWithCustomError(
+        truthBounty,
+        "EnforcedPause"
+      );
+    });
+
+    it("Should revert claimSettlementRewards when paused", async function () {
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(claimId);
+      await truthBounty.pause();
+
+      await expect(
+        truthBounty.connect(verifier2).claimSettlementRewards(claimId)
+      ).to.be.revertedWithCustomError(truthBounty, "EnforcedPause");
+    });
+
+    it("Should revert withdrawStake when paused", async function () {
+      await truthBounty.pause();
+
+      await expect(
+        truthBounty.connect(verifier1).withdrawStake(ethers.parseEther("100"))
+      ).to.be.revertedWithCustomError(truthBounty, "EnforcedPause");
+    });
+  });
+
   describe("Equal Weight Fallback", function () {
     let claimId: bigint;
 
