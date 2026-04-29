@@ -12,6 +12,10 @@ import "./governance/GovernanceHooks.sol";
 /**
  * @title TruthBountyToken
  * @notice ERC20 token for TruthBounty rewards with staking capabilities
+ * @dev The stake/withdrawStake/slashVerifier functions on this contract are DEPRECATED.
+ *      They create an untracked parallel stake pool with no claim linkage.
+ *      Use TruthBountyWeighted.stake() / withdrawStake() for all verifier staking.
+ *      See docs/protocol-spec.md for the canonical architecture.
  */
 contract TruthBountyToken is ERC20, AccessControl {
     // ============ Roles ============
@@ -62,6 +66,7 @@ contract TruthBountyToken is ERC20, AccessControl {
         slashPercentage = percentage;
     }
 
+    /// @dev DEPRECATED — use TruthBountyWeighted.stake() instead.
     function stake(uint256 amount) external {
         require(amount > 0, "Invalid amount");
         _transfer(msg.sender, address(this), amount);
@@ -70,6 +75,7 @@ contract TruthBountyToken is ERC20, AccessControl {
         emit StakeDeposited(msg.sender, amount);
     }
 
+    /// @dev DEPRECATED — use TruthBountyWeighted.withdrawStake() instead.
     function withdrawStake(uint256 amount) external {
         require(verifierStake[msg.sender] >= amount, "Insufficient stake");
 
@@ -79,6 +85,7 @@ contract TruthBountyToken is ERC20, AccessControl {
         emit StakeWithdrawn(msg.sender, amount);
     }
 
+    /// @dev DEPRECATED — use VerifierSlashing.slash() for admin-initiated slashing.
     function slashVerifier(
         address verifier,
         string calldata reason
@@ -103,6 +110,9 @@ contract TruthBountyToken is ERC20, AccessControl {
 /**
  * @title TruthBounty
  * @notice Main contract for claim verification, voting, and settlement
+ * @dev DEPRECATED — use TruthBountyWeighted for all new integrations.
+ *      This contract lacks reputation-weighted voting and will not receive updates.
+ *      See docs/protocol-spec.md for the canonical architecture.
  */
 contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
@@ -225,6 +235,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         return claimId;
     }
 
+    /// @dev DEPRECATED — call TruthBountyWeighted.stake() instead.
     function stake(uint256 amount) external nonReentrant whenNotPaused {
         require(amount >= minStakeAmount, "Stake below minimum");
         require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
