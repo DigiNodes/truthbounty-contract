@@ -10,6 +10,12 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @title TruthBountyClaims
  * @dev Handles batched claim settlements for TruthBounty protocols.
  *      Focuses on gas efficiency and loop safety.
+ * @notice IMPORTANT: This contract is a treasury-controlled batch token payout utility.
+ *         It does NOT implement the claim lifecycle (create/vote/settle).
+ *         For the claim lifecycle use TruthBountyWeighted.
+ *         This contract is used only for off-chain-resolved reward disbursement
+ *         where a TREASURY_ROLE holder pushes payouts in bulk.
+ *         See docs/protocol-spec.md for the canonical architecture.
  */
 contract TruthBountyClaims is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
