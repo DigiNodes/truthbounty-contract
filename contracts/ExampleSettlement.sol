@@ -7,7 +7,9 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 /**
  * @title ExampleSettlement
  * @dev Example settlement contract showing integration with VerifierSlashing
- * @notice This is a simplified example for demonstration purposes
+ * @notice DEMO ONLY — not audited for production use.
+ *         Do not deploy this contract in production environments.
+ *         See docs/protocol-spec.md for the canonical architecture.
  */
 
 // Interface for the slashing contract
