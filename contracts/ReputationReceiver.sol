@@ -11,6 +11,7 @@ import "./IReputationOracle.sol";
  */
 contract ReputationReceiver is AccessControl {
     bytes32 public constant RECEIVER_ROLE = keccak256("RECEIVER_ROLE");
+    uint256 public constant MAX_PROOF_LENGTH = 64;
 
     IReputationOracle public reputationOracle;
 
@@ -35,11 +36,22 @@ contract ReputationReceiver is AccessControl {
     );
 
     // Errors
+    error InvalidAdmin();
+    error InvalidOracle();
+    error InvalidUser();
+    error InvalidSourceChainId();
+    error InvalidSnapshotRoot();
+    error InvalidTimestamp();
+    error InvalidProofIndex();
+    error ProofTooLong();
     error InvalidProof();
     error RootNotVerified();
     error ReputationAlreadyBridged();
 
     constructor(address admin, IReputationOracle _oracle) {
+        if (admin == address(0)) revert InvalidAdmin();
+        if (address(_oracle) == address(0)) revert InvalidOracle();
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(RECEIVER_ROLE, admin);
         reputationOracle = _oracle;
@@ -56,6 +68,9 @@ contract ReputationReceiver is AccessControl {
         uint256 snapshotId,
         bytes32 root
     ) external onlyRole(RECEIVER_ROLE) {
+        if (sourceChainId == 0) revert InvalidSourceChainId();
+        if (root == bytes32(0)) revert InvalidSnapshotRoot();
+
         verifiedRoots[sourceChainId][snapshotId] = root;
         emit SnapshotRootVerified(sourceChainId, snapshotId, root);
     }
@@ -79,6 +94,12 @@ contract ReputationReceiver is AccessControl {
         bytes32[] calldata proof,
         uint256 proofIndex
     ) external onlyRole(RECEIVER_ROLE) {
+        if (user == address(0)) revert InvalidUser();
+        if (sourceChainId == 0) revert InvalidSourceChainId();
+        if (timestamp == 0) revert InvalidTimestamp();
+        if (proof.length > MAX_PROOF_LENGTH) revert ProofTooLong();
+        if (proofIndex >= (uint256(1) << proof.length)) revert InvalidProofIndex();
+
         bytes32 root = verifiedRoots[sourceChainId][snapshotId];
         if (root == bytes32(0)) revert RootNotVerified();
 
