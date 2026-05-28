@@ -107,6 +107,8 @@ contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeabl
             reason
         );
     }
+
+    function _authorizeUpgrade(address) internal override onlyRole(ADMIN_ROLE) {}
 }
 
 /**
