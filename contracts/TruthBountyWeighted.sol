@@ -96,6 +96,9 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         uint256 totalSlashed;
         uint256 winnerWeightedStake;   // Changed to weighted (NEW)
         uint256 loserWeightedStake;    // Changed to weighted (NEW)
+        uint256 winnerCount;           // Number of winning voters eligible for rewards
+        uint256 winnersClaimed;        // Number of winning voters that claimed rewards
+        uint256 rewardsClaimed;        // Total rewards already distributed
     }
 
     struct VerifierStake {
@@ -340,8 +343,16 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         bool isWinner = (vote.support == settlement.passed);
         require(isWinner, "Not a winner");
 
-        // Calculate proportional reward based on EFFECTIVE stake
+        // Calculate proportional reward based on EFFECTIVE stake. Integer division can
+        // leave a remainder, so assign any undistributed dust to the final winning
+        // claimant to ensure totalRewards is fully paid out.
         uint256 reward = (vote.effectiveStake * settlement.totalRewards) / settlement.winnerWeightedStake;
+
+        settlement.winnersClaimed += 1;
+        if (settlement.winnersClaimed == settlement.winnerCount) {
+            reward = settlement.totalRewards - settlement.rewardsClaimed;
+        }
+        settlement.rewardsClaimed += reward;
 
         // Mark as claimed
         vote.rewardClaimed = true;
@@ -518,8 +529,25 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             totalRewards: rewardAmount,
             totalSlashed: slashedAmount,
             winnerWeightedStake: winnerWeightedStake,
-            loserWeightedStake: loserWeightedStake
+            loserWeightedStake: loserWeightedStake,
+            winnerCount: _countWinners(claimId, passed),
+            winnersClaimed: 0,
+            rewardsClaimed: 0
         });
+    }
+
+    /**
+     * @notice Count voters on the winning side for remainder-safe reward distribution
+     */
+    function _countWinners(uint256 claimId, bool passed) internal view returns (uint256 count) {
+        address[] storage voters = claimVoters[claimId];
+
+        for (uint256 i = 0; i < voters.length; i++) {
+            Vote storage vote = votes[claimId][voters[i]];
+            if (vote.support == passed) {
+                count += 1;
+            }
+        }
     }
 
     /**
