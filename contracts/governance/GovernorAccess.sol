@@ -180,7 +180,7 @@ abstract contract GovernorAccessControl is AccessControl {
         _;
     }
     
-    modifier onlyProposalExecutor() {
+    modifier onlyProposalExecutor() virtual {
         if (!hasRole(GovernorAccess.PROPOSAL_EXECUTOR_ROLE, msg.sender) && 
             !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert GovernorAccess.NotProposalExecutor(msg.sender);

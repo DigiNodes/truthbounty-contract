@@ -365,18 +365,18 @@ describe("TruthBountyWeighted", function () {
       await time.increase(VERIFICATION_WINDOW + 1);
       await truthBounty.settleClaim(claimId);
 
-      const losingVote = await truthBounty.getVote(claimId, await verifier2.getAddress());
+      const losingVote = await truthBounty.getVote(claimId, await verifier1.getAddress());
       expect(losingVote.slashAmount).to.equal(ethers.parseEther("20"));
 
       await truthBounty.setSlashPercent(100);
 
-      const balanceBefore = await bountyToken.balanceOf(await verifier2.getAddress());
-      await truthBounty.connect(verifier2).withdrawSettledStake(claimId);
-      const balanceAfter = await bountyToken.balanceOf(await verifier2.getAddress());
+      const balanceBefore = await bountyToken.balanceOf(await verifier1.getAddress());
+      await truthBounty.connect(verifier1).withdrawSettledStake(claimId);
+      const balanceAfter = await bountyToken.balanceOf(await verifier1.getAddress());
 
       expect(balanceAfter - balanceBefore).to.equal(ethers.parseEther("80"));
 
-      const verifierStake = await truthBounty.getVerifierStake(await verifier2.getAddress());
+      const verifierStake = await truthBounty.getVerifierStake(await verifier1.getAddress());
       expect(verifierStake.totalStaked).to.equal(ethers.parseEther("980"));
       expect(verifierStake.activeStakes).to.equal(0);
     });
