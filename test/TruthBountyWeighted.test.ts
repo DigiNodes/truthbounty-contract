@@ -362,7 +362,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
       await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
 
       const losingVote = await truthBounty.getVote(claimId, await verifier1.getAddress());
@@ -614,7 +614,7 @@ describe("TruthBountyWeighted", function () {
     describe("BountyToken Change Mechanism", function () {
     it("Should allow the owner to update the bounty token address", async function () {
       const TruthBountyTokenFactory = await ethers.getContractFactory("TruthBountyToken");
-      const newToken = await TruthBountyTokenFactory.deploy();
+      const newToken = await TruthBountyTokenFactory.deploy(await owner.getAddress());
       await newToken.waitForDeployment();
 
       // Directly execute the change mechanism
@@ -631,7 +631,4 @@ describe("TruthBountyWeighted", function () {
       ).to.be.revertedWith("Unauthorized");
     });
   });
-
-  });
-
 });

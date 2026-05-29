@@ -23,7 +23,7 @@ describe("Unified RBAC System", function () {
 
         // 4. VerifierSlashing
         const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-        const slashing = await VerifierSlashing.deploy(stakingAddress, admin.address);
+        const slashing = await VerifierSlashing.deploy(stakingAddress, admin.address, admin.address);
         const slashingAddress = await slashing.getAddress();
 
         // 5. TruthBountyClaims
@@ -33,12 +33,12 @@ describe("Unified RBAC System", function () {
 
         // 6. TruthBounty (Main)
         const TruthBounty = await ethers.getContractFactory("TruthBounty");
-        const truthBounty = await TruthBounty.deploy(tokenAddress, admin.address);
+        const truthBounty = await TruthBounty.deploy(tokenAddress, admin.address, admin.address);
         const truthBountyAddress = await truthBounty.getAddress();
 
         // 7. WeightedStaking
-        const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
-        const weightedStaking = await WeightedStaking.deploy(owner.address, admin.address); // owner as dummy oracle
+        const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
+        const weightedStaking = await WeightedStaking.deploy(owner.address, admin.address, admin.address); // owner as dummy oracle
         const weightedStakingAddress = await weightedStaking.getAddress();
 
         // Roles

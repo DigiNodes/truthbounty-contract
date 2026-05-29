@@ -94,7 +94,7 @@ describe("Reentrancy Protection Tests", function () {
 
     // Deploy slashing
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
+    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
 
     // Set slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
@@ -467,15 +467,17 @@ describe("Reentrancy Protection Tests", function () {
         const contractBalanceBefore = await token.balanceOf(await truthBounty.getAddress());
         const verifierBalanceBefore = await token.balanceOf(verifier1.address);
 
-        // Withdraw
-        await truthBounty.connect(verifier1).withdrawStake(stakeAmount);
+        // Withdraw initiation (will revert with cooldown notice)
+        await expect(
+          truthBounty.connect(verifier1).withdrawStake(stakeAmount)
+        ).to.be.revertedWith("Withdrawal initiated. Please wait 2 days cooldown.");
 
-        // Verify single withdrawal
+        // Verify no withdrawal occurred (balances remain the same)
         const contractBalanceAfter = await token.balanceOf(await truthBounty.getAddress());
         const verifierBalanceAfter = await token.balanceOf(verifier1.address);
 
-        expect(contractBalanceBefore - contractBalanceAfter).to.equal(stakeAmount);
-        expect(verifierBalanceAfter - verifierBalanceBefore).to.equal(stakeAmount);
+        expect(contractBalanceAfter).to.equal(contractBalanceBefore);
+        expect(verifierBalanceAfter).to.equal(verifierBalanceBefore);
       });
     });
   });
