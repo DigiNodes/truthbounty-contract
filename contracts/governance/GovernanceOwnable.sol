@@ -23,6 +23,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     
     bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
     bytes32 public constant GOVERNANCE_ADMIN_ROLE = keccak256("GOVERNANCE_ADMIN_ROLE");
+    bytes32 public constant RECOVERY_ROLE = keccak256("RECOVERY_ROLE");
     
     /// @notice Address of the governance controller
     address public governanceController;
@@ -53,6 +54,18 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         bytes32 indexed paramId,
         uint256 oldValue,
         uint256 newValue
+    );
+    
+    event RoleRecovered(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed recoveryAdmin
+    );
+    
+    event RoleRevokedByRecovery(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed recoveryAdmin
     );
 
     // ============ Errors ============
@@ -98,12 +111,14 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         // Grant roles
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(GOVERNANCE_ADMIN_ROLE, _admin);
+        _grantRole(RECOVERY_ROLE, _admin);
         
         if (_governanceController != address(0)) {
             _grantRole(GOVERNANCE_ROLE, _governanceController);
         }
         
         _setRoleAdmin(GOVERNANCE_ROLE, GOVERNANCE_ADMIN_ROLE);
+        _setRoleAdmin(RECOVERY_ROLE, GOVERNANCE_ADMIN_ROLE);
     }
 
     // ============ Governance Parameter Update Functions ============
@@ -233,4 +248,38 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     function getGovernanceVersion() external view returns (uint256) {
         return 1; // Placeholder for future governance version tracking
     }
+
+    // ============ Role Recovery Functions ============
+    
+    /**
+     * @notice Recover a role by granting it in an emergency
+     * @param role The role to recover
+     * @param account The address to grant the role to
+     */
+    function recoverRole(bytes32 role, address account) external {
+        if (!hasRole(RECOVERY_ROLE, msg.sender)) {
+            revert UnauthorizedGovernance();
+        }
+        require(account != address(0), "Invalid recovery recipient");
+        _grantRole(role, account);
+        emit RoleRecovered(role, account, msg.sender);
+    }
+    
+    /**
+     * @notice Revoke a role in an emergency (e.g., if compromised)
+     * @param role The role to revoke
+     * @param account The address to revoke the role from
+     */
+    function recoverRevokeRole(bytes32 role, address account) external {
+        if (!hasRole(RECOVERY_ROLE, msg.sender)) {
+            revert UnauthorizedGovernance();
+        }
+        _revokeRole(role, account);
+        emit RoleRevokedByRecovery(role, account, msg.sender);
+    }
+
+    /**
+     * @dev Storage gap to allow future upgrades without shifting variables.
+     */
+    uint256[50] private __gap;
 }
