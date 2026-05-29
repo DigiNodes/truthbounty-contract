@@ -159,6 +159,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event WeightedStakingToggled(bool enabled);
+    event DefaultReputationScoreUpdated(uint256 oldScore, uint256 newScore);
 
     // ============ Errors ============
 
@@ -612,7 +613,9 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      */
     function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
         require(_defaultScore > 0, "Invalid default");
+        uint256 oldScore = defaultReputationScore;
         defaultReputationScore = _defaultScore;
+        emit DefaultReputationScoreUpdated(oldScore, _defaultScore);
     }
 
     // ============ Governance Parameter Updates ============
