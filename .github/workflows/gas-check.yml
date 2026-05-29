@@ -1,5 +1,8 @@
 name: Gas Regression Detection
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     branches: [main, develop]
@@ -42,7 +45,7 @@ jobs:
       
       - name: Upload gas reports
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: gas-reports
           path: |

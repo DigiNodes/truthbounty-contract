@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./governance/GovernanceHooks.sol";
 
@@ -108,7 +108,10 @@ contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeabl
         );
     }
 
-    function _authorizeUpgrade(address) internal override onlyRole(ADMIN_ROLE) {}
+    /**
+     * @dev Required by UUPSUpgradeable
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(ADMIN_ROLE) {}
 }
 
 /**
@@ -174,6 +177,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
 
     // Configuration ( Governance-controlled parameters )
     uint256 public verificationWindowDuration = 7 days;
+    uint256 public confirmationDelay = 1 hours;
     uint256 public minStakeAmount = 100 * 10**18;
     uint256 public settlementThresholdPercent = 60;
     uint256 public rewardPercent = 80;
@@ -181,6 +185,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     
     // Governance parameter IDs for reference
     bytes32 public constant GOVERNANCE_PARAM_VERIFICATION_WINDOW = keccak256("VERIFICATION_WINDOW_DURATION");
+    bytes32 public constant GOVERNANCE_PARAM_CONFIRMATION_DELAY = keccak256("CONFIRMATION_DELAY");
     bytes32 public constant GOVERNANCE_PARAM_MIN_STAKE = keccak256("MIN_STAKE_AMOUNT");
     bytes32 public constant GOVERNANCE_PARAM_THRESHOLD = keccak256("SETTLEMENT_THRESHOLD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_REWARD = keccak256("REWARD_PERCENT");
@@ -278,7 +283,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
-        require(block.timestamp >= claim.verificationWindowEnd, "Verification window not closed");
+        require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
         require(!claim.settled, "Claim already settled");
         require(claim.totalStakeAmount > 0, "No votes cast");
 
@@ -417,6 +422,19 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     }
     
     /**
+     * @notice Update confirmation delay (governance or admin)
+     * @param newDelay New delay in seconds
+     */
+    function setConfirmationDelay(uint256 newDelay) external onlyGovernanceOrAdmin {
+        require(newDelay >= 5 minutes && newDelay <= 7 days, "Invalid duration");
+        
+        uint256 oldDelay = confirmationDelay;
+        confirmationDelay = newDelay;
+        
+        emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_CONFIRMATION_DELAY, oldDelay, newDelay);
+    }
+    
+    /**
      * @notice Update minimum stake amount ( governance or admin )
      * @param newAmount New minimum stake amount
      */
@@ -477,4 +495,5 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
+
 }
