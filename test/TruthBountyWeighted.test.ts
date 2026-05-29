@@ -17,6 +17,7 @@ describe("TruthBountyWeighted", function () {
   const INITIAL_SUPPLY = ethers.parseEther("1000000");
   const MIN_STAKE = ethers.parseEther("100");
   const VERIFICATION_WINDOW = 7 * 24 * 60 * 60; // 7 days
+  const PERCENT_DENOMINATOR = 100n;
 
   beforeEach(async function () {
     [owner, submitter, verifier1, verifier2, verifier3] = await ethers.getSigners();
@@ -63,6 +64,51 @@ describe("TruthBountyWeighted", function () {
 
     it("Should have weighted staking enabled by default", async function () {
       expect(await truthBounty.weightedStakingEnabled()).to.equal(true);
+    });
+
+    it("Should expose named constants for weighted staking defaults", async function () {
+      expect(await truthBounty.TOKEN_DECIMALS_MULTIPLIER()).to.equal(ethers.parseEther("1"));
+      expect(await truthBounty.BASE_MULTIPLIER()).to.equal(
+        await truthBounty.TOKEN_DECIMALS_MULTIPLIER()
+      );
+      expect(await truthBounty.PERCENT_DENOMINATOR()).to.equal(PERCENT_DENOMINATOR);
+      expect(await truthBounty.DEFAULT_VERIFICATION_WINDOW_DURATION()).to.equal(
+        BigInt(VERIFICATION_WINDOW)
+      );
+      expect(await truthBounty.MIN_VERIFICATION_WINDOW_DURATION()).to.equal(BigInt(24 * 60 * 60));
+      expect(await truthBounty.MAX_VERIFICATION_WINDOW_DURATION()).to.equal(
+        BigInt(30 * 24 * 60 * 60)
+      );
+      expect(await truthBounty.DEFAULT_MIN_STAKE_AMOUNT()).to.equal(MIN_STAKE);
+      expect(await truthBounty.DEFAULT_SETTLEMENT_THRESHOLD_PERCENT()).to.equal(60n);
+      expect(await truthBounty.DEFAULT_REWARD_PERCENT()).to.equal(80n);
+      expect(await truthBounty.DEFAULT_SLASH_PERCENT()).to.equal(20n);
+      expect(await truthBounty.MIN_REPUTATION_SCORE()).to.equal(ethers.parseEther("0.1"));
+      expect(await truthBounty.MAX_REPUTATION_SCORE()).to.equal(ethers.parseEther("10"));
+      expect(await truthBounty.DEFAULT_REPUTATION_SCORE()).to.equal(ethers.parseEther("1"));
+    });
+
+    it("Should initialize configurable parameters from named defaults", async function () {
+      expect(await truthBounty.verificationWindowDuration()).to.equal(
+        await truthBounty.DEFAULT_VERIFICATION_WINDOW_DURATION()
+      );
+      expect(await truthBounty.minStakeAmount()).to.equal(
+        await truthBounty.DEFAULT_MIN_STAKE_AMOUNT()
+      );
+      expect(await truthBounty.settlementThresholdPercent()).to.equal(
+        await truthBounty.DEFAULT_SETTLEMENT_THRESHOLD_PERCENT()
+      );
+      expect(await truthBounty.rewardPercent()).to.equal(await truthBounty.DEFAULT_REWARD_PERCENT());
+      expect(await truthBounty.slashPercent()).to.equal(await truthBounty.DEFAULT_SLASH_PERCENT());
+      expect(await truthBounty.minReputationScore()).to.equal(
+        await truthBounty.MIN_REPUTATION_SCORE()
+      );
+      expect(await truthBounty.maxReputationScore()).to.equal(
+        await truthBounty.MAX_REPUTATION_SCORE()
+      );
+      expect(await truthBounty.defaultReputationScore()).to.equal(
+        await truthBounty.DEFAULT_REPUTATION_SCORE()
+      );
     });
   });
 
@@ -219,7 +265,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 300 / 400 = 75% > 60% threshold
       // Should PASS
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
 
       await expect(truthBounty.settleClaim(claimId))
         .to.emit(truthBounty, "ClaimSettled")
@@ -258,7 +304,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 50 / 650 ≈ 7.7% < 60% threshold
       // Should FAIL
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
 
       await truthBounty.settleClaim(claimId);
 
@@ -278,7 +324,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier2).vote(claimId, true, stakeAmount);
 
       // Settle
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
 
       const settlement = await truthBounty.settlementResults(claimId);
@@ -309,6 +355,31 @@ describe("TruthBountyWeighted", function () {
       expect(reward1).to.be.closeTo(verifier1RewardShare, ethers.parseEther("0.01"));
       expect(reward2).to.be.closeTo(verifier2RewardShare, ethers.parseEther("0.01"));
     });
+
+    it("Should preserve settlement-time slash amounts when governance parameters change", async function () {
+      const stakeAmount = ethers.parseEther("100");
+
+      await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
+      await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
+
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(claimId);
+
+      const losingVote = await truthBounty.getVote(claimId, await verifier1.getAddress());
+      expect(losingVote.slashAmount).to.equal(ethers.parseEther("20"));
+
+      await truthBounty.setSlashPercent(100);
+
+      const balanceBefore = await bountyToken.balanceOf(await verifier1.getAddress());
+      await truthBounty.connect(verifier1).withdrawSettledStake(claimId);
+      const balanceAfter = await bountyToken.balanceOf(await verifier1.getAddress());
+
+      expect(balanceAfter - balanceBefore).to.equal(ethers.parseEther("80"));
+
+      const verifierStake = await truthBounty.getVerifierStake(await verifier1.getAddress());
+      expect(verifierStake.totalStaked).to.equal(ethers.parseEther("980"));
+      expect(verifierStake.activeStakes).to.equal(0);
+    });
   });
 
   describe("Pause Guards", function () {
@@ -326,7 +397,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert settleClaim when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.pause();
 
       await expect(truthBounty.settleClaim(claimId)).to.be.revertedWithCustomError(
@@ -336,7 +407,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert claimSettlementRewards when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
       await truthBounty.pause();
 
@@ -452,6 +523,70 @@ describe("TruthBountyWeighted", function () {
       await expect(truthBounty.connect(verifier1).stake(newMinStake))
         .to.emit(truthBounty, "StakeDeposited")
         .withArgs(await verifier1.getAddress(), newMinStake);
+    });
+  });
+
+  describe("Reorg Protection", function () {
+    let claimId: bigint;
+    const CONFIRMATION_DELAY = 3600; // 1 hour default
+
+    beforeEach(async function () {
+      await truthBounty.connect(submitter).createClaim("QmReorgTest");
+      claimId = 0n;
+
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+      await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
+
+      await truthBounty.connect(verifier1).vote(claimId, true, ethers.parseEther("100"));
+      await truthBounty.connect(verifier2).vote(claimId, false, ethers.parseEther("100"));
+    });
+
+    it("Should revert settleClaim if called immediately after window closes (before confirmation delay)", async function () {
+      // Only advance past the verification window — NOT past the confirmation delay
+      await time.increase(VERIFICATION_WINDOW + 1);
+
+      await expect(truthBounty.settleClaim(claimId)).to.be.revertedWith(
+        "Confirmation delay pending"
+      );
+    });
+
+    it("Should allow settleClaim after both verification window and confirmation delay have elapsed", async function () {
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
+
+      await expect(truthBounty.settleClaim(claimId)).to.emit(truthBounty, "ClaimSettled");
+    });
+
+    it("Should allow governance to update confirmationDelay", async function () {
+      const newDelay = 2 * 3600; // 2 hours
+
+      await expect(truthBounty.setConfirmationDelay(newDelay))
+        .to.emit(truthBounty, "ParameterUpdatedByGovernance")
+        .withArgs(
+          await truthBounty.GOVERNANCE_PARAM_CONFIRMATION_DELAY(),
+          CONFIRMATION_DELAY,
+          newDelay
+        );
+
+      expect(await truthBounty.confirmationDelay()).to.equal(newDelay);
+    });
+
+    it("Should reject setConfirmationDelay above 7 days", async function () {
+      const tooLong = 8 * 24 * 60 * 60; // 8 days
+
+      await expect(truthBounty.setConfirmationDelay(tooLong)).to.be.revertedWith(
+        "Invalid duration"
+      );
+    });
+
+    it("Should reject setting confirmationDelay below 5 minutes (Reorg protection)", async function () {
+      await expect(truthBounty.setConfirmationDelay(0)).to.be.revertedWith(
+        "Invalid duration"
+      );
+      
+      const fourMinutes = 4 * 60;
+      await expect(truthBounty.setConfirmationDelay(fourMinutes)).to.be.revertedWith(
+        "Invalid duration"
+      );
     });
   });
 
