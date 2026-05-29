@@ -611,4 +611,27 @@ describe("TruthBountyWeighted", function () {
       expect(vote.reputationScore).to.equal(ethers.parseEther("1")); // Default
     });
   });
+    describe("BountyToken Change Mechanism", function () {
+    it("Should allow the owner to update the bounty token address", async function () {
+      const TruthBountyTokenFactory = await ethers.getContractFactory("TruthBountyToken");
+      const newToken = await TruthBountyTokenFactory.deploy();
+      await newToken.waitForDeployment();
+
+      // Directly execute the change mechanism
+      await truthBounty.updateBountyToken(await newToken.getAddress());
+        
+      expect(await truthBounty.bountyToken()).to.equal(await newToken.getAddress());
+    });
+
+    it("Should fail if a non-owner tries to update the bounty token address", async function () {
+      const randomAddress = "0x0000000000000000000000000000000000000001";
+      
+      await expect(
+        truthBounty.connect(verifier1).updateBountyToken(randomAddress)
+      ).to.be.revertedWith("Unauthorized");
+    });
+  });
+
+  });
+
 });
