@@ -783,14 +783,5 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
-/// @notice Safely migrates the primary payment bounty token
-/// @param _newBountyToken The address of the new ERC20 token
-function updateBountyToken(address _newBountyToken) external {
-    require(msg.sender == owner, "Unauthorized");
-    require(_newBountyToken != address(0), "Invalid token address");
-    require(_newBountyToken != address(bountyToken), "Token already active");
-
-    bountyToken = IERC20(_newBountyToken);
 }
 
-}
