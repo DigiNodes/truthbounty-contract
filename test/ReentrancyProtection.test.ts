@@ -386,7 +386,7 @@ describe("Reentrancy Protection Tests", function () {
         await truthBounty.connect(verifier2).vote(0, true, voteAmount);
 
         // Fast forward past verification window
-        await time.increase(7 * 24 * 60 * 60 + 1); // 7 days + 1 second
+        await time.increase(7 * 24 * 60 * 60 + 3601); // 7 days + 1 second
 
         // Settle claim
         await truthBounty.settleClaim(0);
@@ -427,7 +427,7 @@ describe("Reentrancy Protection Tests", function () {
         await truthBounty.connect(verifier2).vote(0, false, voteAmount);
 
         // Fast forward and settle
-        await time.increase(7 * 24 * 60 * 60 + 1);
+        await time.increase(7 * 24 * 60 * 60 + 3601);
         await truthBounty.settleClaim(0);
 
         // Get settlement result to see who lost
@@ -717,7 +717,7 @@ describe("Reentrancy Protection Tests", function () {
       await truthBounty.connect(verifier2).vote(0, false, voteAmount);
 
       // Fast forward and settle
-      await time.increase(7 * 24 * 60 * 60 + 1);
+      await time.increase(7 * 24 * 60 * 60 + 3601);
       await truthBounty.settleClaim(0);
 
       // Verify claim state
