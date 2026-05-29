@@ -101,6 +101,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     struct VerifierStake {
         uint256 totalStaked;
         uint256 activeStakes;
+        uint256 exitTime;
     }
 
     // ============ Storage Mappings ============
@@ -406,17 +407,30 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @notice Withdraw available stake (not locked in active claims)
      */
     function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
-        VerifierStake storage stake = verifierStakes[msg.sender];
-        require(
-            stake.totalStaked >= stake.activeStakes + amount,
-            "Insufficient available stake"
-        );
+    VerifierStake storage stake = verifierStakes[msg.sender];
+    require(
+        stake.totalStaked >= stake.activeStakes + amount,
+        "Insufficient available stake"
+    );
 
-        stake.totalStaked -= amount;
-        require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
-
-        emit StakeWithdrawn(msg.sender, amount);
+    // If no exit has been initiated yet, start the cooldown clock
+    if (stake.exitTime == 0) {
+        stake.exitTime = block.timestamp;
+        revert("Withdrawal initiated. Please wait 2 days cooldown.");
     }
+
+    // Ensure the 2 days cooldown window has passed
+    require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
+
+    // Reset the exit clock for future actions
+    stake.exitTime = 0;
+
+    stake.totalStaked -= amount;
+    require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
+
+    emit StakeWithdrawn(msg.sender, amount);
+}
+
 
     // ============ Internal Helper Functions ============
 
