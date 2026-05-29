@@ -27,6 +27,45 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     bytes32 public constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
+    // ============ Protocol Constants ============
+
+    /// @notice Fixed-point precision used by token amounts and reputation scores.
+    uint256 public constant TOKEN_DECIMALS_MULTIPLIER = 10 ** 18;
+
+    /// @notice Base multiplier for reputation scaling (1e18 = 100%).
+    uint256 public constant BASE_MULTIPLIER = TOKEN_DECIMALS_MULTIPLIER;
+
+    /// @notice Denominator for percentage-based governance parameters.
+    uint256 public constant PERCENT_DENOMINATOR = 100;
+
+    /// @notice Default verification window for new claims.
+    uint256 public constant DEFAULT_VERIFICATION_WINDOW_DURATION = 7 days;
+
+    /// @notice Governance bounds for verification window duration.
+    uint256 public constant MIN_VERIFICATION_WINDOW_DURATION = 1 days;
+    uint256 public constant MAX_VERIFICATION_WINDOW_DURATION = 30 days;
+
+    /// @notice Default minimum verifier stake amount.
+    uint256 public constant DEFAULT_MIN_STAKE_AMOUNT = 100 * TOKEN_DECIMALS_MULTIPLIER;
+
+    /// @notice Default settlement threshold percentage.
+    uint256 public constant DEFAULT_SETTLEMENT_THRESHOLD_PERCENT = 60;
+
+    /// @notice Default share of slashed stake distributed to winners.
+    uint256 public constant DEFAULT_REWARD_PERCENT = 80;
+
+    /// @notice Default percentage of losing raw stake that is slashed.
+    uint256 public constant DEFAULT_SLASH_PERCENT = 20;
+
+    /// @notice Minimum reputation score (10% = 0.1x).
+    uint256 public constant MIN_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER / 10;
+
+    /// @notice Maximum reputation score (1000% = 10x).
+    uint256 public constant MAX_REPUTATION_SCORE = 10 * TOKEN_DECIMALS_MULTIPLIER;
+
+    /// @notice Default reputation for users without a score (100% = 1.0x).
+    uint256 public constant DEFAULT_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER;
+
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -37,14 +76,11 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
     // ============ Configuration Parameters (Governance-controlled) ============
 
-    uint256 public verificationWindowDuration = 7 days;
-    uint256 public minStakeAmount = 100 * 10**18;
-    uint256 public settlementThresholdPercent = 60;
-    uint256 public rewardPercent = 80;
-    uint256 public slashPercent = 20;
-
-    /// @notice Base multiplier for reputation scaling (1e18 = 100%)
-    uint256 public constant BASE_MULTIPLIER = 1e18;
+    uint256 public verificationWindowDuration = DEFAULT_VERIFICATION_WINDOW_DURATION;
+    uint256 public minStakeAmount = DEFAULT_MIN_STAKE_AMOUNT;
+    uint256 public settlementThresholdPercent = DEFAULT_SETTLEMENT_THRESHOLD_PERCENT;
+    uint256 public rewardPercent = DEFAULT_REWARD_PERCENT;
+    uint256 public slashPercent = DEFAULT_SLASH_PERCENT;
 
     // Governance parameter IDs for reference
     bytes32 public constant GOVERNANCE_PARAM_VERIFICATION_WINDOW = keccak256("VERIFICATION_WINDOW_DURATION");
@@ -54,13 +90,13 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     bytes32 public constant GOVERNANCE_PARAM_SLASH = keccak256("SLASH_PERCENT");
 
     /// @notice Minimum reputation score (10% = 0.1)
-    uint256 public minReputationScore = 1e17;
+    uint256 public minReputationScore = MIN_REPUTATION_SCORE;
 
     /// @notice Maximum reputation score (1000% = 10x)
-    uint256 public maxReputationScore = 10e18;
+    uint256 public maxReputationScore = MAX_REPUTATION_SCORE;
 
     /// @notice Default reputation for users without a score (100% = 1.0)
-    uint256 public defaultReputationScore = 1e18;
+    uint256 public defaultReputationScore = DEFAULT_REPUTATION_SCORE;
 
     /// @notice Whether weighted staking is enabled
     bool public weightedStakingEnabled = true;
@@ -393,8 +429,6 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         if (isWinner) {
             stakeToReturn = vote.stakeAmount;
         } else {
-            // Losers get stake back minus slashing (80% of RAW stake)
-            uint256 slashAmount = (vote.stakeAmount * slashPercent) / 100;
             // Losers get stake back minus slashing (pre-calculated at settlement)
             stakeToReturn = vote.stakeAmount - slashAmount;
 
@@ -492,7 +526,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         uint256 totalWeighted = weightedFor + weightedAgainst;
         if (totalWeighted == 0) return false;
 
-        uint256 forPercent = (weightedFor * 100) / totalWeighted;
+        uint256 forPercent = (weightedFor * PERCENT_DENOMINATOR) / totalWeighted;
         return forPercent >= settlementThresholdPercent;
     }
 
@@ -513,13 +547,13 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         // Calculate total RAW stake from losers for slashing
         uint256 loserRawStake = _calculateLoserRawStake(claimId, passed);
 
-        // Slash 20% of loser's RAW stake
-        slashedAmount = (loserRawStake * slashPercent) / 100;
+        // Slash the configured percentage of losing raw stake.
+        slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
         // Calculate and assign per-vote slash amounts, returns total slashed
         slashedAmount = _assignPerVoteSlashes(claimId, passed);
 
-        // 80% of slashed goes to winners as rewards
-        rewardAmount = (slashedAmount * rewardPercent) / 100;
+        // The configured reward share of slashed stake goes to winners.
+        rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
 
         totalSlashed += slashedAmount;
         totalRewarded += rewardAmount;
@@ -568,8 +602,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             bool isLoser = (vote.support != passed);
             
             if (isLoser) {
-                // Calculate slash as 20% of their RAW stake
-                uint256 slashAmount = (vote.stakeAmount * slashPercent) / 100;
+                // Calculate slash as the configured percentage of raw stake.
+                uint256 slashAmount = (vote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
                 vote.slashAmount = slashAmount;
                 totalSlashed += slashAmount;
             } else {
@@ -650,7 +684,11 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @param newDuration New duration in seconds
      */
     function setVerificationWindowDuration(uint256 newDuration) external onlyGovernanceOrAdmin {
-        require(newDuration >= 1 days && newDuration <= 30 days, "Invalid duration");
+        require(
+            newDuration >= MIN_VERIFICATION_WINDOW_DURATION
+                && newDuration <= MAX_VERIFICATION_WINDOW_DURATION,
+            "Invalid duration"
+        );
         
         uint256 oldDuration = verificationWindowDuration;
         verificationWindowDuration = newDuration;
@@ -676,7 +714,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @param newThreshold New threshold (1-100)
      */
     function setSettlementThresholdPercent(uint256 newThreshold) external onlyGovernanceOrAdmin {
-        require(newThreshold > 0 && newThreshold <= 100, "Invalid threshold");
+        require(newThreshold > 0 && newThreshold <= PERCENT_DENOMINATOR, "Invalid threshold");
         
         uint256 old = settlementThresholdPercent;
         settlementThresholdPercent = newThreshold;
@@ -689,7 +727,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @param newPercent New reward percent (1-100)
      */
     function setRewardPercent(uint256 newPercent) external onlyGovernanceOrAdmin {
-        require(newPercent > 0 && newPercent <= 100, "Invalid percent");
+        require(newPercent > 0 && newPercent <= PERCENT_DENOMINATOR, "Invalid percent");
         
         uint256 old = rewardPercent;
         rewardPercent = newPercent;
@@ -702,7 +740,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @param newPercent New slash percent (1-100)
      */
     function setSlashPercent(uint256 newPercent) external onlyGovernanceOrAdmin {
-        require(newPercent > 0 && newPercent <= 100, "Invalid percent");
+        require(newPercent > 0 && newPercent <= PERCENT_DENOMINATOR, "Invalid percent");
         
         uint256 old = slashPercent;
         slashPercent = newPercent;
