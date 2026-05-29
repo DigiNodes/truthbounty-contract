@@ -33,8 +33,8 @@ describe("Claim Existence Fix", function () {
             const stakeAmount = ethers.parseEther("100");
             
             // Mint and stake tokens for verifier
-            await bountyToken.mint(verifier.address, stakeAmount * 2);
-            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2);
+            await bountyToken.transfer(verifier.address, stakeAmount * 2n);
+            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
 
             // Attempt to vote on claim 0 (which doesn't exist)
@@ -54,12 +54,13 @@ describe("Claim Existence Fix", function () {
             const stakeAmount = ethers.parseEther("100");
             
             // Mint and stake tokens for verifier
-            await bountyToken.mint(verifier.address, stakeAmount * 2);
-            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2);
+            await bountyToken.transfer(verifier.address, stakeAmount * 2n);
+            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
 
             // Create a claim
-            const claimId = await truthBounty.createClaim("QmTest123");
+            await truthBounty.createClaim("QmTest123");
+            const claimId = 0n;
 
             // Should be able to vote on the created claim
             await expect(
@@ -71,12 +72,13 @@ describe("Claim Existence Fix", function () {
             const stakeAmount = ethers.parseEther("100");
             
             // Mint and stake tokens for verifier
-            await bountyToken.mint(verifier.address, stakeAmount * 2);
-            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2);
+            await bountyToken.transfer(verifier.address, stakeAmount * 2n);
+            await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
 
             // Create a claim
-            const claimId = await truthBounty.createClaim("QmTest123");
+            await truthBounty.createClaim("QmTest123");
+            const claimId = 0n;
 
             // Vote on the claim
             await truthBounty.connect(verifier).vote(claimId, true, stakeAmount);

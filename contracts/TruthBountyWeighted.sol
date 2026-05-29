@@ -357,6 +357,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             vote.stakeReturned = true;
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
         }
     }
 
@@ -382,8 +383,6 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         if (isWinner) {
             stakeToReturn = vote.stakeAmount;
         } else {
-            // Losers get stake back minus slashing (80% of RAW stake)
-            uint256 slashAmount = (vote.stakeAmount * slashPercent) / 100;
             // Losers get stake back minus slashing (pre-calculated at settlement)
             stakeToReturn = vote.stakeAmount - slashAmount;
 
@@ -399,6 +398,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
         if (stakeToReturn > 0) {
             require(bountyToken.transfer(msg.sender, stakeToReturn), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, stakeToReturn);
         }
     }
 

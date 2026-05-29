@@ -94,7 +94,7 @@ describe("Reentrancy Protection Tests", function () {
 
     // Deploy slashing
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
+    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
 
     // Set slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
