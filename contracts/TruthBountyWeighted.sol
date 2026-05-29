@@ -38,6 +38,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     // ============ Configuration Parameters (Governance-controlled) ============
 
     uint256 public verificationWindowDuration = 7 days;
+    uint256 public confirmationDelay = 1 hours;
     uint256 public minStakeAmount = 100 * 10**18;
     uint256 public settlementThresholdPercent = 60;
     uint256 public rewardPercent = 80;
@@ -48,6 +49,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
     // Governance parameter IDs for reference
     bytes32 public constant GOVERNANCE_PARAM_VERIFICATION_WINDOW = keccak256("VERIFICATION_WINDOW_DURATION");
+    bytes32 public constant GOVERNANCE_PARAM_CONFIRMATION_DELAY = keccak256("CONFIRMATION_DELAY");
     bytes32 public constant GOVERNANCE_PARAM_MIN_STAKE = keccak256("MIN_STAKE_AMOUNT");
     bytes32 public constant GOVERNANCE_PARAM_THRESHOLD = keccak256("SETTLEMENT_THRESHOLD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_REWARD = keccak256("REWARD_PERCENT");
@@ -295,7 +297,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
-        require(block.timestamp >= claim.verificationWindowEnd, "Verification window not closed");
+        require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
         require(!claim.settled, "Claim already settled");
         require(claim.totalStakeAmount > 0, "No votes cast");
 
@@ -628,6 +630,19 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         verificationWindowDuration = newDuration;
         
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_VERIFICATION_WINDOW, oldDuration, newDuration);
+    }
+
+    /**
+     * @notice Update confirmation delay (governance or admin)
+     * @param newDelay New delay in seconds
+     */
+    function setConfirmationDelay(uint256 newDelay) external onlyGovernanceOrAdmin {
+        require(newDelay >= 5 minutes && newDelay <= 7 days, "Invalid duration");
+        
+        uint256 oldDelay = confirmationDelay;
+        confirmationDelay = newDelay;
+        
+        emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_CONFIRMATION_DELAY, oldDelay, newDelay);
     }
     
     /**
