@@ -51,7 +51,7 @@
     "@types/node": "^20.0.0",
     "chai": "^4.5.0",
     "hardhat": "^2.22.17",
-    "hardhat-gas-reporter": "^2.3.0",
+    "hardhat-gas-reporter": "^1.0.8",
     "solidity-coverage": "^0.8.17",
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",

@@ -17,7 +17,7 @@ describe("VerifierSlashing", function () {
 
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
+    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
 
     // Set up the slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
@@ -68,11 +68,11 @@ describe("VerifierSlashing", function () {
       const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
 
       await expect(
-        VerifierSlashing.deploy(ethers.ZeroAddress, admin.address)
+        VerifierSlashing.deploy(ethers.ZeroAddress, admin.address, admin.address)
       ).to.be.revertedWithCustomError(VerifierSlashing, "InvalidStakingContract");
 
       await expect(
-        VerifierSlashing.deploy(admin.address, ethers.ZeroAddress)
+        VerifierSlashing.deploy(admin.address, ethers.ZeroAddress, admin.address)
       ).to.be.revertedWithCustomError(VerifierSlashing, "InvalidStakingContract");
     });
   });
