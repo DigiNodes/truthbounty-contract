@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./governance/GovernanceOwnable.sol";
@@ -19,7 +20,7 @@ interface IStaking {
     function forceSlash(address user, uint256 amount) external;
 }
 
-contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
     
     // Role definitions
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -125,6 +126,18 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
         _initializeGovernance(_governanceController, _admin, _admin);
     }
     
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.revokeRole(role, account);
+    }
+
     /**
      * @dev Slash a verifier's stake for incorrect verification
      * @param verifier Address of the verifier to slash
@@ -437,7 +450,8 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
      * @param account Address to grant the role to
      */
     function grantResolverRole(address account) external onlyGovernanceOrAdmin {
-        _grantRole(RESOLVER_ROLE, account);
+        if (hasRole(RESOLVER_ROLE, account)) revert ResolverRoleChangeNoop();
+        _scheduleResolverRoleGrant(account);
     }
     
     /**
@@ -445,7 +459,8 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
      * @param account Address to revoke the role from
      */
     function revokeResolverRole(address account) external onlyGovernanceOrAdmin {
-        _revokeRole(RESOLVER_ROLE, account);
+        if (!hasRole(RESOLVER_ROLE, account)) revert ResolverRoleChangeNoop();
+        _scheduleResolverRoleRevoke(account);
     }
 
     /**
@@ -453,7 +468,8 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
      * @param account Address to grant the role to
      */
     function grantSettlementRole(address account) external onlyGovernanceOrAdmin {
-        _grantRole(SETTLEMENT_ROLE, account);
+        if (hasRole(SETTLEMENT_ROLE, account)) revert ResolverRoleChangeNoop();
+        _scheduleResolverRoleGrant(account);
     }
     
     /**
@@ -461,7 +477,8 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
      * @param account Address to revoke the role from
      */
     function revokeSettlementRole(address account) external onlyGovernanceOrAdmin {
-        _revokeRole(SETTLEMENT_ROLE, account);
+        if (!hasRole(SETTLEMENT_ROLE, account)) revert ResolverRoleChangeNoop();
+        _scheduleResolverRoleRevoke(account);
     }
 
     /**

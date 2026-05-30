@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IReputationOracle.sol";
@@ -19,7 +20,7 @@ import "./governance/GovernanceOwnable.sol";
  * - Prevents low-reputation dominance
  * - Maintains backward compatibility with equal-weight fallback
  */
-contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -229,6 +230,18 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         
         // Initialize governance
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
+    }
+
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.revokeRole(role, account);
     }
 
     // ============ Core Functions ============
