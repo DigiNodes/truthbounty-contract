@@ -101,7 +101,10 @@ describe("Reentrancy Protection Tests", function () {
 
     // Grant settlement role
     const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
-    await slashing.connect(admin).grantRole(SETTLEMENT_ROLE, settlement.address);
+    await slashing.connect(admin).scheduleResolverRoleGrant(settlement.address);
+    await time.increase(2 * 24 * 60 * 60);
+    await staking.executeResolverRoleGrant(await slashing.getAddress());
+    await slashing.executeResolverRoleGrant(settlement.address);
 
     // Setup stakes
     const stakeAmount = ethers.parseEther("1000");
