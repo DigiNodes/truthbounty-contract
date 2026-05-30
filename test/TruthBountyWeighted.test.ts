@@ -265,7 +265,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 300 / 400 = 75% > 60% threshold
       // Should PASS
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
 
       await expect(truthBounty.settleClaim(claimId))
         .to.emit(truthBounty, "ClaimSettled")
@@ -304,7 +304,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 50 / 650 ≈ 7.7% < 60% threshold
       // Should FAIL
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
 
       await truthBounty.settleClaim(claimId);
 
@@ -324,7 +324,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier2).vote(claimId, true, stakeAmount);
 
       // Settle
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
 
       const settlement = await truthBounty.settlementResults(claimId);
@@ -395,7 +395,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
       await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
 
       const losingVote = await truthBounty.getVote(claimId, await verifier1.getAddress());
@@ -430,7 +430,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert settleClaim when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.pause();
 
       await expect(truthBounty.settleClaim(claimId)).to.be.revertedWithCustomError(
@@ -440,7 +440,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert claimSettlementRewards when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + 3601);
       await truthBounty.settleClaim(claimId);
       await truthBounty.pause();
 
@@ -559,6 +559,70 @@ describe("TruthBountyWeighted", function () {
     });
   });
 
+  describe("Reorg Protection", function () {
+    let claimId: bigint;
+    const CONFIRMATION_DELAY = 3600; // 1 hour default
+
+    beforeEach(async function () {
+      await truthBounty.connect(submitter).createClaim("QmReorgTest");
+      claimId = 0n;
+
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+      await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
+
+      await truthBounty.connect(verifier1).vote(claimId, true, ethers.parseEther("100"));
+      await truthBounty.connect(verifier2).vote(claimId, false, ethers.parseEther("100"));
+    });
+
+    it("Should revert settleClaim if called immediately after window closes (before confirmation delay)", async function () {
+      // Only advance past the verification window — NOT past the confirmation delay
+      await time.increase(VERIFICATION_WINDOW + 1);
+
+      await expect(truthBounty.settleClaim(claimId)).to.be.revertedWith(
+        "Confirmation delay pending"
+      );
+    });
+
+    it("Should allow settleClaim after both verification window and confirmation delay have elapsed", async function () {
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
+
+      await expect(truthBounty.settleClaim(claimId)).to.emit(truthBounty, "ClaimSettled");
+    });
+
+    it("Should allow governance to update confirmationDelay", async function () {
+      const newDelay = 2 * 3600; // 2 hours
+
+      await expect(truthBounty.setConfirmationDelay(newDelay))
+        .to.emit(truthBounty, "ParameterUpdatedByGovernance")
+        .withArgs(
+          await truthBounty.GOVERNANCE_PARAM_CONFIRMATION_DELAY(),
+          CONFIRMATION_DELAY,
+          newDelay
+        );
+
+      expect(await truthBounty.confirmationDelay()).to.equal(newDelay);
+    });
+
+    it("Should reject setConfirmationDelay above 7 days", async function () {
+      const tooLong = 8 * 24 * 60 * 60; // 8 days
+
+      await expect(truthBounty.setConfirmationDelay(tooLong)).to.be.revertedWith(
+        "Invalid duration"
+      );
+    });
+
+    it("Should reject setting confirmationDelay below 5 minutes (Reorg protection)", async function () {
+      await expect(truthBounty.setConfirmationDelay(0)).to.be.revertedWith(
+        "Invalid duration"
+      );
+      
+      const fourMinutes = 4 * 60;
+      await expect(truthBounty.setConfirmationDelay(fourMinutes)).to.be.revertedWith(
+        "Invalid duration"
+      );
+    });
+  });
+
   describe("Edge Cases", function () {
     it("Should handle oracle failure gracefully", async function () {
       // Deploy a broken oracle (will be inactive)
@@ -578,6 +642,26 @@ describe("TruthBountyWeighted", function () {
 
       const vote = await truthBounty.getVote(0, await verifier1.getAddress());
       expect(vote.reputationScore).to.equal(ethers.parseEther("1")); // Default
+    });
+  });
+    describe("BountyToken Change Mechanism", function () {
+    it("Should allow the owner to update the bounty token address", async function () {
+      const TruthBountyTokenFactory = await ethers.getContractFactory("TruthBountyToken");
+      const newToken = await TruthBountyTokenFactory.deploy(await owner.getAddress());
+      await newToken.waitForDeployment();
+
+      // Directly execute the change mechanism
+      await truthBounty.updateBountyToken(await newToken.getAddress());
+        
+      expect(await truthBounty.bountyToken()).to.equal(await newToken.getAddress());
+    });
+
+    it("Should fail if a non-owner tries to update the bounty token address", async function () {
+      const randomAddress = "0x0000000000000000000000000000000000000001";
+      
+      await expect(
+        truthBounty.connect(verifier1).updateBountyToken(randomAddress)
+      ).to.be.revertedWith("Unauthorized");
     });
   });
 });

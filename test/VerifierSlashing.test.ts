@@ -17,14 +17,17 @@ describe("VerifierSlashing", function () {
 
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address);
+    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
 
     // Set up the slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
 
-    // Grant settlement role
+    // Grant settlement role through the resolver-role timelock
     const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
-    await slashing.connect(admin).grantRole(SETTLEMENT_ROLE, settlement.address);
+    await slashing.connect(admin).scheduleResolverRoleGrant(settlement.address);
+    await time.increase(2 * 24 * 60 * 60);
+    await staking.executeResolverRoleGrant(await slashing.getAddress());
+    await slashing.executeResolverRoleGrant(settlement.address);
 
     // Mint tokens and set up stakes
     const stakeAmount = ethers.parseEther("1000");
@@ -68,11 +71,11 @@ describe("VerifierSlashing", function () {
       const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
 
       await expect(
-        VerifierSlashing.deploy(ethers.ZeroAddress, admin.address)
+        VerifierSlashing.deploy(ethers.ZeroAddress, admin.address, admin.address)
       ).to.be.revertedWithCustomError(VerifierSlashing, "InvalidStakingContract");
 
       await expect(
-        VerifierSlashing.deploy(admin.address, ethers.ZeroAddress)
+        VerifierSlashing.deploy(admin.address, ethers.ZeroAddress, admin.address)
       ).to.be.revertedWithCustomError(VerifierSlashing, "InvalidStakingContract");
     });
   });
@@ -89,12 +92,18 @@ describe("VerifierSlashing", function () {
     it("Should allow admin to grant and revoke settlement role", async function () {
       const { slashing, admin, unauthorized, SETTLEMENT_ROLE } = await loadFixture(deploySlashingFixture);
 
-      // Grant role
+      // Grant role through the timelock
       await slashing.connect(admin).grantSettlementRole(unauthorized.address);
+      expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.false;
+      await time.increase(2 * 24 * 60 * 60);
+      await slashing.executeResolverRoleGrant(unauthorized.address);
       expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.true;
 
-      // Revoke role
+      // Revoke role through the timelock
       await slashing.connect(admin).revokeSettlementRole(unauthorized.address);
+      expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.true;
+      await time.increase(2 * 24 * 60 * 60);
+      await slashing.executeResolverRoleRevoke(unauthorized.address);
       expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.false;
     });
   });
@@ -120,7 +129,7 @@ describe("VerifierSlashing", function () {
         );
 
       // Check slash history
-      const history = await slashing.getSlashHistory(verifier1.address);
+      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
       expect(history.length).to.equal(1);
       expect(history[0].amount).to.equal(expectedSlashAmount);
       expect(history[0].percentage).to.equal(slashPercentage);
@@ -241,11 +250,33 @@ describe("VerifierSlashing", function () {
       await time.increase(3601);
       await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
 
-      const history = await slashing.getSlashHistory(verifier1.address);
+      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
       expect(history.length).to.equal(2);
       expect(history[0].reason).to.equal("First reason");
       expect(history[1].reason).to.equal("Second reason");
       expect(await slashing.getSlashCount(verifier1.address)).to.equal(2);
+    });
+
+    it("Should return paginated slash history pages", async function () {
+      const { slashing, settlement, verifier1 } = await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(settlement).slash(verifier1.address, 10, "First reason");
+      await time.increase(3601);
+      await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
+      await time.increase(3601);
+      await slashing.connect(settlement).slash(verifier1.address, 20, "Third reason");
+
+      const page1 = await slashing.getSlashHistory(verifier1.address, 0, 2);
+      expect(page1.length).to.equal(2);
+      expect(page1[0].reason).to.equal("First reason");
+      expect(page1[1].reason).to.equal("Second reason");
+
+      const page2 = await slashing.getSlashHistory(verifier1.address, 2, 2);
+      expect(page2.length).to.equal(1);
+      expect(page2[0].reason).to.equal("Third reason");
+
+      const emptyPage = await slashing.getSlashHistory(verifier1.address, 4, 2);
+      expect(emptyPage.length).to.equal(0);
     });
   });
 

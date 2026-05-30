@@ -24,9 +24,12 @@ describe("WeightedStaking", function () {
     await mockOracle.waitForDeployment();
 
     // Deploy WeightedStaking
-    const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
-    weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress(), await owner.getAddress());
+    const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
+    weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress(), await owner.getAddress(), await owner.getAddress());
     await weightedStaking.waitForDeployment();
+
+    // Disable sqrt weighting so legacy tests continue to validate linear behaviour
+    await weightedStaking.setSqrtWeighting(false);
   });
 
   describe("Deployment", function () {
@@ -44,9 +47,9 @@ describe("WeightedStaking", function () {
     });
 
     it("Should revert if oracle address is zero", async function () {
-      const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
+      const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
       await expect(
-        WeightedStaking.deploy(ethers.ZeroAddress, await owner.getAddress())
+        WeightedStaking.deploy(ethers.ZeroAddress, await owner.getAddress(), await owner.getAddress())
       ).to.be.revertedWithCustomError(weightedStaking, "InvalidReputationOracle");
     });
   });

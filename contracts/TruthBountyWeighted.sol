@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IReputationOracle.sol";
@@ -19,7 +20,7 @@ import "./governance/GovernanceOwnable.sol";
  * - Prevents low-reputation dominance
  * - Maintains backward compatibility with equal-weight fallback
  */
-contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -57,6 +58,15 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     /// @notice Default percentage of losing raw stake that is slashed.
     uint256 public constant DEFAULT_SLASH_PERCENT = 20;
 
+    /// @notice Default grace period for reputation updates (2 days).
+    uint256 public constant DEFAULT_REPUTATION_UPDATE_GRACE_PERIOD = 2 days;
+
+    /// @notice Minimum reputation update grace period (1 hour).
+    uint256 public constant MIN_REPUTATION_UPDATE_GRACE_PERIOD = 1 hours;
+
+    /// @notice Maximum reputation update grace period (30 days).
+    uint256 public constant MAX_REPUTATION_UPDATE_GRACE_PERIOD = 30 days;
+
     /// @notice Minimum reputation score (10% = 0.1x).
     uint256 public constant MIN_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER / 10;
 
@@ -69,7 +79,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
-    IERC20 public immutable bountyToken;
+    IERC20 public bountyToken;
 
     /// @notice Reputation oracle for score lookups
     IReputationOracle public reputationOracle;
@@ -77,17 +87,21 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     // ============ Configuration Parameters (Governance-controlled) ============
 
     uint256 public verificationWindowDuration = DEFAULT_VERIFICATION_WINDOW_DURATION;
+    uint256 public confirmationDelay = 1 hours;
     uint256 public minStakeAmount = DEFAULT_MIN_STAKE_AMOUNT;
     uint256 public settlementThresholdPercent = DEFAULT_SETTLEMENT_THRESHOLD_PERCENT;
     uint256 public rewardPercent = DEFAULT_REWARD_PERCENT;
     uint256 public slashPercent = DEFAULT_SLASH_PERCENT;
+    uint256 public reputationUpdateGracePeriod = DEFAULT_REPUTATION_UPDATE_GRACE_PERIOD;
 
     // Governance parameter IDs for reference
     bytes32 public constant GOVERNANCE_PARAM_VERIFICATION_WINDOW = keccak256("VERIFICATION_WINDOW_DURATION");
+    bytes32 public constant GOVERNANCE_PARAM_CONFIRMATION_DELAY = keccak256("CONFIRMATION_DELAY");
     bytes32 public constant GOVERNANCE_PARAM_MIN_STAKE = keccak256("MIN_STAKE_AMOUNT");
     bytes32 public constant GOVERNANCE_PARAM_THRESHOLD = keccak256("SETTLEMENT_THRESHOLD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_REWARD = keccak256("REWARD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_SLASH = keccak256("SLASH_PERCENT");
+    bytes32 public constant GOVERNANCE_PARAM_REPUTATION_GRACE_PERIOD = keccak256("REPUTATION_UPDATE_GRACE_PERIOD");
 
     /// @notice Minimum reputation score (10% = 0.1)
     uint256 public minReputationScore = MIN_REPUTATION_SCORE;
@@ -140,6 +154,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     struct VerifierStake {
         uint256 totalStaked;
         uint256 activeStakes;
+        uint256 exitTime;
     }
 
     // ============ Storage Mappings ============
@@ -198,11 +213,13 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event WeightedStakingToggled(bool enabled);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
 
     // ============ Errors ============
 
     error InvalidReputationOracle();
     error InvalidReputationBounds();
+    error InvalidReputationUpdateGracePeriod();
 
     // ============ Constructor ============
 
@@ -229,6 +246,18 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         
         // Initialize governance
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
+    }
+
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.revokeRole(role, account);
     }
 
     // ============ Core Functions ============
@@ -295,7 +324,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Check for last-minute reputation boosts using grace period
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         uint256 effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
 
         // Lock the raw stake
@@ -334,7 +364,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
-        require(block.timestamp >= claim.verificationWindowEnd, "Verification window not closed");
+        require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
         require(!claim.settled, "Claim already settled");
         require(claim.totalStakeAmount > 0, "No votes cast");
 
@@ -451,19 +481,89 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @notice Withdraw available stake (not locked in active claims)
      */
     function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
-        VerifierStake storage stake = verifierStakes[msg.sender];
-        require(
-            stake.totalStaked >= stake.activeStakes + amount,
-            "Insufficient available stake"
-        );
+    VerifierStake storage stake = verifierStakes[msg.sender];
+    require(
+        stake.totalStaked >= stake.activeStakes + amount,
+        "Insufficient available stake"
+    );
 
-        stake.totalStaked -= amount;
-        require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
-
-        emit StakeWithdrawn(msg.sender, amount);
+    // If no exit has been initiated yet, start the cooldown clock
+    if (stake.exitTime == 0) {
+        stake.exitTime = block.timestamp;
+        revert("Withdrawal initiated. Please wait 2 days cooldown.");
     }
 
+    // Ensure the 2 days cooldown window has passed
+    require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
+
+    // Reset the exit clock for future actions
+    stake.exitTime = 0;
+
+    stake.totalStaked -= amount;
+    require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
+
+    emit StakeWithdrawn(msg.sender, amount);
+}
+
+
     // ============ Internal Helper Functions ============
+
+    /**
+     * @notice Get the reputation score for a user, considering grace period restrictions
+     * @param user The address to query
+     * @param claimCreatedAt Timestamp when the claim was created
+     * @return score The effective reputation score (after grace period check)
+     * @dev If reputation was updated within grace period before claim creation, returns default score
+     */
+    function _getReputationScoreWithGracePeriod(
+        address user,
+        uint256 claimCreatedAt
+    ) internal view returns (uint256 score) {
+        if (!weightedStakingEnabled) {
+            return BASE_MULTIPLIER;
+        }
+
+        // Try to get the oracle's active status
+        try reputationOracle.isActive() returns (bool active) {
+            if (!active) {
+                return defaultReputationScore;
+            }
+        } catch {
+            return defaultReputationScore;
+        }
+
+        // Try to get the last update timestamp
+        uint256 lastUpdateTime = 0;
+        try reputationOracle.getLastReputationUpdate(user) returns (uint256 timestamp) {
+            lastUpdateTime = timestamp;
+        } catch {
+            // Oracle doesn't support getLastReputationUpdate, proceed without grace period check
+            lastUpdateTime = 0;
+        }
+
+        // Check if reputation was updated within grace period
+        // Grace period window: [claimCreatedAt - gracePeriod, claimCreatedAt + gracePeriod]
+        if (lastUpdateTime > 0) {
+            uint256 timeSinceClaimCreation = lastUpdateTime > claimCreatedAt
+                ? lastUpdateTime - claimCreatedAt
+                : claimCreatedAt - lastUpdateTime;
+
+            // If reputation update happened within grace period of claim creation, use default
+            if (timeSinceClaimCreation <= reputationUpdateGracePeriod) {
+                return defaultReputationScore;
+            }
+        }
+
+        // Get the actual reputation score
+        try reputationOracle.getReputationScore(user) returns (uint256 reputationScore) {
+            if (reputationScore == 0) {
+                return defaultReputationScore;
+            }
+            return _applyReputationBounds(reputationScore);
+        } catch {
+            return defaultReputationScore;
+        }
+    }
 
     /**
      * @notice Get reputation score with bounds and fallback
@@ -695,6 +795,19 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_VERIFICATION_WINDOW, oldDuration, newDuration);
     }
+
+    /**
+     * @notice Update confirmation delay (governance or admin)
+     * @param newDelay New delay in seconds
+     */
+    function setConfirmationDelay(uint256 newDelay) external onlyGovernanceOrAdmin {
+        require(newDelay >= 5 minutes && newDelay <= 7 days, "Invalid duration");
+        
+        uint256 oldDelay = confirmationDelay;
+        confirmationDelay = newDelay;
+        
+        emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_CONFIRMATION_DELAY, oldDelay, newDelay);
+    }
     
     /**
      * @notice Update minimum stake amount (governance or admin)
@@ -748,6 +861,24 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_SLASH, old, newPercent);
     }
 
+    /**
+     * @notice Update reputation update grace period (governance or admin)
+     * @param newGracePeriod New grace period in seconds
+     * @dev Grace period prevents last-minute reputation boosts from being used in voting
+     */
+    function setReputationUpdateGracePeriod(uint256 newGracePeriod) external onlyGovernanceOrAdmin {
+        if (newGracePeriod < MIN_REPUTATION_UPDATE_GRACE_PERIOD || 
+            newGracePeriod > MAX_REPUTATION_UPDATE_GRACE_PERIOD) {
+            revert InvalidReputationUpdateGracePeriod();
+        }
+        
+        uint256 old = reputationUpdateGracePeriod;
+        reputationUpdateGracePeriod = newGracePeriod;
+        
+        emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_REPUTATION_GRACE_PERIOD, old, newGracePeriod);
+        emit ReputationUpdateGracePeriodUpdated(newGracePeriod);
+    }
+
     // ============ View Functions ============
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
@@ -782,4 +913,17 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
+
+    /**
+     * @notice Safely migrates the primary payment bounty token
+     * @param _newBountyToken The address of the new ERC20 token
+     */
+    function updateBountyToken(address _newBountyToken) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Unauthorized");
+        require(_newBountyToken != address(0), "Invalid token address");
+        require(_newBountyToken != address(bountyToken), "Token already active");
+
+        bountyToken = IERC20(_newBountyToken);
+    }
 }
+

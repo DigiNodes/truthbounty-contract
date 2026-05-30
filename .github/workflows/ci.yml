@@ -3,6 +3,9 @@
 
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [main]
@@ -34,19 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Solidity Lint
-        run: |
-          if npm run lint:sol --if-present; then
-            npm run lint:sol
-          else
-            echo "No Solidity linter configured. Skipping."
-          fi
+        run: npm run lint:sol --if-present
       - name: TypeScript Lint
-        run: |
-          if npm run lint --if-present; then
-            npm run lint
-          else
-            echo "No TypeScript linter configured. Skipping."
-          fi
+        run: npm run lint --if-present
 
   test:
     name: Test
