@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./IReputationOracle.sol";
 import "./governance/GovernanceOwnable.sol";
 
@@ -38,6 +39,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /// @notice Denominator for percentage-based governance parameters.
     uint256 public constant PERCENT_DENOMINATOR = 100;
+
+    function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
+        return Math.mulDiv(value, percent, PERCENT_DENOMINATOR);
+    }
 
     /// @notice Default verification window for new claims.
     uint256 public constant DEFAULT_VERIFICATION_WINDOW_DURATION = 7 days;
@@ -221,6 +226,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event WeightedStakingToggled(bool enabled);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
@@ -746,12 +752,12 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 loserRawStake = _calculateLoserRawStake(claimId, passed);
 
         // Slash the configured percentage of losing raw stake.
-        slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
+        slashedAmount = _percentOf(loserRawStake, slashPercent);
         // Calculate and assign per-vote slash amounts, returns total slashed
         slashedAmount = _assignPerVoteSlashes(claimId, passed);
 
         // The configured reward share of slashed stake goes to winners.
-        rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
+        rewardAmount = _percentOf(slashedAmount, rewardPercent);
 
         totalSlashed += slashedAmount;
         totalRewarded += rewardAmount;
@@ -801,7 +807,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             
             if (isLoser) {
                 // Calculate slash as the configured percentage of raw stake.
-                uint256 slashAmount = (vote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
+                uint256 slashAmount = _percentOf(vote.stakeAmount, slashPercent);
                 vote.slashAmount = slashAmount;
                 totalSlashed += slashAmount;
             } else {

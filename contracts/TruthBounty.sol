@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./governance/GovernanceOwnable.sol";
@@ -237,6 +238,10 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         return RESOLVER_ROLE;
     }
 
+    function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
+        return Math.mulDiv(value, percent, 100);
+    }
+
     function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
         ResolverRoleTimelock.grantRole(role, account);
     }
@@ -328,8 +333,8 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         uint256 winnerStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
         uint256 loserStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
-        slashedAmount = (loserStake * slashPercent) / 100;
-        rewardAmount = (slashedAmount * rewardPercent) / 100;
+        slashedAmount = _percentOf(loserStake, slashPercent);
+        rewardAmount = _percentOf(slashedAmount, rewardPercent);
 
         totalSlashed += slashedAmount;
         totalRewarded += rewardAmount;
@@ -386,7 +391,7 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         require(!isWinner, "Winners should use claimSettlementRewards");
 
         // Calculate slashed portion
-        uint256 slashedAmount = (vote.stakeAmount * slashPercent) / 100;
+        uint256 slashedAmount = _percentOf(vote.stakeAmount, slashPercent);
         uint256 returnAmount = vote.stakeAmount - slashedAmount;
 
         vote.stakeReturned = true;

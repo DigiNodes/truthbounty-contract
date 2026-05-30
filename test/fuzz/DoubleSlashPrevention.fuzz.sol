@@ -269,4 +269,43 @@ contract DoubleSlashPreventionFuzzTest is Test {
             "Contract totalSlashed should equal sum of all settlement slashes"
         );
     }
+
+    function test_SlashedAmountDoesNotOverflowWithLargeStake() public {
+        // Create a fresh contract and token to isolate the overflow scenario
+        MockTokenForTest overflowToken = new MockTokenForTest();
+        MockReputationOracle overflowOracle = new MockReputationOracle();
+        TruthBountyWeighted overflowTruthBounty = new TruthBountyWeighted(
+            address(overflowToken),
+            address(overflowOracle),
+            admin
+        );
+
+        address verifier = address(uint160(0x999));
+        uint256 stakeAmount = (type(uint256).max / 20) + 1;
+
+        overflowToken.mint(verifier, stakeAmount);
+
+        vm.prank(verifier);
+        overflowToken.approve(address(overflowTruthBounty), type(uint256).max);
+
+        vm.prank(verifier);
+        overflowTruthBounty.stake(stakeAmount);
+
+        vm.prank(admin);
+        uint256 claimId = overflowTruthBounty.createClaim("Overflow claim");
+
+        vm.prank(verifier);
+        overflowTruthBounty.vote(claimId, false, stakeAmount);
+
+        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+
+        vm.prank(admin);
+        overflowTruthBounty.settleClaim(claimId);
+
+        (, , uint256 totalSlashed, , ) = overflowTruthBounty.settlementResults(claimId);
+        uint256 expectedSlash = stakeAmount / 5; // 20% of the stake
+
+        assertEq(totalSlashed, expectedSlash, "Large slash amount should calculate correctly");
+        assertEq(overflowTruthBounty.totalSlashed(), expectedSlash, "Contract totalSlashed should reflect large slash amount");
+    }
 }
