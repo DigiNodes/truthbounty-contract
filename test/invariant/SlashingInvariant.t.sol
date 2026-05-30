@@ -7,6 +7,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/MockReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+
 /**
  * @title SlashingInvariantTest
  * @notice Invariant tests to ensure slashing accounting never violates key properties
@@ -30,7 +31,7 @@ contract MockERC20 is ERC20 {
     }
 }
 
-contract SlashingHandler is CommonBase {
+contract SlashingHandler is Test {
     TruthBountyWeighted public truthBounty;
     MockERC20 public token;
     MockReputationOracle public oracle;
@@ -50,6 +51,7 @@ contract SlashingHandler is CommonBase {
         truthBounty = new TruthBountyWeighted(
             address(token),
             address(oracle),
+            msg.sender,
             msg.sender
         );
 
@@ -82,7 +84,7 @@ contract SlashingHandler is CommonBase {
         uint256 claimId = claimIds[claimIdx];
 
         for (uint256 i = 0; i < VERIFIER_COUNT; i++) {
-            if (HEVM_ADDRESS.block_timestamp() >= 7 days) {
+            if (block.timestamp >= 7 days) {
                 return; // Window closed
             }
 
@@ -103,11 +105,11 @@ contract SlashingHandler is CommonBase {
         uint256 claimId = claimIds[claimIdx];
 
         // Skip if already settled
-        (bool settled, , , , , , , ) = truthBounty.claims(claimId);
+        (, , , , , bool settled, , , ) = truthBounty.claims(claimId);
         if (settled) return;
 
         // Move past window if needed
-        if (HEVM_ADDRESS.block_timestamp() < 7 days) {
+        if (block.timestamp < 7 days) {
             skip(7 days + 1);
         }
 
@@ -155,7 +157,7 @@ contract SlashingInvariantTest is StdInvariant, Test {
      * @notice Invariant: No single voter loses more than SLASH_PERCENT
      * @dev This is implicitly tested by the settlement logic
      */
-    function invariant_NoExcessiveSlashing() public view {
+    function invariant_NoExcessiveSlashing() public pure {
         // This is a property that should hold for all settled claims
         // Since we can't iterate all votes without external tracking,
         // we verify it by checking the calculation logic is correct
@@ -167,7 +169,7 @@ contract SlashingInvariantTest is StdInvariant, Test {
      * @notice Invariant: totalSlashed <= totalTokensStaked
      * @dev Slashed tokens can't exceed what was staked
      */
-    function invariant_SlashedTokensWithinBounds() public view {
+    function invariant_SlashedTokensWithinBounds() public pure {
         // Verify the mathematic bound on totalSlashed
         // This is implicitly maintained by the contract logic
     }

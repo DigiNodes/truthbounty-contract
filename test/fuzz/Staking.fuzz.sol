@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/staking.sol";
+import "../../contracts/staking.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract StakingFuzzTest is Test {
@@ -29,7 +29,7 @@ contract StakingFuzzTest is Test {
         stakingToken = new MockERC20("TruthBounty Token", "TBT", 18);
         
         // Deploy staking contract
-        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION);
+        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION, owner);
         
         // Set slashing contract
         staking.setSlashingContract(slashingContract);
@@ -354,8 +354,8 @@ contract StakingFuzzTest is Test {
 
 // Mock ERC20 token for testing
 contract MockERC20 is ERC20 {
-    constructor(string memory name, string memory symbol, uint8 decimals) ERC20(name, symbol) {
-        _mint(msg.sender, 1000000000 * 10**decimals); // 1B tokens for testing
+    constructor(string memory name, string memory symbol, uint8 decimals_) ERC20(name, symbol) {
+        _mint(msg.sender, 1000000000 * 10**decimals_); // 1B tokens for testing
     }
     
     function mint(address to, uint256 amount) external {

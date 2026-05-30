@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/WeightedStaking.sol";
-import "../contracts/MockReputationOracle.sol";
+import "../../contracts/WeightedStaking.sol";
+import "../../contracts/MockReputationOracle.sol";
 
 contract WeightedStakingFuzzTest is Test {
     WeightedStaking public weightedStaking;
@@ -33,7 +33,7 @@ contract WeightedStakingFuzzTest is Test {
         mockOracle = new MockReputationOracle();
         
         // Deploy weighted staking contract
-        weightedStaking = new WeightedStaking(address(mockOracle));
+        weightedStaking = new WeightedStaking(address(mockOracle), owner, owner);
         
         vm.stopPrank();
     }
@@ -96,8 +96,8 @@ contract WeightedStakingFuzzTest is Test {
     
     /// @dev Fuzz test for batch calculation with random arrays
     function testFuzz_BatchCalculateWeightedStake_RandomArrays(
-        uint256[] calldata stakeAmounts,
-        uint256[] calldata reputationScores
+        uint256[] memory stakeAmounts,
+        uint256[] memory reputationScores
     ) public {
         // Ensure arrays have same length and reasonable size
         vm.assume(stakeAmounts.length == reputationScores.length);
@@ -248,7 +248,7 @@ contract WeightedStakingFuzzTest is Test {
     }
     
     /// @dev Helper function to apply reputation bounds
-    function _applyBounds(uint256 score) internal view returns (uint256) {
+    function _applyBounds(uint256 score) internal pure returns (uint256) {
         if (score < MIN_REPUTATION) return MIN_REPUTATION;
         if (score > MAX_REPUTATION) return MAX_REPUTATION;
         return score;

@@ -134,6 +134,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         uint256 totalSlashed;
         uint256 winnerWeightedStake;   // Changed to weighted (NEW)
         uint256 loserWeightedStake;    // Changed to weighted (NEW)
+        uint256 claimedWinnerWeightedStake; // Tracks claimed stake to identify last claimant
+        uint256 distributedRewards;      // Tracks rewards already distributed to calculate remainder
     }
 
     struct VerifierStake {
@@ -368,22 +370,33 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         require(claim.submitter != address(0), "Claim does not exist");
         require(claim.settled, "Claim not settled");
 
-        Vote storage vote = votes[claimId][msg.sender];
-        require(vote.voted, "No vote cast");
-        require(!vote.rewardClaimed, "Rewards already claimed");
+        Vote storage voteRecord = votes[claimId][msg.sender];
+        require(voteRecord.voted, "No vote cast");
+        require(!voteRecord.rewardClaimed, "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
         require(settlement.winnerWeightedStake > 0, "No winners");
 
         // Check if verifier was on the winning side
-        bool isWinner = (vote.support == settlement.passed);
+        bool isWinner = (voteRecord.support == settlement.passed);
         require(isWinner, "Not a winner");
 
         // Calculate proportional reward based on EFFECTIVE stake
-        uint256 reward = (vote.effectiveStake * settlement.totalRewards) / settlement.winnerWeightedStake;
+        uint256 reward;
+        
+        settlement.claimedWinnerWeightedStake += voteRecord.effectiveStake;
+        
+        if (settlement.claimedWinnerWeightedStake == settlement.winnerWeightedStake) {
+            // Last claimant gets all remaining rewards to prevent dust accumulation
+            reward = settlement.totalRewards - settlement.distributedRewards;
+        } else {
+            reward = (voteRecord.effectiveStake * settlement.totalRewards) / settlement.winnerWeightedStake;
+        }
+        
+        settlement.distributedRewards += reward;
 
         // Mark as claimed
-        vote.rewardClaimed = true;
+        voteRecord.rewardClaimed = true;
 
         // Transfer reward
         if (reward > 0) {
@@ -392,10 +405,10 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         }
 
         // Return stake (winners get full RAW stake back)
-        if (!vote.stakeReturned) {
-            vote.stakeReturned = true;
-            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
-            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+        if (!voteRecord.stakeReturned) {
+            voteRecord.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= voteRecord.stakeAmount;
+            require(bountyToken.transfer(msg.sender, voteRecord.stakeAmount), "Stake transfer failed");
         }
     }
 
@@ -408,27 +421,27 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         require(claim.submitter != address(0), "Claim does not exist");
         require(claim.settled, "Claim not settled");
 
-        Vote storage vote = votes[claimId][msg.sender];
-        require(vote.voted, "No vote cast");
-        require(!vote.stakeReturned, "Stake already returned");
+        Vote storage voteRecord = votes[claimId][msg.sender];
+        require(voteRecord.voted, "No vote cast");
+        require(!voteRecord.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
-        bool isWinner = (vote.support == settlement.passed);
+        bool isWinner = (voteRecord.support == settlement.passed);
 
         uint256 stakeToReturn;
-        uint256 slashAmount = vote.slashAmount; // Use pre-calculated slash amount (no recalculation)
+        uint256 slashAmount = voteRecord.slashAmount; // Use pre-calculated slash amount (no recalculation)
 
         if (isWinner) {
-            stakeToReturn = vote.stakeAmount;
+            stakeToReturn = voteRecord.stakeAmount;
         } else {
             // Losers get stake back minus slashing (pre-calculated at settlement)
-            stakeToReturn = vote.stakeAmount - slashAmount;
+            stakeToReturn = voteRecord.stakeAmount - slashAmount;
 
             emit StakeSlashed(claimId, msg.sender, slashAmount);
         }
 
-        vote.stakeReturned = true;
-        verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+        voteRecord.stakeReturned = true;
+        verifierStakes[msg.sender].activeStakes -= voteRecord.stakeAmount;
 
         if (!isWinner) {
             verifierStakes[msg.sender].totalStaked -= slashAmount;
@@ -443,25 +456,25 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
      * @notice Withdraw available stake (not locked in active claims)
      */
     function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
-    VerifierStake storage stake = verifierStakes[msg.sender];
+    VerifierStake storage vStake = verifierStakes[msg.sender];
     require(
-        stake.totalStaked >= stake.activeStakes + amount,
+        vStake.totalStaked >= vStake.activeStakes + amount,
         "Insufficient available stake"
     );
 
     // If no exit has been initiated yet, start the cooldown clock
-    if (stake.exitTime == 0) {
-        stake.exitTime = block.timestamp;
+    if (vStake.exitTime == 0) {
+        vStake.exitTime = block.timestamp;
         revert("Withdrawal initiated. Please wait 2 days cooldown.");
     }
 
     // Ensure the 2 days cooldown window has passed
-    require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
+    require(block.timestamp >= vStake.exitTime + 2 days, "Cooldown active");
 
     // Reset the exit clock for future actions
-    stake.exitTime = 0;
+    vStake.exitTime = 0;
 
-    stake.totalStaked -= amount;
+    vStake.totalStaked -= amount;
     require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
     emit StakeWithdrawn(msg.sender, amount);
@@ -568,35 +581,37 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             totalRewards: rewardAmount,
             totalSlashed: slashedAmount,
             winnerWeightedStake: winnerWeightedStake,
-            loserWeightedStake: loserWeightedStake
+            loserWeightedStake: loserWeightedStake,
+            claimedWinnerWeightedStake: 0,
+            distributedRewards: 0
         });
     }
 
     /**
      * @notice Assign per-vote slash amounts to each loser
      * @dev Iterates through all voters and stores slash amount in Vote struct for losers
-     * @return totalSlashed Sum of all slash amounts
+     * @return totalSlashedAmount Sum of all slash amounts
      */
     function _assignPerVoteSlashes(
         uint256 claimId,
         bool passed
-    ) internal returns (uint256 totalSlashed) {
+    ) internal returns (uint256 totalSlashedAmount) {
         address[] storage voters = claimVoters[claimId];
         
         for (uint256 i = 0; i < voters.length; i++) {
             address voter = voters[i];
-            Vote storage vote = votes[claimId][voter];
+            Vote storage voteRecord = votes[claimId][voter];
             
-            bool isLoser = (vote.support != passed);
+            bool isLoser = (voteRecord.support != passed);
             
             if (isLoser) {
                 // Calculate slash as the configured percentage of raw stake.
-                uint256 slashAmount = (vote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
-                vote.slashAmount = slashAmount;
-                totalSlashed += slashAmount;
+                uint256 slashAmount = (voteRecord.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
+                voteRecord.slashAmount = slashAmount;
+                totalSlashedAmount += slashAmount;
             } else {
                 // Winners are not slashed
-                vote.slashAmount = 0;
+                voteRecord.slashAmount = 0;
             }
         }
     }
@@ -796,4 +811,3 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         bountyToken = IERC20(_newBountyToken);
     }
 }
-

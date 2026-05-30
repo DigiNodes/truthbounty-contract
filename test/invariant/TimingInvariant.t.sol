@@ -13,7 +13,7 @@ contract MockERC20 is ERC20 {
     }
 }
 
-contract TimingHandler is CommonBase {
+contract TimingHandler is Test {
     TruthBountyWeighted public truthBounty;
     MockERC20 public token;
     MockReputationOracle public oracle;

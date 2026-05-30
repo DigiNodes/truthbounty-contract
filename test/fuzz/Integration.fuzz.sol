@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/WeightedStaking.sol";
-import "../contracts/staking.sol";
-import "./mocks/MockReputationOracle.sol";
+import "../../contracts/WeightedStaking.sol";
+import "../../contracts/staking.sol";
+import "../../contracts/MockReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
@@ -34,8 +34,8 @@ contract IntegrationFuzzTest is Test {
         stakingToken = new MockERC20("TruthBounty Token", "TBT", 18);
         
         // Deploy contracts
-        weightedStaking = new WeightedStaking(address(mockOracle));
-        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION);
+        weightedStaking = new WeightedStaking(address(mockOracle), owner, owner);
+        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION, owner);
         staking.setSlashingContract(slashingContract);
         
         // Setup verifiers with tokens
@@ -285,5 +285,20 @@ contract IntegrationFuzzTest is Test {
         // Staking should work regardless of weighted staking status
         (uint256 staked,,) = staking.getStakeInfo(verifier1);
         assertEq(staked, stakeAmount, "Staking should work regardless of weighted status");
+    }
+}
+
+// Mock ERC20 token for testing
+contract MockERC20 is ERC20 {
+    constructor(string memory name, string memory symbol, uint8 decimals_) ERC20(name, symbol) {
+        _mint(msg.sender, 1000000000 * 10**decimals_); // 1B tokens for testing
+    }
+    
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+    
+    function decimals() public view virtual override returns (uint8) {
+        return 18;
     }
 }

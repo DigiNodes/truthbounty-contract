@@ -160,6 +160,8 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         uint256 totalSlashed;
         uint256 winnerStake;
         uint256 loserStake;
+        uint256 claimedWinnerStake; // Tracks claimed stake to identify last claimant
+        uint256 distributedRewards; // Tracks rewards already distributed to calculate remainder
     }
 
     // Verifier staking information
@@ -205,7 +207,6 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     event StakeDeposited(address indexed verifier, uint256 amount);
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event RewardsClaimed(address indexed verifier, uint256 amount);
-
     constructor(address _bountyToken, address initialAdmin, address _governanceController) {
         require(_bountyToken != address(0), "Invalid token address");
         require(initialAdmin != address(0), "Invalid admin address");
@@ -307,7 +308,10 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         uint256 winnerStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
         uint256 loserStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
+        // Calculate slashed amount - capture remainder
         slashedAmount = (loserStake * slashPercent) / 100;
+        
+        // Calculate reward amount from slashed - capture remainder
         rewardAmount = (slashedAmount * rewardPercent) / 100;
 
         totalSlashed += slashedAmount;
@@ -318,7 +322,9 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
             totalRewards: rewardAmount,
             totalSlashed: slashedAmount,
             winnerStake: winnerStake,
-            loserStake: loserStake
+            loserStake: loserStake,
+            claimedWinnerStake: 0,
+            distributedRewards: 0
         });
     }
 
@@ -336,7 +342,18 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         bool isWinner = (vote.support == settlement.passed);
         require(isWinner, "Not a winner");
 
-        uint256 reward = (vote.stakeAmount * settlement.totalRewards) / settlement.winnerStake;
+        uint256 reward;
+        
+        settlement.claimedWinnerStake += vote.stakeAmount;
+        
+        if (settlement.claimedWinnerStake == settlement.winnerStake) {
+            reward = settlement.totalRewards - settlement.distributedRewards;
+        } else {
+            reward = (vote.stakeAmount * settlement.totalRewards) / settlement.winnerStake;
+        }
+        
+        settlement.distributedRewards += reward;
+        
         vote.rewardClaimed = true;
 
         if (reward > 0) {
