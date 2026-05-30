@@ -233,4 +233,9 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     function getGovernanceVersion() external view returns (uint256) {
         return 1; // Placeholder for future governance version tracking
     }
+
+    // ============ Reserved Storage ============
+
+    /// @dev Storage gap for future upgrades (reserved 50 slots)
+    uint256[50] private __gap;
 }
