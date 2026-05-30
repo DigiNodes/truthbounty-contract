@@ -212,6 +212,8 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
     event StakeDeposited(address indexed verifier, uint256 amount);
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event RewardsClaimed(address indexed verifier, uint256 amount);
+    event ETHReceived(address indexed sender, uint256 amount);
+    event ETHRescued(address indexed recipient, uint256 amount);
 
     constructor(address _bountyToken, address initialAdmin, address _governanceController) {
         require(_bountyToken != address(0), "Invalid token address");
@@ -411,6 +413,25 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
         emit StakeWithdrawn(msg.sender, amount);
+    }
+
+    function rescueETH(address payable to, uint256 amount) external onlyRole(TREASURY_ROLE) nonReentrant {
+        require(to != address(0), "Invalid recipient");
+        require(amount > 0, "Amount must be > 0");
+        require(address(this).balance >= amount, "Insufficient ETH balance");
+
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
+
+        emit ETHRescued(to, amount);
+    }
+
+    receive() external payable {
+        emit ETHReceived(msg.sender, msg.value);
+    }
+
+    fallback() external payable {
+        emit ETHReceived(msg.sender, msg.value);
     }
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
