@@ -214,7 +214,7 @@ describe("VerifierSlashing", function () {
           [10, 15], // Wrong length
           ["Reason"]
         )
-      ).to.be.revertedWith("Array length mismatch");
+      ).to.be.revertedWithCustomError(slashing, "BatchLengthMismatch");
     });
   });
 
