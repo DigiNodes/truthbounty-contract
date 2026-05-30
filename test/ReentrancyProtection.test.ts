@@ -529,7 +529,7 @@ describe("Reentrancy Protection Tests", function () {
         expect(stakeAfterSecond).to.equal(expectedRemaining);
 
         // Verify slash history
-        const history = await slashing.getSlashHistory(verifier1.address);
+        const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
         expect(history.length).to.equal(2);
       });
 
@@ -591,8 +591,8 @@ describe("Reentrancy Protection Tests", function () {
         expect(stake3After).to.be.lt(stake3Before);
 
         // Verify slash history was recorded
-        const history2 = await slashing.getSlashHistory(verifier2.address);
-        const history3 = await slashing.getSlashHistory(verifier3.address);
+        const history2 = await slashing.getSlashHistory(verifier2.address, 0, 10);
+        const history3 = await slashing.getSlashHistory(verifier3.address, 0, 10);
         expect(history2.length).to.be.gt(0);
         expect(history3.length).to.be.gt(0);
       });

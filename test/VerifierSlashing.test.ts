@@ -120,7 +120,7 @@ describe("VerifierSlashing", function () {
         );
 
       // Check slash history
-      const history = await slashing.getSlashHistory(verifier1.address);
+      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
       expect(history.length).to.equal(1);
       expect(history[0].amount).to.equal(expectedSlashAmount);
       expect(history[0].percentage).to.equal(slashPercentage);
@@ -241,11 +241,33 @@ describe("VerifierSlashing", function () {
       await time.increase(3601);
       await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
 
-      const history = await slashing.getSlashHistory(verifier1.address);
+      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
       expect(history.length).to.equal(2);
       expect(history[0].reason).to.equal("First reason");
       expect(history[1].reason).to.equal("Second reason");
       expect(await slashing.getSlashCount(verifier1.address)).to.equal(2);
+    });
+
+    it("Should return paginated slash history pages", async function () {
+      const { slashing, settlement, verifier1 } = await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(settlement).slash(verifier1.address, 10, "First reason");
+      await time.increase(3601);
+      await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
+      await time.increase(3601);
+      await slashing.connect(settlement).slash(verifier1.address, 20, "Third reason");
+
+      const page1 = await slashing.getSlashHistory(verifier1.address, 0, 2);
+      expect(page1.length).to.equal(2);
+      expect(page1[0].reason).to.equal("First reason");
+      expect(page1[1].reason).to.equal("Second reason");
+
+      const page2 = await slashing.getSlashHistory(verifier1.address, 2, 2);
+      expect(page2.length).to.equal(1);
+      expect(page2[0].reason).to.equal("Third reason");
+
+      const emptyPage = await slashing.getSlashHistory(verifier1.address, 4, 2);
+      expect(emptyPage.length).to.equal(0);
     });
   });
 
