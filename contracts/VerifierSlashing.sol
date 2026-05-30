@@ -25,6 +25,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant CRITICAL_SLASHER_ROLE = keccak256("CRITICAL_SLASHER_ROLE");
     
     // Legacy mapping for backward compatibility
     bytes32 public constant SETTLEMENT_ROLE = RESOLVER_ROLE;
@@ -58,6 +59,9 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
     
     // Verifier address => last slash timestamp
     mapping(address => uint256) public lastSlashTime;
+
+    // Verifier address => last slash block number (prevents same-block bypass)
+    mapping(address => uint256) public lastSlashBlock;
     
     // Total amount slashed per verifier
     mapping(address => uint256) public totalSlashed;
@@ -78,6 +82,13 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
     );
     
     event StakingContractUpdated(address newStakingContract);
+    event CriticalSlashed(
+        address indexed verifier,
+        uint256 amount,
+        uint256 percentage,
+        string reason,
+        address indexed slashedBy
+    );
     
     // Custom errors for gas efficiency
     error UnauthorizedSlashing();
@@ -86,6 +97,8 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
     error SlashingTooFrequent();
     error InvalidStakingContract();
     error SlashAmountTooHigh();
+    error SlashSameBlock();
+    error CriticalSlashUnauthorized();
     
     /**
      * @dev Constructor sets up roles and initial configuration
@@ -141,6 +154,11 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
         if (block.timestamp < lastSlashTime[verifier] + slashCooldown) {
             revert SlashingTooFrequent();
         }
+
+        // Prevent multiple slashes in the same block (#185)
+        if (lastSlashBlock[verifier] == block.number) {
+            revert SlashSameBlock();
+        }
         
         // Get current stake from staking contract
         (uint256 currentStake,) = stakingContract.stakes(verifier);
@@ -158,6 +176,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
         
         // Update tracking
         lastSlashTime[verifier] = block.timestamp;
+        lastSlashBlock[verifier] = block.number;
         totalSlashed[verifier] += slashAmount;
         
         // Record slash history
@@ -216,6 +235,62 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
             }
         }
     }
+
+    /**
+     * @dev Critical slash — allows up to 100% slash for critical failures (#186)
+     *      Bypasses maxSlashPercentage but still respects cooldown and block checks.
+     * @param verifier Address of the verifier to slash
+     * @param percentage Percentage 1-100 (up to MAX_SLASH_PERCENTAGE constant)
+     * @param reason Human-readable reason for critical slashing
+     */
+    function criticalSlash(
+        address verifier,
+        uint256 percentage,
+        string calldata reason
+    ) external nonReentrant whenNotPaused {
+        if (!hasRole(CRITICAL_SLASHER_ROLE, msg.sender)) {
+            revert CriticalSlashUnauthorized();
+        }
+
+        if (percentage == 0 || percentage > MAX_SLASH_PERCENTAGE) {
+            revert InvalidPercentage();
+        }
+
+        if (verifier == address(0)) {
+            revert NoStakeToSlash();
+        }
+
+        // Same-block protection still applies
+        if (lastSlashBlock[verifier] == block.number) {
+            revert SlashSameBlock();
+        }
+
+        (uint256 currentStake,) = stakingContract.stakes(verifier);
+        if (currentStake == 0) {
+            revert NoStakeToSlash();
+        }
+
+        uint256 slashAmount = (currentStake * percentage) / 100;
+        if (slashAmount == 0) {
+            revert SlashAmountTooHigh();
+        }
+
+        lastSlashTime[verifier] = block.timestamp;
+        lastSlashBlock[verifier] = block.number;
+        totalSlashed[verifier] += slashAmount;
+
+        slashHistory[verifier].push(SlashRecord({
+            timestamp: block.timestamp,
+            amount: slashAmount,
+            percentage: percentage,
+            reason: reason,
+            slashedBy: msg.sender
+        }));
+
+        stakingContract.forceSlash(verifier, slashAmount);
+
+        emit CriticalSlashed(verifier, slashAmount, percentage, reason, msg.sender);
+    }
     
     /**
      * @dev Internal slash function for batch operations
@@ -237,6 +312,11 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
         if (block.timestamp < lastSlashTime[verifier] + slashCooldown) {
             revert SlashingTooFrequent();
         }
+
+        // Prevent multiple slashes in the same block (#185)
+        if (lastSlashBlock[verifier] == block.number) {
+            revert SlashSameBlock();
+        }
         
         (uint256 currentStake,) = stakingContract.stakes(verifier);
         
@@ -252,6 +332,7 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
         
         // Update tracking
         lastSlashTime[verifier] = block.timestamp;
+        lastSlashBlock[verifier] = block.number;
         totalSlashed[verifier] += slashAmount;
         
         slashHistory[verifier].push(SlashRecord({
@@ -381,6 +462,22 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
      */
     function revokeSettlementRole(address account) external onlyGovernanceOrAdmin {
         _revokeRole(SETTLEMENT_ROLE, account);
+    }
+
+    /**
+     * @dev Grant critical slasher role (can slash up to 100%)
+     * @param account Address to grant the role to
+     */
+    function grantCriticalSlasherRole(address account) external onlyGovernanceOrAdmin {
+        _grantRole(CRITICAL_SLASHER_ROLE, account);
+    }
+
+    /**
+     * @dev Revoke critical slasher role
+     * @param account Address to revoke the role from
+     */
+    function revokeCriticalSlasherRole(address account) external onlyGovernanceOrAdmin {
+        _revokeRole(CRITICAL_SLASHER_ROLE, account);
     }
     
     // ============ Governance Parameter Updates ============

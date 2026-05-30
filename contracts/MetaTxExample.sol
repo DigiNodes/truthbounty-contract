@@ -59,11 +59,11 @@ contract MetaTxExample is ERC2771Context, EIP712 {
     // ============ Override Functions ============
 
     // Override to preserve original sender identity
-    function _msgSender() internal view override(ERC2771Context, Context) returns (address sender) {
+    function _msgSender() internal view override(ERC2771Context) returns (address sender) {
         return ERC2771Context._msgSender();
     }
 
-    function _msgData() internal view override(ERC2771Context, Context) returns (bytes calldata) {
+    function _msgData() internal view override(ERC2771Context) returns (bytes calldata) {
         return ERC2771Context._msgData();
     }
 

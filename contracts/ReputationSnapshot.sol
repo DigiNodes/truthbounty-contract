@@ -48,8 +48,11 @@ contract ReputationSnapshot is AccessControl, Pausable {
     /// @notice Snapshot validity window — 7 days
     uint256 public constant SNAPSHOT_TTL = 7 days;
 
-    /// @notice Hard cap on users per snapshot to bound gas
-    uint256 public constant MAX_SNAPSHOT_SIZE = 1_000;
+    /// @notice Absolute hard cap on users per snapshot
+    uint256 public constant ABSOLUTE_MAX_SNAPSHOT_SIZE = 1_000;
+
+    /// @notice Configurable cap on users per snapshot (defaults to 200)
+    uint256 public maxSnapshotSize = 200;
 
     // ----------------------------------------------------------------
     // Storage
@@ -105,6 +108,7 @@ contract ReputationSnapshot is AccessControl, Pausable {
     error ZeroAddress();
     error DuplicateUser(address user);
     error AlreadyFinalized(uint256 snapshotId);
+    error InvalidMaxSnapshotSize(uint256 provided, uint256 absoluteMax);
 
     // ----------------------------------------------------------------
     // Constructor
@@ -124,6 +128,16 @@ contract ReputationSnapshot is AccessControl, Pausable {
 
     function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
     function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
+
+    /**
+     * @notice Update the maximum snapshot size to bound gas in createSnapshot
+     * @param newMax New maximum (must be > 0 and <= ABSOLUTE_MAX_SNAPSHOT_SIZE)
+     */
+    function setMaxSnapshotSize(uint256 newMax) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newMax == 0 || newMax > ABSOLUTE_MAX_SNAPSHOT_SIZE)
+            revert InvalidMaxSnapshotSize(newMax, ABSOLUTE_MAX_SNAPSHOT_SIZE);
+        maxSnapshotSize = newMax;
+    }
 
     // ----------------------------------------------------------------
     // Snapshot Creation
@@ -147,7 +161,7 @@ contract ReputationSnapshot is AccessControl, Pausable {
         uint256 length = users.length;
 
         if (length == 0)                        revert EmptySnapshot();
-        if (length > MAX_SNAPSHOT_SIZE)         revert SnapshotTooLarge(length, MAX_SNAPSHOT_SIZE);
+        if (length > maxSnapshotSize)            revert SnapshotTooLarge(length, maxSnapshotSize);
 
         // Assign ID
         snapshotId = ++_snapshotCounter;
