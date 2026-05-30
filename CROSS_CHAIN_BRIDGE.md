@@ -21,11 +21,13 @@ This document outlines the design and architecture for a cross-chain reputation 
 ### Implementation Approaches
 
 #### Option 1: Merkle Proof Bridge
+
 - Construct a Merkle tree of reputation scores on the source chain
 - Generate inclusion proofs for individual users
 - Verify proofs on the destination chain
 
 #### Option 2: Oracle Bridge
+
 - Use trusted oracles to attest to reputation data
 - Relay attested data across chains via bridge protocols
 - Verify oracle signatures on destination chain
@@ -35,6 +37,7 @@ This document outlines the design and architecture for a cross-chain reputation 
 ### Source Chain (Ethereum) Components
 
 #### ReputationSnapshot Contract
+
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
@@ -126,6 +129,7 @@ contract ReputationSnapshot is AccessControl {
 ```
 
 #### ReputationBridge Contract
+
 ```solidity
 contract ReputationBridge is AccessControl {
     bytes32 public constant BRIDGE_ROLE = keccak256("BRIDGE_ROLE");
@@ -163,6 +167,7 @@ contract ReputationBridge is AccessControl {
 ### Destination Chain Components
 
 #### ReputationReceiver Contract
+
 ```solidity
 contract ReputationReceiver is AccessControl {
     bytes32 public constant RECEIVER_ROLE = keccak256("RECEIVER_ROLE");
@@ -197,7 +202,7 @@ contract ReputationReceiver is AccessControl {
 
     function _verifyProof(
         bytes32 leaf,
-        bytes32[] memory proof,
+        bytes32[] calldata proof,
         bytes32 root,
         uint256 index
     ) internal pure returns (bool) {
@@ -211,6 +216,7 @@ contract ReputationReceiver is AccessControl {
 For chains where Merkle proofs are complex, use oracles:
 
 #### OracleBridge Contract
+
 ```solidity
 contract OracleBridge is AccessControl {
     struct OracleAttestation {
@@ -237,11 +243,13 @@ contract OracleBridge is AccessControl {
 ### Supported Bridge Protocols
 
 1. **Wormhole**
+
    - Cross-chain messaging protocol
    - Guardian network for security
    - Support for EVM and non-EVM chains (including Stellar)
 
 2. **LayerZero**
+
    - Omnichain interoperability protocol
    - Ultra Light Nodes (ULNs) for verification
    - Configurable security parameters
@@ -275,6 +283,7 @@ contract WormholeReputationBridge {
 ## Verification Process
 
 ### Merkle Proof Verification
+
 1. User requests bridge from source chain
 2. Snapshot contract generates Merkle proof
 3. Proof submitted to bridge protocol
@@ -282,6 +291,7 @@ contract WormholeReputationBridge {
 5. Reputation updated if verification succeeds
 
 ### Oracle Verification
+
 1. Authorized oracle attests to user's reputation
 2. Attestation signed and submitted to bridge
 3. Bridge relays attestation to destination chain
@@ -291,16 +301,19 @@ contract WormholeReputationBridge {
 ## Security Considerations
 
 ### Data Integrity
+
 - Merkle proofs ensure data hasn't been tampered with
 - Oracle signatures provide cryptographic verification
 - Bridge protocols provide cross-chain security guarantees
 
 ### Freshness
+
 - Include timestamps in all data structures
 - Implement expiration mechanisms for old attestations
 - Allow reputation updates to override stale data
 
 ### Access Control
+
 - Restrict snapshot creation to authorized entities
 - Limit bridge execution to verified bridge contracts
 - Use multi-signature requirements for critical operations
@@ -308,12 +321,15 @@ contract WormholeReputationBridge {
 ## Risks and Limitations
 
 ### Technical Risks
+
 1. **Bridge Protocol Risks**
+
    - Bridge hacks or exploits could compromise reputation data
    - Network congestion could delay reputation transfers
    - Protocol upgrades might break compatibility
 
 2. **Oracle Risks**
+
    - Oracle manipulation or compromise
    - Single point of failure if using centralized oracles
    - Oracle network downtime affects bridging
@@ -324,12 +340,15 @@ contract WormholeReputationBridge {
    - Proof verification gas costs
 
 ### Operational Risks
+
 1. **Data Staleness**
+
    - Reputation may become outdated during transfer
    - No mechanism to update bridged reputation automatically
    - Users may need to re-bridge periodically
 
 2. **Chain-Specific Limitations**
+
    - Different consensus mechanisms affect finality times
    - Varying gas costs impact economic viability
    - Cross-chain communication delays
@@ -340,7 +359,9 @@ contract WormholeReputationBridge {
    - Changing regulatory landscape for cross-chain operations
 
 ### Economic Considerations
+
 1. **Bridge Fees**
+
    - Cross-chain transfers incur protocol fees
    - Gas costs for proof verification
    - Oracle service fees
@@ -353,16 +374,19 @@ contract WormholeReputationBridge {
 ## Future Enhancements
 
 ### Automated Updates
+
 - Implement periodic reputation syncing
 - Event-driven bridge triggers
 - Reputation change notifications
 
 ### Multi-Chain Reputation Aggregation
+
 - Combine reputations from multiple chains
 - Weighted averaging algorithms
 - Reputation conflict resolution
 
 ### Enhanced Security
+
 - Multi-oracle consensus mechanisms
 - Zero-knowledge proofs for privacy
 - Decentralized bridge networks
@@ -370,21 +394,25 @@ contract WormholeReputationBridge {
 ## Implementation Roadmap
 
 ### Phase 1: Design and Testing (Current)
+
 - [x] Architecture documentation
 - [x] Unit tests for bridge contracts
 - [ ] Integration tests with mock bridges
 
 ### Phase 2: Single Chain Prototype
+
 - [ ] Deploy testnet bridge between two EVM chains
 - [ ] Implement Merkle proof verification
 - [ ] Test oracle-based alternative
 
 ### Phase 3: Multi-Chain Expansion
+
 - [ ] Integrate with Wormhole/LayerZero
 - [ ] Add Stellar support
 - [ ] Mainnet deployment and audits
 
 ### Phase 4: Production Optimization
+
 - [ ] Gas optimization for proof verification
 - [ ] Batch processing for multiple users
 - [ ] Monitoring and alerting systems
