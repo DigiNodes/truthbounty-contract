@@ -17,26 +17,28 @@ contract TimingHandler is Test {
     TruthBountyWeighted public truthBounty;
     MockERC20 public token;
     MockReputationOracle public oracle;
+    address public admin;
 
     constructor() {
         oracle = new MockReputationOracle();
         token = new MockERC20();
+        admin = msg.sender;
 
         truthBounty = new TruthBountyWeighted(
             address(token),
             address(oracle),
-            msg.sender,
-            msg.sender // Governance controller
+            admin,
+            admin // Governance controller
         );
     }
 
     function setConfirmationDelay(uint256 newDelay) public {
-        vm.prank(msg.sender); // Admin/Governance
+        vm.prank(admin); // Admin/Governance
         try truthBounty.setConfirmationDelay(newDelay) {} catch {}
     }
     
     function setVerificationWindowDuration(uint256 newDuration) public {
-        vm.prank(msg.sender); // Admin/Governance
+        vm.prank(admin); // Admin/Governance
         try truthBounty.setVerificationWindowDuration(newDuration) {} catch {}
     }
 }

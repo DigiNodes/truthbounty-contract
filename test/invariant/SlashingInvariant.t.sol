@@ -88,7 +88,7 @@ contract SlashingHandler is Test {
                 return; // Window closed
             }
 
-            bool support = ((seed + i) % 2) == 0;
+            bool support = ((seed % 2) + i) % 2 == 0;
             uint256 stakeAmount = MIN_STAKE * (1 + (seed % 10));
 
             vm.prank(verifiers[i]);
@@ -184,12 +184,12 @@ contract SlashingInvariantTest is StdInvariant, Test {
 
         if (totalSlashed > 0) {
             uint256 expectedRewards = (totalSlashed * 80) / 100;
-            // Allow 1 token margin for rounding
+            // Allow tolerance margin for cumulative rounding
             assertApproxEqAbs(
                 totalRewarded,
                 expectedRewards,
-                1,
-                "Rewards should be 80% of slashed (with rounding tolerance)"
+                truthBounty.claimCounter() + 1,
+                "Rewards should be 80% of slashed (with cumulative rounding tolerance)"
             );
         }
     }

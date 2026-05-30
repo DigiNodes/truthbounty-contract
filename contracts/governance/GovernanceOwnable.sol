@@ -230,7 +230,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
      * @notice Get governance controller interface version
      * @return The version number ( 0 if no controller )
      */
-    function getGovernanceVersion() external view returns (uint256) {
+    function getGovernanceVersion() external pure returns (uint256) {
         return 1; // Placeholder for future governance version tracking
     }
 }

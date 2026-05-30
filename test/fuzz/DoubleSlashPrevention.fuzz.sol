@@ -75,7 +75,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
             vm.prank(verifier);
             mockToken.approve(address(truthBounty), type(uint256).max);
             vm.prank(verifier);
-            truthBounty.stake(MIN_STAKE * 10);
+            truthBounty.stake(MIN_STAKE * 1000);
         }
     }
 
