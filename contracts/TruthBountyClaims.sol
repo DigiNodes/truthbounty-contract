@@ -63,6 +63,7 @@ contract TruthBountyClaims is AccessControl, ReentrancyGuard {
         uint256 length = beneficiaries.length;
         require(length == amounts.length, "Arrays length mismatch");
         require(length > 0, "No claims to settle");
+        // Enforce batch size cap to bound gas and prevent block-gas-limit DoS (Audit #156)
         require(length <= MAX_BATCH_SIZE, "Batch size too large");
 
         for (uint256 i = 0; i < length; ) {

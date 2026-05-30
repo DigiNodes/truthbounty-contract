@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
@@ -19,7 +20,7 @@ import "./governance/GovernanceHooks.sol";
  *      Use TruthBountyWeighted.stake() / withdrawStake() for all verifier staking.
  *      See docs/protocol-spec.md for the canonical architecture.
  */
-contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeable {
+contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpgradeable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -59,8 +60,10 @@ contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeabl
 
     function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
         settlementContract = _settlement;
-        // Automatically grant RESOLVER_ROLE to the settlement contract
-        _grantRole(RESOLVER_ROLE, _settlement);
+        // Automatically schedule RESOLVER_ROLE for the settlement contract; execution is timelocked.
+        if (!hasRole(RESOLVER_ROLE, _settlement)) {
+            _scheduleResolverRoleGrant(_settlement);
+        }
     }
 
     function setSlashPercentage(uint256 percentage) external onlyRole(ADMIN_ROLE) {
@@ -108,6 +111,10 @@ contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeabl
         );
     }
 
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
     /**
      * @dev Required by UUPSUpgradeable
      */
@@ -121,7 +128,7 @@ contract TruthBountyToken is ERC20, AccessControl, Initializable, UUPSUpgradeabl
  *      This contract lacks reputation-weighted voting and will not receive updates.
  *      See docs/protocol-spec.md for the canonical architecture.
  */
-contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -223,6 +230,18 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         
         // Initialize governance
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
+    }
+
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.grantRole(role, account);
+    }
+
+    function revokeRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.revokeRole(role, account);
     }
 
     function createClaim(string memory content) external whenNotPaused returns (uint256) {
@@ -409,6 +428,25 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
         emit StakeWithdrawn(msg.sender, amount);
+    }
+
+    function rescueETH(address payable to, uint256 amount) external onlyRole(TREASURY_ROLE) nonReentrant {
+        require(to != address(0), "Invalid recipient");
+        require(amount > 0, "Amount must be > 0");
+        require(address(this).balance >= amount, "Insufficient ETH balance");
+
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
+
+        emit ETHRescued(to, amount);
+    }
+
+    receive() external payable {
+        emit ETHReceived(msg.sender, msg.value);
+    }
+
+    fallback() external payable {
+        emit ETHReceived(msg.sender, msg.value);
     }
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
