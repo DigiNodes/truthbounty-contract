@@ -311,4 +311,4 @@ We welcome:
 - Auditors
 - Protocol designers
 
-Please follow Conventional Commits and submit clear PRs.
+
