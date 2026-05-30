@@ -22,9 +22,12 @@ describe("VerifierSlashing", function () {
     // Set up the slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
 
-    // Grant settlement role
+    // Grant settlement role through the resolver-role timelock
     const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
-    await slashing.connect(admin).grantRole(SETTLEMENT_ROLE, settlement.address);
+    await slashing.connect(admin).scheduleResolverRoleGrant(settlement.address);
+    await time.increase(2 * 24 * 60 * 60);
+    await staking.executeResolverRoleGrant(await slashing.getAddress());
+    await slashing.executeResolverRoleGrant(settlement.address);
 
     // Mint tokens and set up stakes
     const stakeAmount = ethers.parseEther("1000");
@@ -89,12 +92,18 @@ describe("VerifierSlashing", function () {
     it("Should allow admin to grant and revoke settlement role", async function () {
       const { slashing, admin, unauthorized, SETTLEMENT_ROLE } = await loadFixture(deploySlashingFixture);
 
-      // Grant role
+      // Grant role through the timelock
       await slashing.connect(admin).grantSettlementRole(unauthorized.address);
+      expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.false;
+      await time.increase(2 * 24 * 60 * 60);
+      await slashing.executeResolverRoleGrant(unauthorized.address);
       expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.true;
 
-      // Revoke role
+      // Revoke role through the timelock
       await slashing.connect(admin).revokeSettlementRole(unauthorized.address);
+      expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.true;
+      await time.increase(2 * 24 * 60 * 60);
+      await slashing.executeResolverRoleRevoke(unauthorized.address);
       expect(await slashing.hasRole(SETTLEMENT_ROLE, unauthorized.address)).to.be.false;
     });
   });
