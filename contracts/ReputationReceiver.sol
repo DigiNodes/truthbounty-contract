@@ -372,7 +372,7 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
      */
     function _verifyProof(
         bytes32 leaf,
-        bytes32[] memory proof,
+        bytes32[] calldata proof,
         bytes32 root,
         uint256 index
     ) internal pure returns (bool) {
