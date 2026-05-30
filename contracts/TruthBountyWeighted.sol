@@ -65,7 +65,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
     /// @notice Default reputation for users without a score (100% = 1.0x).
     uint256 public constant DEFAULT_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER;
-
+    /// @notice Maximum time allowed between preview and vote before reputation is considered stale (1 hour)
+    uint256 public constant MAX_REPUTATION_STALENESS = 1 hours;
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -142,6 +143,11 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         uint256 exitTime;
     }
 
+    struct ReputationSnapshot {
+        uint256 reputationScore;
+        uint256 timestamp;
+    }
+
     // ============ Storage Mappings ============
 
     mapping(uint256 => Claim) public claims;
@@ -149,6 +155,9 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(address => VerifierStake) public verifierStakes;
     mapping(uint256 => address[]) private claimVoters;  // Track all voters per claim for settlement
+    
+    /// @notice Track reputation snapshots for staleness validation: user => (reputationScore, timestamp)
+    mapping(address => ReputationSnapshot) public reputationSnapshots;
 
     uint256 public claimCounter;
     uint256 public totalSlashed;
@@ -198,6 +207,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event WeightedStakingToggled(bool enabled);
+    event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
+    event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
 
     // ============ Errors ============
 
@@ -282,6 +293,42 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         bool support,
         uint256 stakeAmount
     ) external nonReentrant whenNotPaused {
+        _vote(claimId, support, stakeAmount, 0, 0);
+    }
+
+    /**
+     * @notice Vote on a claim with reputation staleness validation
+     * @param claimId The ID of the claim to vote on
+     * @param support true for pass, false for fail
+     * @param stakeAmount Amount of stake to commit to this vote
+     * @param expectedReputation The reputation score expected (from preview), 0 to skip validation
+     * @param maxReputationDrift Maximum allowed percentage change in reputation (in basis points, 0-10000), 0 for no limit
+     */
+    function voteWithValidation(
+        uint256 claimId,
+        bool support,
+        uint256 stakeAmount,
+        uint256 expectedReputation,
+        uint256 maxReputationDrift
+    ) external nonReentrant whenNotPaused {
+        _vote(claimId, support, stakeAmount, expectedReputation, maxReputationDrift);
+    }
+
+    /**
+     * @notice Internal vote function with optional staleness validation
+     * @param claimId The claim ID
+     * @param support Vote direction
+     * @param stakeAmount Stake amount
+     * @param expectedReputation Expected reputation (0 = skip validation)
+     * @param maxReputationDrift Max allowed drift in basis points (0 = no limit)
+     */
+    function _vote(
+        uint256 claimId,
+        bool support,
+        uint256 stakeAmount,
+        uint256 expectedReputation,
+        uint256 maxReputationDrift
+    ) internal {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(block.timestamp < claim.verificationWindowEnd, "Verification window closed");
@@ -296,6 +343,12 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
         // Calculate weighted stake based on reputation
         uint256 reputationScore = _getReputationScore(msg.sender);
+        
+        // Validate reputation staleness if expected reputation is provided
+        if (expectedReputation > 0) {
+            _validateReputationFreshness(msg.sender, reputationScore, expectedReputation, maxReputationDrift);
+        }
+        
         uint256 effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
 
         // Lock the raw stake
@@ -312,6 +365,13 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
             stakeReturned: false,
             slashAmount: 0
         });
+
+        // Store reputation snapshot for future validation
+        reputationSnapshots[msg.sender] = ReputationSnapshot({
+            reputationScore: reputationScore,
+            timestamp: block.timestamp
+        });
+        emit ReputationSnapshotRecorded(msg.sender, reputationScore, block.timestamp);
 
         // Track this voter for settlement calculations
         claimVoters[claimId].push(msg.sender);
@@ -506,6 +566,46 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         if (score < minReputationScore) return minReputationScore;
         if (score > maxReputationScore) return maxReputationScore;
         return score;
+    }
+
+    /**
+     * @notice Validate that reputation hasn't staled significantly
+     * @param user The user address
+     * @param currentReputation The current reputation score
+     * @param expectedReputation The expected reputation from preview
+     * @param maxDrift Maximum allowed drift in basis points (0-10000)
+     * @dev Reverts if reputation has drifted more than allowed or is too old
+     */
+    function _validateReputationFreshness(
+        address user,
+        uint256 currentReputation,
+        uint256 expectedReputation,
+        uint256 maxDrift
+    ) internal {
+        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
+        
+        // If no previous snapshot, this is the first preview - allow it
+        if (lastSnapshot.timestamp == 0) {
+            return;
+        }
+        
+        // Check if reputation has changed more than the allowed drift
+        if (maxDrift > 0) {
+            // Calculate percentage change: (|current - expected| / expected) * 10000
+            uint256 absoluteDiff = currentReputation > expectedReputation 
+                ? currentReputation - expectedReputation 
+                : expectedReputation - currentReputation;
+            
+            uint256 driftPercent = (absoluteDiff * 10000) / expectedReputation;
+            require(driftPercent <= maxDrift, "Reputation changed more than allowed");
+        }
+        
+        // Check if reputation is too stale (timestamp-based)
+        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
+        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        
+        // Emit validation event
+        emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);
     }
 
     /**
@@ -772,6 +872,52 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     ) external view returns (uint256 effectiveStake, uint256 reputationScore) {
         reputationScore = _getReputationScore(user);
         effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
+    }
+
+    /**
+     * @notice Preview the effective stake for a user with current timestamp (for staleness tracking)
+     * @param user The user address
+     * @param stakeAmount The stake amount to preview
+     * @return effectiveStake The calculated effective stake
+     * @return reputationScore The current reputation score
+     * @return timestamp The block timestamp of this preview (for staleness validation)
+     */
+    function previewEffectiveStakeWithTimestamp(
+        address user,
+        uint256 stakeAmount
+    ) external view returns (uint256 effectiveStake, uint256 reputationScore, uint256 timestamp) {
+        reputationScore = _getReputationScore(user);
+        effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
+        timestamp = block.timestamp;
+    }
+
+    /**
+     * @notice Get the last recorded reputation snapshot for a user
+     * @param user The user address
+     * @return snapshot The reputation snapshot (score and timestamp)
+     */
+    function getLastReputationSnapshot(address user) external view returns (ReputationSnapshot memory snapshot) {
+        return reputationSnapshots[user];
+    }
+
+    /**
+     * @notice Check if a user's reputation has changed since their last preview
+     * @param user The user address
+     * @param previewReputation The reputation at preview time
+     * @return hasChanged True if reputation changed more than the staleness threshold
+     * @return currentReputation The current reputation score
+     * @return timeSincePreview Time elapsed since the preview was made
+     */
+    function checkReputationStaleness(
+        address user,
+        uint256 previewReputation
+    ) external view returns (bool hasChanged, uint256 currentReputation, uint256 timeSincePreview) {
+        ReputationSnapshot memory snapshot = reputationSnapshots[user];
+        currentReputation = _getReputationScore(user);
+        timeSincePreview = block.timestamp - snapshot.timestamp;
+        
+        // Consider stale if reputation changed significantly or too much time has passed
+        hasChanged = (currentReputation != previewReputation) || (timeSincePreview > MAX_REPUTATION_STALENESS);
     }
 
     // ============ Admin & Pauser Functions ============
