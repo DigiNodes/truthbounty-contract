@@ -43,6 +43,9 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
 
     /// @notice Whether to use weighted staking (can be disabled in emergencies)
     bool public weightedStakingEnabled = true;
+
+    /// @notice Whether to apply sqrt scaling to reputation (matches API behaviour)
+    bool public useSqrtWeighting = true;
     
     // Governance parameter IDs
     bytes32 public constant GOVERNANCE_PARAM_MIN_REP = keccak256("MIN_REPUTATION_SCORE");
@@ -66,6 +69,7 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event DefaultReputationUpdated(uint256 newDefault);
     event WeightedStakingToggled(bool enabled);
+    event SqrtWeightingToggled(bool enabled);
     event WeightedStakeCalculated(
         address indexed user,
         uint256 rawStake,
@@ -135,12 +139,14 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
 
         // Apply bounds to reputation score
         uint256 boundedScore = _applyReputationBounds(rawReputationScore);
-        result.reputationScore = boundedScore;
-        result.weight = boundedScore;
 
-        // Calculate effective stake: stake × (reputation / BASE_MULTIPLIER)
-        // Using mul-div pattern to prevent overflow
-        result.effectiveStake = (stakeAmount * boundedScore) / BASE_MULTIPLIER;
+        // Apply sqrt scaling if enabled (matches API behaviour)
+        uint256 weight = useSqrtWeighting ? _sqrt(boundedScore * BASE_MULTIPLIER) : boundedScore;
+        result.reputationScore = boundedScore;
+        result.weight = weight;
+
+        // Calculate effective stake: stake × (weight / BASE_MULTIPLIER)
+        result.effectiveStake = (stakeAmount * weight) / BASE_MULTIPLIER;
 
         return result;
     }
@@ -233,6 +239,21 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
         return score;
     }
 
+    /**
+     * @notice Babylonian sqrt for 18-decimal fixed-point numbers
+     * @param x The value to take the square root of (18 decimals)
+     * @return y The square root result (18 decimals)
+     */
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        y = x;
+        uint256 z = (x + 1) / 2;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+    }
+
     // ============ Admin Functions ============
 
     /**
@@ -266,7 +287,7 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
      * @notice Update the default reputation score for users without reputation
      * @param _defaultScore New default reputation score
      */
-    function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
+    function setDefaultReputationScore(uint256 _defaultScore) external onlyGovernanceOrAdmin {
         if (_defaultScore == 0) revert InvalidDefaultReputation();
 
         defaultReputationScore = _defaultScore;
@@ -282,6 +303,15 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
         weightedStakingEnabled = _enabled;
 
         emit WeightedStakingToggled(_enabled);
+    }
+
+    /**
+     * @notice Enable or disable sqrt-based weighting
+     * @param _enabled True to use sqrt, false for linear
+     */
+    function setSqrtWeighting(bool _enabled) external onlyGovernanceOrAdmin {
+        useSqrtWeighting = _enabled;
+        emit SqrtWeightingToggled(_enabled);
     }
 
     // ============ Governance Parameter Updates ============
@@ -362,6 +392,7 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
         }
 
         uint256 rawScore = _getReputationScore(user);
-        return _applyReputationBounds(rawScore);
+        uint256 bounded = _applyReputationBounds(rawScore);
+        return useSqrtWeighting ? _sqrt(bounded * BASE_MULTIPLIER) : bounded;
     }
 }

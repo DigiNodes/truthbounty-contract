@@ -14,6 +14,9 @@ contract MockReputationOracle is IReputationOracle, Ownable {
     /// @notice Mapping of user addresses to their reputation scores
     mapping(address => uint256) private reputationScores;
 
+    /// @notice Mapping of user addresses to their last update timestamp
+    mapping(address => uint256) private lastUpdateTimestamp;
+
     /// @notice Whether the oracle is active
     bool private _isActive = true;
 
@@ -56,6 +59,15 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         return _isActive;
     }
 
+    /**
+     * @notice Get the timestamp of the last reputation update for a user
+     * @param user The address to query
+     * @return timestamp The Unix timestamp of the last update (0 if never updated)
+     */
+    function getLastReputationUpdate(address user) external view override returns (uint256 timestamp) {
+        return lastUpdateTimestamp[user];
+    }
+
     // ============ Admin Functions ============
 
     /**
@@ -66,6 +78,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
     function setReputationScore(address user, uint256 score) external onlyOwner {
         require(user != address(0), "Invalid address");
         reputationScores[user] = score;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, score);
     }
 
@@ -83,6 +96,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         for (uint256 i = 0; i < users.length; i++) {
             require(users[i] != address(0), "Invalid address");
             reputationScores[users[i]] = scores[i];
+            lastUpdateTimestamp[users[i]] = block.timestamp;
             emit ReputationScoreSet(users[i], scores[i]);
         }
     }

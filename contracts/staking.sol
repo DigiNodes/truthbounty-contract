@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 
-contract Staking is ReentrancyGuard, AccessControl {
+contract Staking is ReentrancyGuard, ResolverRoleTimelock {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -50,6 +51,10 @@ contract Staking is ReentrancyGuard, AccessControl {
         _grantRole(ADMIN_ROLE, initialAdmin);
         
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+    }
+
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
     }
 
     /**
@@ -123,13 +128,23 @@ contract Staking is ReentrancyGuard, AccessControl {
     function setSlashingContract(address _slashingContract) external onlyRole(ADMIN_ROLE) {
         require(_slashingContract != address(0), "Invalid slashing contract");
         
-        // Revoke role from old slashing contract if it exists
+        // Revoke role from old slashing contract if it exists, or cancel an unexecuted grant.
         if (slashingContract != address(0)) {
-            _revokeRole(RESOLVER_ROLE, slashingContract);
+            if (hasRole(RESOLVER_ROLE, slashingContract)) {
+                _scheduleResolverRoleRevoke(slashingContract);
+            } else {
+                bytes32 pendingGrant = resolverRoleChangeId(slashingContract, true);
+                if (resolverRoleChangeReadyAt[pendingGrant] != 0) {
+                    delete resolverRoleChangeReadyAt[pendingGrant];
+                    emit ResolverRoleChangeCancelled(pendingGrant, slashingContract, true);
+                }
+            }
         }
         
         slashingContract = _slashingContract;
-        _grantRole(RESOLVER_ROLE, _slashingContract);
+        if (!hasRole(RESOLVER_ROLE, _slashingContract)) {
+            _scheduleResolverRoleGrant(_slashingContract);
+        }
         
         emit SlashingContractUpdated(_slashingContract);
     }
@@ -145,6 +160,7 @@ contract Staking is ReentrancyGuard, AccessControl {
         }
         // Slashing contract check as secondary safeguard
         require(slashingContract != address(0), "Slashing contract not set");
+        require(msg.sender == slashingContract, "Only active slashing contract");
         
         StakeInfo storage info = stakes[user];
         require(info.amount >= amount, "Insufficient stake to slash");
