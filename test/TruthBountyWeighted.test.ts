@@ -356,6 +356,39 @@ describe("TruthBountyWeighted", function () {
       expect(reward2).to.be.closeTo(verifier2RewardShare, ethers.parseEther("0.01"));
     });
 
+    it("Should fully distribute reward remainder instead of leaving dust", async function () {
+      await truthBounty.setMinStakeAmount(1);
+      await truthBounty.setSlashPercent(100);
+      await truthBounty.setRewardPercent(100);
+
+      await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("2"));
+      await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("0.1"));
+
+      await truthBounty.connect(verifier1).vote(claimId, true, 1);
+      await truthBounty.connect(verifier2).vote(claimId, true, 1);
+      await truthBounty.connect(verifier3).vote(claimId, false, 10);
+
+      await time.increase(VERIFICATION_WINDOW + 1);
+      await truthBounty.settleClaim(claimId);
+
+      const settlement = await truthBounty.settlementResults(claimId);
+      expect(settlement.totalRewards).to.equal(10);
+
+      const balanceBefore1 = await bountyToken.balanceOf(await verifier1.getAddress());
+      await truthBounty.connect(verifier1).claimSettlementRewards(claimId);
+      const balanceAfter1 = await bountyToken.balanceOf(await verifier1.getAddress());
+
+      const balanceBefore2 = await bountyToken.balanceOf(await verifier2.getAddress());
+      await truthBounty.connect(verifier2).claimSettlementRewards(claimId);
+      const balanceAfter2 = await bountyToken.balanceOf(await verifier2.getAddress());
+
+      const reward1 = balanceAfter1 - balanceBefore1 - 1n;
+      const reward2 = balanceAfter2 - balanceBefore2 - 1n;
+
+      expect(reward1 + reward2).to.equal(settlement.totalRewards);
+    });
+
     it("Should preserve settlement-time slash amounts when governance parameters change", async function () {
       const stakeAmount = ethers.parseEther("100");
 
