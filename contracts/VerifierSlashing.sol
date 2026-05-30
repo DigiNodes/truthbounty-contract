@@ -33,6 +33,13 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     
     // Maximum slashing percentage (100%)
     uint256 public constant MAX_SLASH_PERCENTAGE = 100;
+
+    // Maximum number of verifiers that can be slashed in a single batch.
+    // Kept lower than token-payout batches because each slash performs an
+    // external staking call plus storage writes (history push, tracking),
+    // making it significantly heavier per item. Bounds gas to avoid
+    // out-of-gas / block-gas-limit DoS in batchSlash. (Audit #156)
+    uint256 public constant MAX_BATCH_SIZE = 50;
     
     // Default maximum slashing percentage per incident
     uint256 public maxSlashPercentage = 50; // 50% max per slash
@@ -100,6 +107,9 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     error SlashAmountTooHigh();
     error SlashSameBlock();
     error CriticalSlashUnauthorized();
+    error EmptyBatch();
+    error BatchSizeExceeded(uint256 provided, uint256 maxAllowed);
+    error BatchLengthMismatch();
     
     /**
      * @dev Constructor sets up roles and initial configuration
@@ -233,11 +243,15 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         }
         
         uint256 length = verifiers.length;
-        require(
-            length == percentages.length && length == reasons.length,
-            "Array length mismatch"
-        );
-        require(length > 0 && length <= 50, "Invalid batch size"); // Prevent gas issues
+        if (length != percentages.length || length != reasons.length) {
+            revert BatchLengthMismatch();
+        }
+        if (length == 0) {
+            revert EmptyBatch();
+        }
+        if (length > MAX_BATCH_SIZE) {
+            revert BatchSizeExceeded(length, MAX_BATCH_SIZE);
+        }
         
         for (uint256 i = 0; i < length;) {
             // Use internal function to avoid duplicate access control checks
