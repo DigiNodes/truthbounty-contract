@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("Unified RBAC System", function () {
     async function deployRBACFixture() {
@@ -50,12 +50,16 @@ describe("Unified RBAC System", function () {
 
         // Set up roles
         await decay.connect(admin).grantRole(ORACLE_ROLE, oracle.address);
-        await slashing.connect(admin).grantRole(RESOLVER_ROLE, resolver.address);
+        await slashing.connect(admin).scheduleResolverRoleGrant(resolver.address);
         await slashing.connect(admin).grantRole(PAUSER_ROLE, pauser.address);
         await claims.connect(admin).grantRole(TREASURY_ROLE, treasury.address);
         await truthBounty.connect(admin).grantRole(PAUSER_ROLE, pauser.address);
-        await token.connect(admin).grantRole(RESOLVER_ROLE, resolver.address);
+        await token.connect(admin).scheduleResolverRoleGrant(resolver.address);
         await staking.connect(admin).setSlashingContract(slashingAddress); // Fixed: connect(admin)
+        await time.increase(2 * 24 * 60 * 60);
+        await slashing.executeResolverRoleGrant(resolver.address);
+        await token.executeResolverRoleGrant(resolver.address);
+        await staking.executeResolverRoleGrant(slashingAddress);
 
         return {
             token, decay, staking, slashing, claims, truthBounty, weightedStaking,

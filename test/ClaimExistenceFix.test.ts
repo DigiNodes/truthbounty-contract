@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { TruthBounty, TruthBountyToken } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("Claim Existence Fix", function () {
     let truthBounty: TruthBounty;
@@ -25,7 +26,9 @@ describe("Claim Existence Fix", function () {
         );
 
         // Setup roles
-        await bountyToken.grantRole(await bountyToken.RESOLVER_ROLE(), await truthBounty.getAddress());
+        await bountyToken.scheduleResolverRoleGrant(await truthBounty.getAddress());
+        await time.increase(2 * 24 * 60 * 60);
+        await bountyToken.executeResolverRoleGrant(await truthBounty.getAddress());
     });
 
     describe("Claim Existence Check Fix", function () {

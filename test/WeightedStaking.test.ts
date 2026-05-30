@@ -27,6 +27,9 @@ describe("WeightedStaking", function () {
     const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
     weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress(), await owner.getAddress(), await owner.getAddress());
     await weightedStaking.waitForDeployment();
+
+    // Disable sqrt weighting so legacy tests continue to validate linear behaviour
+    await weightedStaking.setSqrtWeighting(false);
   });
 
   describe("Deployment", function () {
