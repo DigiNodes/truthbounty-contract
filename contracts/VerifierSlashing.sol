@@ -360,12 +360,35 @@ contract VerifierSlashing is AccessControl, ReentrancyGuard, Pausable, Governanc
     // === VIEW FUNCTIONS ===
     
     /**
-     * @dev Get slash history for a verifier
+     * @dev Get a paginated slice of slash history for a verifier
      * @param verifier Address of the verifier
-     * @return Array of slash records
+     * @param offset Start index for the returned page
+     * @param limit Maximum number of records to return
+     * @return Array of slash records for the requested page
      */
-    function getSlashHistory(address verifier) external view returns (SlashRecord[] memory) {
-        return slashHistory[verifier];
+    function getSlashHistory(
+        address verifier,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (SlashRecord[] memory) {
+        SlashRecord[] storage history = slashHistory[verifier];
+        uint256 total = history.length;
+
+        if (offset >= total || limit == 0) {
+            return new SlashRecord[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        SlashRecord[] memory page = new SlashRecord[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            page[i - offset] = history[i];
+        }
+
+        return page;
     }
     
     /**
