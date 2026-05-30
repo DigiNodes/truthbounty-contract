@@ -287,7 +287,7 @@ contract WeightedStaking is AccessControl, ReentrancyGuard, GovernanceOwnable {
      * @notice Update the default reputation score for users without reputation
      * @param _defaultScore New default reputation score
      */
-    function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
+    function setDefaultReputationScore(uint256 _defaultScore) external onlyGovernanceOrAdmin {
         if (_defaultScore == 0) revert InvalidDefaultReputation();
 
         defaultReputationScore = _defaultScore;
