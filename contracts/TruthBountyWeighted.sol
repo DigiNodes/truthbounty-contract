@@ -57,6 +57,15 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     /// @notice Default percentage of losing raw stake that is slashed.
     uint256 public constant DEFAULT_SLASH_PERCENT = 20;
 
+    /// @notice Default grace period for reputation updates (2 days).
+    uint256 public constant DEFAULT_REPUTATION_UPDATE_GRACE_PERIOD = 2 days;
+
+    /// @notice Minimum reputation update grace period (1 hour).
+    uint256 public constant MIN_REPUTATION_UPDATE_GRACE_PERIOD = 1 hours;
+
+    /// @notice Maximum reputation update grace period (30 days).
+    uint256 public constant MAX_REPUTATION_UPDATE_GRACE_PERIOD = 30 days;
+
     /// @notice Minimum reputation score (10% = 0.1x).
     uint256 public constant MIN_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER / 10;
 
@@ -82,6 +91,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     uint256 public settlementThresholdPercent = DEFAULT_SETTLEMENT_THRESHOLD_PERCENT;
     uint256 public rewardPercent = DEFAULT_REWARD_PERCENT;
     uint256 public slashPercent = DEFAULT_SLASH_PERCENT;
+    uint256 public reputationUpdateGracePeriod = DEFAULT_REPUTATION_UPDATE_GRACE_PERIOD;
 
     // Governance parameter IDs for reference
     bytes32 public constant GOVERNANCE_PARAM_VERIFICATION_WINDOW = keccak256("VERIFICATION_WINDOW_DURATION");
@@ -90,6 +100,7 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     bytes32 public constant GOVERNANCE_PARAM_THRESHOLD = keccak256("SETTLEMENT_THRESHOLD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_REWARD = keccak256("REWARD_PERCENT");
     bytes32 public constant GOVERNANCE_PARAM_SLASH = keccak256("SLASH_PERCENT");
+    bytes32 public constant GOVERNANCE_PARAM_REPUTATION_GRACE_PERIOD = keccak256("REPUTATION_UPDATE_GRACE_PERIOD");
 
     /// @notice Minimum reputation score (10% = 0.1)
     uint256 public minReputationScore = MIN_REPUTATION_SCORE;
@@ -198,11 +209,13 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event WeightedStakingToggled(bool enabled);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
 
     // ============ Errors ============
 
     error InvalidReputationOracle();
     error InvalidReputationBounds();
+    error InvalidReputationUpdateGracePeriod();
 
     // ============ Constructor ============
 
@@ -295,7 +308,8 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Check for last-minute reputation boosts using grace period
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         uint256 effectiveStake = _calculateEffectiveStake(stakeAmount, reputationScore);
 
         // Lock the raw stake
@@ -469,6 +483,63 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
 
 
     // ============ Internal Helper Functions ============
+
+    /**
+     * @notice Get the reputation score for a user, considering grace period restrictions
+     * @param user The address to query
+     * @param claimCreatedAt Timestamp when the claim was created
+     * @return score The effective reputation score (after grace period check)
+     * @dev If reputation was updated within grace period before claim creation, returns default score
+     */
+    function _getReputationScoreWithGracePeriod(
+        address user,
+        uint256 claimCreatedAt
+    ) internal view returns (uint256 score) {
+        if (!weightedStakingEnabled) {
+            return BASE_MULTIPLIER;
+        }
+
+        // Try to get the oracle's active status
+        try reputationOracle.isActive() returns (bool active) {
+            if (!active) {
+                return defaultReputationScore;
+            }
+        } catch {
+            return defaultReputationScore;
+        }
+
+        // Try to get the last update timestamp
+        uint256 lastUpdateTime = 0;
+        try reputationOracle.getLastReputationUpdate(user) returns (uint256 timestamp) {
+            lastUpdateTime = timestamp;
+        } catch {
+            // Oracle doesn't support getLastReputationUpdate, proceed without grace period check
+            lastUpdateTime = 0;
+        }
+
+        // Check if reputation was updated within grace period
+        // Grace period window: [claimCreatedAt - gracePeriod, claimCreatedAt + gracePeriod]
+        if (lastUpdateTime > 0) {
+            uint256 timeSinceClaimCreation = lastUpdateTime > claimCreatedAt
+                ? lastUpdateTime - claimCreatedAt
+                : claimCreatedAt - lastUpdateTime;
+
+            // If reputation update happened within grace period of claim creation, use default
+            if (timeSinceClaimCreation <= reputationUpdateGracePeriod) {
+                return defaultReputationScore;
+            }
+        }
+
+        // Get the actual reputation score
+        try reputationOracle.getReputationScore(user) returns (uint256 reputationScore) {
+            if (reputationScore == 0) {
+                return defaultReputationScore;
+            }
+            return _applyReputationBounds(reputationScore);
+        } catch {
+            return defaultReputationScore;
+        }
+    }
 
     /**
      * @notice Get reputation score with bounds and fallback
@@ -747,6 +818,24 @@ contract TruthBountyWeighted is AccessControl, ReentrancyGuard, Pausable, Govern
         slashPercent = newPercent;
         
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_SLASH, old, newPercent);
+    }
+
+    /**
+     * @notice Update reputation update grace period (governance or admin)
+     * @param newGracePeriod New grace period in seconds
+     * @dev Grace period prevents last-minute reputation boosts from being used in voting
+     */
+    function setReputationUpdateGracePeriod(uint256 newGracePeriod) external onlyGovernanceOrAdmin {
+        if (newGracePeriod < MIN_REPUTATION_UPDATE_GRACE_PERIOD || 
+            newGracePeriod > MAX_REPUTATION_UPDATE_GRACE_PERIOD) {
+            revert InvalidReputationUpdateGracePeriod();
+        }
+        
+        uint256 old = reputationUpdateGracePeriod;
+        reputationUpdateGracePeriod = newGracePeriod;
+        
+        emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_REPUTATION_GRACE_PERIOD, old, newGracePeriod);
+        emit ReputationUpdateGracePeriodUpdated(newGracePeriod);
     }
 
     // ============ View Functions ============
