@@ -224,6 +224,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event WeightedStakingToggled(bool enabled);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
 
     // ============ Errors ============
 
