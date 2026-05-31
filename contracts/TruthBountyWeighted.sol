@@ -548,6 +548,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
         if (stakeToReturn > 0) {
             require(bountyToken.transfer(msg.sender, stakeToReturn), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, stakeToReturn);
         }
     }
 
