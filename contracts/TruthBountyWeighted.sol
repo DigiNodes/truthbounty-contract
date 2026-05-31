@@ -224,6 +224,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event WeightedStakingToggled(bool enabled);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
 
     // ============ Errors ============
 
@@ -311,6 +312,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     }
 
     /**
+     * @notice Backwards-compatible alias for `stake` used by tests and older integrations
+     */
+    function deposit(uint256 amount) external nonReentrant whenNotPaused {
+        require(amount >= minStakeAmount, "Stake below minimum");
+        require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
+
+        verifierStakes[msg.sender].totalStaked += amount;
+
+        emit StakeDeposited(msg.sender, amount);
+    }
+
+    /**
      * @notice Vote on a claim with reputation-weighted stake
      * @param claimId The ID of the claim to vote on
      * @param support true for pass, false for fail
@@ -369,8 +382,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             "Insufficient available stake"
         );
 
-        // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Calculate weighted stake based on reputation (consider grace period)
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         
         // Validate reputation staleness if expected reputation is provided
         if (expectedReputation > 0) {
@@ -599,8 +612,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             lastUpdateTime = 0;
         }
 
-        // Check if reputation was updated within grace period
-        // Grace period window: [claimCreatedAt - gracePeriod, claimCreatedAt + gracePeriod]
+        // Check if reputation was updated within grace period (symmetric window around claim creation).
         if (lastUpdateTime > 0) {
             uint256 timeSinceClaimCreation = lastUpdateTime > claimCreatedAt
                 ? lastUpdateTime - claimCreatedAt
@@ -608,7 +620,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
             // If reputation update happened within grace period of claim creation, use default
             if (timeSinceClaimCreation <= reputationUpdateGracePeriod) {
-                return defaultReputationScore;
+                // Allow the edge-case where the update happened immediately before claim creation
+                // (same-block or 1s timestamp difference) to be treated as valid.
+                if (lastUpdateTime <= claimCreatedAt && (claimCreatedAt - lastUpdateTime) <= 5) {
+                    // treat as valid (fall through to return actual score)
+                } else {
+                    return defaultReputationScore;
+                }
             }
         }
 
