@@ -64,6 +64,114 @@ describe("ReputationReceiver", function () {
     expect(await receiver.isLeafUsed(user.address, score, timestamp)).to.equal(true);
   });
 
+  it("accepts a valid one-leaf payload with an empty proof", async function () {
+    const { admin, user, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 5;
+    const score = 987;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, leaf);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        [],
+        0
+      )
+    )
+      .to.emit(receiver, "ReputationBridged")
+      .withArgs(user.address, 1, score, anyValue);
+  });
+
+  it("reverts when the user address is zero", async function () {
+    const { admin, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 5;
+    const score = 123;
+    const leaf = makeLeaf(ethers.ZeroAddress, score, timestamp);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, leaf);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        ethers.ZeroAddress,
+        1,
+        1,
+        score,
+        timestamp,
+        [],
+        0
+      )
+    ).to.be.revertedWithCustomError(receiver, "ZeroAddress");
+  });
+
+  it("reverts when the proof height is too large", async function () {
+    const { admin, user, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 5;
+    const score = 123;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, leaf);
+
+    const oversizedProof = Array.from({ length: 33 }, () => ethers.ZeroHash);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        oversizedProof,
+        0
+      )
+    ).to.be.revertedWithCustomError(receiver, "InvalidProof");
+  });
+
+  it("reverts when the proof index is impossible for the proof height", async function () {
+    const { admin, user, other, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 5;
+    const score = 321;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    const sibling = makeLeaf(other.address, 44, timestamp);
+    const root = makeRoot(leaf, sibling);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, root);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        [sibling],
+        2
+      )
+    ).to.be.revertedWithCustomError(receiver, "InvalidProof");
+  });
+
   it("prevents replay of the same bridged leaf", async function () {
     const { admin, user, other, receiver } = await loadFixture(deployFixture);
 

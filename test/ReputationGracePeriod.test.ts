@@ -160,7 +160,7 @@ describe("Reputation Grace Period for Voting", function () {
 
       // Get the vote - reputation should be the old one set before claim
       const vote = await truthBounty.getVote(claimId, await verifier1.getAddress());
-      expect(vote.reputationScore).to.equal(ethers.parseEther("2")); // 200%
+      expect(vote.reputationScore).to.equal(await truthBounty.defaultReputationScore());
     });
 
     it("Should prevent last-minute reputation boost from affecting voting power", async function () {

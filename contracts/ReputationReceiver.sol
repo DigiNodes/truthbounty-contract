@@ -51,6 +51,9 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
     /// @notice Maximum reputation score accepted from any chain
     uint256 public constant MAX_SCORE = 10_000;
 
+    /// @notice Maximum supported Merkle proof depth
+    uint256 public constant MAX_PROOF_DEPTH = 32;
+
     /// @notice Basis points denominator
     uint256 public constant BPS = 10_000;
 
@@ -256,6 +259,8 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
         if (user == address(0))                  revert ZeroAddress();
         if (!supportedChains[sourceChainId])     revert UnsupportedChain(sourceChainId);
         if (score > MAX_SCORE)                   revert ScoreExceedsMax(score);
+        if (proof.length > MAX_PROOF_DEPTH)      revert InvalidProof();
+        if (proofIndex >= (uint256(1) << proof.length)) revert InvalidProof();
 
         // Reject timestamps more than 1 hour in the future
         if (timestamp > block.timestamp + 1 hours)

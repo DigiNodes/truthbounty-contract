@@ -224,6 +224,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event WeightedStakingToggled(bool enabled);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
 
     // ============ Errors ============
 
@@ -302,6 +303,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      * @param amount Amount of tokens to stake
      */
     function stake(uint256 amount) external nonReentrant whenNotPaused {
+        _stake(amount);
+    }
+
+    /**
+     * @notice Backward-compatible deposit wrapper for older integrations
+     * @param amount Amount of tokens to stake
+     */
+    function deposit(uint256 amount) external nonReentrant whenNotPaused {
+        _stake(amount);
+    }
+
+    function _stake(uint256 amount) internal {
         require(amount >= minStakeAmount, "Stake below minimum");
         require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
@@ -321,7 +334,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bool support,
         uint256 stakeAmount
     ) external nonReentrant whenNotPaused {
-        _vote(claimId, support, stakeAmount, 0, 0);
+        _vote(claimId, support, stakeAmount, 0, 0, true);
     }
 
     /**
@@ -339,7 +352,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxReputationDrift
     ) external nonReentrant whenNotPaused {
-        _vote(claimId, support, stakeAmount, expectedReputation, maxReputationDrift);
+        _vote(claimId, support, stakeAmount, expectedReputation, maxReputationDrift, false);
     }
 
     /**
@@ -355,7 +368,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bool support,
         uint256 stakeAmount,
         uint256 expectedReputation,
-        uint256 maxReputationDrift
+        uint256 maxReputationDrift,
+        bool useGracePeriod
     ) internal {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
@@ -370,7 +384,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        uint256 reputationScore = useGracePeriod
+            ? _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt)
+            : _getReputationScore(msg.sender);
         
         // Validate reputation staleness if expected reputation is provided
         if (expectedReputation > 0) {
@@ -456,21 +472,21 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(claim.submitter != address(0), "Claim does not exist");
         require(claim.settled, "Claim not settled");
 
-        Vote storage vote = votes[claimId][msg.sender];
-        require(vote.voted, "No vote cast");
-        require(!vote.rewardClaimed, "Rewards already claimed");
+        Vote storage claimVote = votes[claimId][msg.sender];
+        require(claimVote.voted, "No vote cast");
+        require(!claimVote.rewardClaimed, "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
         require(settlement.winnerWeightedStake > 0, "No winners");
 
         // Check if verifier was on the winning side
-        bool isWinner = (vote.support == settlement.passed);
+        bool isWinner = (claimVote.support == settlement.passed);
         require(isWinner, "Not a winner");
 
         // Calculate proportional reward based on EFFECTIVE stake. Integer division can
         // leave a remainder, so assign any undistributed dust to the final winning
         // claimant to ensure totalRewards is fully paid out.
-        uint256 reward = (vote.effectiveStake * settlement.totalRewards) / settlement.winnerWeightedStake;
+        uint256 reward = (claimVote.effectiveStake * settlement.totalRewards) / settlement.winnerWeightedStake;
 
         settlement.winnersClaimed += 1;
         if (settlement.winnersClaimed == settlement.winnerCount) {
@@ -479,7 +495,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         settlement.rewardsClaimed += reward;
 
         // Mark as claimed
-        vote.rewardClaimed = true;
+        claimVote.rewardClaimed = true;
 
         // Transfer reward
         if (reward > 0) {
@@ -488,10 +504,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
 
         // Return stake (winners get full RAW stake back)
-        if (!vote.stakeReturned) {
-            vote.stakeReturned = true;
-            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
-            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+        if (!claimVote.stakeReturned) {
+            claimVote.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= claimVote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, claimVote.stakeAmount), "Stake transfer failed");
         }
     }
 
@@ -504,27 +520,27 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(claim.submitter != address(0), "Claim does not exist");
         require(claim.settled, "Claim not settled");
 
-        Vote storage vote = votes[claimId][msg.sender];
-        require(vote.voted, "No vote cast");
-        require(!vote.stakeReturned, "Stake already returned");
+        Vote storage claimVote = votes[claimId][msg.sender];
+        require(claimVote.voted, "No vote cast");
+        require(!claimVote.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
-        bool isWinner = (vote.support == settlement.passed);
+        bool isWinner = (claimVote.support == settlement.passed);
 
         uint256 stakeToReturn;
-        uint256 slashAmount = vote.slashAmount; // Use pre-calculated slash amount (no recalculation)
+        uint256 slashAmount = claimVote.slashAmount; // Use pre-calculated slash amount (no recalculation)
 
         if (isWinner) {
-            stakeToReturn = vote.stakeAmount;
+            stakeToReturn = claimVote.stakeAmount;
         } else {
             // Losers get stake back minus slashing (pre-calculated at settlement)
-            stakeToReturn = vote.stakeAmount - slashAmount;
+            stakeToReturn = claimVote.stakeAmount - slashAmount;
 
             emit StakeSlashed(claimId, msg.sender, slashAmount);
         }
 
-        vote.stakeReturned = true;
-        verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+        claimVote.stakeReturned = true;
+        verifierStakes[msg.sender].activeStakes -= claimVote.stakeAmount;
 
         if (!isWinner) {
             verifierStakes[msg.sender].totalStaked -= slashAmount;
@@ -539,25 +555,25 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      * @notice Withdraw available stake (not locked in active claims)
      */
     function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
-    VerifierStake storage stake = verifierStakes[msg.sender];
+    VerifierStake storage verifierStake = verifierStakes[msg.sender];
     require(
-        stake.totalStaked >= stake.activeStakes + amount,
+        verifierStake.totalStaked >= verifierStake.activeStakes + amount,
         "Insufficient available stake"
     );
 
     // If no exit has been initiated yet, start the cooldown clock
-    if (stake.exitTime == 0) {
-        stake.exitTime = block.timestamp;
+    if (verifierStake.exitTime == 0) {
+        verifierStake.exitTime = block.timestamp;
         revert("Withdrawal initiated. Please wait 2 days cooldown.");
     }
 
     // Ensure the 2 days cooldown window has passed
-    require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
+    require(block.timestamp >= verifierStake.exitTime + 2 days, "Cooldown active");
 
     // Reset the exit clock for future actions
-    stake.exitTime = 0;
+    verifierStake.exitTime = 0;
 
-    stake.totalStaked -= amount;
+    verifierStake.totalStaked -= amount;
     require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
     emit StakeWithdrawn(msg.sender, amount);
@@ -675,13 +691,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxDrift
     ) internal {
-        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
-        
-        // If no previous snapshot, this is the first preview - allow it
-        if (lastSnapshot.timestamp == 0) {
-            return;
+        uint256 lastUpdateTimestamp = 0;
+        try reputationOracle.getLastReputationUpdate(user) returns (uint256 timestamp) {
+            lastUpdateTimestamp = timestamp;
+        } catch {
+            lastUpdateTimestamp = 0;
         }
-        
+
         // Check if reputation has changed more than the allowed drift
         if (maxDrift > 0) {
             // Calculate percentage change: (|current - expected| / expected) * 10000
@@ -694,8 +710,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
         
         // Check if reputation is too stale (timestamp-based)
-        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
-        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        if (lastUpdateTimestamp > 0) {
+            uint256 timeSinceUpdate = block.timestamp - lastUpdateTimestamp;
+            require(timeSinceUpdate <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        }
         
         // Emit validation event
         emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);
@@ -775,8 +793,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         address[] storage voters = claimVoters[claimId];
 
         for (uint256 i = 0; i < voters.length; i++) {
-            Vote storage vote = votes[claimId][voters[i]];
-            if (vote.support == passed) {
+            Vote storage claimVote = votes[claimId][voters[i]];
+            if (claimVote.support == passed) {
                 count += 1;
             }
         }
@@ -785,28 +803,28 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /**
      * @notice Assign per-vote slash amounts to each loser
      * @dev Iterates through all voters and stores slash amount in Vote struct for losers
-     * @return totalSlashed Sum of all slash amounts
+     * @return totalSlashedAmount Sum of all slash amounts
      */
     function _assignPerVoteSlashes(
         uint256 claimId,
         bool passed
-    ) internal returns (uint256 totalSlashed) {
+    ) internal returns (uint256 totalSlashedAmount) {
         address[] storage voters = claimVoters[claimId];
         
         for (uint256 i = 0; i < voters.length; i++) {
             address voter = voters[i];
-            Vote storage vote = votes[claimId][voter];
+            Vote storage claimVote = votes[claimId][voter];
             
-            bool isLoser = (vote.support != passed);
+            bool isLoser = (claimVote.support != passed);
             
             if (isLoser) {
                 // Calculate slash as the configured percentage of raw stake.
-                uint256 slashAmount = (vote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
-                vote.slashAmount = slashAmount;
-                totalSlashed += slashAmount;
+                uint256 slashAmount = (claimVote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
+                claimVote.slashAmount = slashAmount;
+                totalSlashedAmount += slashAmount;
             } else {
                 // Winners are not slashed
-                vote.slashAmount = 0;
+                claimVote.slashAmount = 0;
             }
         }
     }

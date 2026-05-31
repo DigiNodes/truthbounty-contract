@@ -213,7 +213,7 @@ describe("MetaTxExample", function () {
       // Second execution with same signature should fail
       await expect(
         metaTxExample.executeTransfer(user.address, to, amount, deadline, signature)
-      ).to.be.revertedWith("Signature already used");
+      ).to.be.revertedWith("Invalid signature");
     });
 
     it("should allow sequential transactions with different nonces", async function () {

@@ -133,6 +133,12 @@ describe("TruthBountyWeighted", function () {
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1")); // 1x
       await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("0.5")); // 0.5x
 
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
+
       const stakeAmount = ethers.parseEther("100");
 
       // Verifier1 votes (2x weight)
@@ -203,6 +209,12 @@ describe("TruthBountyWeighted", function () {
         ethers.parseEther("0.01") // 1%
       );
 
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
+
       const stakeAmount = ethers.parseEther("100");
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
 
@@ -219,6 +231,12 @@ describe("TruthBountyWeighted", function () {
         await verifier1.getAddress(),
         ethers.parseEther("50") // 5000%
       );
+
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
 
       const stakeAmount = ethers.parseEther("100");
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
@@ -249,7 +267,12 @@ describe("TruthBountyWeighted", function () {
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("0.5")); // 0.5x
       await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("0.5")); // 0.5x
 
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
       const stakeAmount = ethers.parseEther("100");
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
 
       // Verifier1 (3x) votes FOR: effective = 300
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
@@ -288,6 +311,9 @@ describe("TruthBountyWeighted", function () {
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("3")); // 3x
       await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("3")); // 3x
 
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
       const stakeAmount = ethers.parseEther("100");
 
       // Verifier1 (0.5x) votes FOR: effective = 50
@@ -316,6 +342,12 @@ describe("TruthBountyWeighted", function () {
       // Setup equal raw stakes but different reputations
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("2")); // 2x
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1")); // 1x
+
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
 
       const stakeAmount = ethers.parseEther("100");
 
@@ -357,6 +389,8 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should fully distribute reward remainder instead of leaving dust", async function () {
+      const confirmationDelay = await truthBounty.confirmationDelay();
+
       await truthBounty.setMinStakeAmount(1);
       await truthBounty.setSlashPercent(100);
       await truthBounty.setRewardPercent(100);
@@ -365,11 +399,17 @@ describe("TruthBountyWeighted", function () {
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("2"));
       await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("0.1"));
 
+      const gracePeriod = await truthBounty.reputationUpdateGracePeriod();
+      await time.increase(Number(gracePeriod) + 1);
+
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      const claimId = 1n;
+
       await truthBounty.connect(verifier1).vote(claimId, true, 1);
       await truthBounty.connect(verifier2).vote(claimId, true, 1);
       await truthBounty.connect(verifier3).vote(claimId, false, 10);
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + Number(confirmationDelay) + 1);
       await truthBounty.settleClaim(claimId);
 
       const settlement = await truthBounty.settlementResults(claimId);

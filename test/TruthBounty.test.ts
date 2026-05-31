@@ -115,7 +115,7 @@ describe("TruthBountyToken Legacy & Role Tests", function () {
 
             await expect(
                 truthBounty.connect(addr1).rescueETH(await addr1.getAddress(), amount)
-            ).to.be.revertedWith(/AccessControl/);
+            ).to.be.revertedWithCustomError(truthBounty, "AccessControlUnauthorizedAccount");
         });
     });
 });
