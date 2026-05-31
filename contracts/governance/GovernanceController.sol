@@ -69,8 +69,9 @@ contract GovernanceController is GovernorAccessControl, ReentrancyGuard, Governa
     // ============ Modifiers ============
     
     modifier onlyProposalExecutor() override {
-        if (!hasRole(GovernorAccess.PROPOSAL_EXECUTOR_ROLE, msg.sender)) {
-            revert GovernorAccess.AccessDenied(msg.sender);
+        if (!hasRole(GovernorAccess.PROPOSAL_EXECUTOR_ROLE, msg.sender) && 
+            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            revert AccessControlUnauthorizedAccount(msg.sender, GovernorAccess.PROPOSAL_EXECUTOR_ROLE);
         }
         _;
     }

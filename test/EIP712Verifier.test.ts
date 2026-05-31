@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { EIP712Verifier } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("EIP712Verifier", function () {
   let verifier: EIP712Verifier;
@@ -12,15 +13,10 @@ describe("EIP712Verifier", function () {
   const DOMAIN_NAME = "TruthBounty";
   const DOMAIN_VERSION = "1";
 
-  async function getDeadline(offset: number = 3600): Promise<bigint> {
-    const block = await ethers.provider.getBlock("latest");
-    return BigInt(block!.timestamp + offset);
-  }
-
   beforeEach(async function () {
     [owner, claimant, verifierSigner] = await ethers.getSigners();
 
-    const EIP712Verifier = await ethers.getContractFactory("EIP712Verifier");
+    const EIP712Verifier = await ethers.getContractFactory("contracts/decay.sol:EIP712Verifier");
     verifier = await EIP712Verifier.deploy();
     await verifier.waitForDeployment();
   });
@@ -37,7 +33,7 @@ describe("EIP712Verifier", function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("claim content"));
       const nonce = await verifier.getNonce(claimant.address);
-      const deadline = await getDeadline(); // 1 hour from now
+      const deadline = BigInt(await time.latest() + 3600); // 1 hour from now
 
       const domain = {
         name: DOMAIN_NAME,
@@ -82,7 +78,7 @@ describe("EIP712Verifier", function () {
     it("should reject an invalid signature", async function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("claim content"));
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       // Sign with wrong signer
       const domain = {
@@ -127,7 +123,7 @@ describe("EIP712Verifier", function () {
     it("should reject expired signature", async function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("claim content"));
-      const deadline = await getDeadline(-3600); // 1 hour ago
+      const deadline = BigInt(await time.latest() - 3600); // 1 hour ago
 
       const domain = {
         name: DOMAIN_NAME,
@@ -171,7 +167,7 @@ describe("EIP712Verifier", function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("claim content"));
       const nonce = await verifier.getNonce(claimant.address);
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const domain = {
         name: DOMAIN_NAME,
@@ -218,14 +214,14 @@ describe("EIP712Verifier", function () {
           deadline,
           signature
         )
-      ).to.be.reverted;
+      ).to.be.revertedWithCustomError(verifier, "InvalidSignature");
     });
 
     it("should increment nonce after verification", async function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("claim content"));
       const nonceBefore = await verifier.getNonce(claimant.address);
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const domain = {
         name: DOMAIN_NAME,
@@ -273,7 +269,7 @@ describe("EIP712Verifier", function () {
       const approve = true;
       const reason = "Valid claim with sufficient evidence";
       const nonce = await verifier.getNonce(verifierSigner.address);
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const domain = {
         name: DOMAIN_NAME,
@@ -322,7 +318,7 @@ describe("EIP712Verifier", function () {
       const bountyId = 1n;
       const approve = true;
       const reason = "Valid claim";
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const domain = {
         name: DOMAIN_NAME,
@@ -373,7 +369,7 @@ describe("EIP712Verifier", function () {
       const bountyId = 1n;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("test"));
       const nonce = 0n;
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const hash1 = await verifier.getClaimSubmissionHash(
         claimantAddr,
@@ -398,7 +394,7 @@ describe("EIP712Verifier", function () {
       const claimantAddr = claimant.address;
       const contentHash = ethers.keccak256(ethers.toUtf8Bytes("test"));
       const nonce = 0n;
-      const deadline = await getDeadline();
+      const deadline = BigInt(await time.latest() + 3600);
 
       const hash1 = await verifier.getClaimSubmissionHash(
         claimantAddr,

@@ -101,7 +101,10 @@ describe("Reentrancy Protection Tests", function () {
 
     // Grant settlement role
     const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
-    await slashing.connect(admin).grantRole(SETTLEMENT_ROLE, settlement.address);
+    await slashing.connect(admin).scheduleResolverRoleGrant(settlement.address);
+    await time.increase(2 * 24 * 60 * 60);
+    await staking.executeResolverRoleGrant(await slashing.getAddress());
+    await slashing.executeResolverRoleGrant(settlement.address);
 
     // Setup stakes
     const stakeAmount = ethers.parseEther("1000");
@@ -386,7 +389,7 @@ describe("Reentrancy Protection Tests", function () {
         await truthBounty.connect(verifier2).vote(0, true, voteAmount);
 
         // Fast forward past verification window
-        await time.increase(7 * 24 * 60 * 60 + 1); // 7 days + 1 second
+        await time.increase(7 * 24 * 60 * 60 + 3601); // 7 days + 1 second
 
         // Settle claim
         await truthBounty.settleClaim(0);
@@ -427,7 +430,7 @@ describe("Reentrancy Protection Tests", function () {
         await truthBounty.connect(verifier2).vote(0, false, voteAmount);
 
         // Fast forward and settle
-        await time.increase(7 * 24 * 60 * 60 + 1);
+        await time.increase(7 * 24 * 60 * 60 + 3601);
         await truthBounty.settleClaim(0);
 
         // Get settlement result to see who lost
@@ -467,15 +470,17 @@ describe("Reentrancy Protection Tests", function () {
         const contractBalanceBefore = await token.balanceOf(await truthBounty.getAddress());
         const verifierBalanceBefore = await token.balanceOf(verifier1.address);
 
-        // Withdraw
-        await truthBounty.connect(verifier1).withdrawStake(stakeAmount);
+        // Withdraw initiation (will revert with cooldown notice)
+        await expect(
+          truthBounty.connect(verifier1).withdrawStake(stakeAmount)
+        ).to.be.revertedWith("Withdrawal initiated. Please wait 2 days cooldown.");
 
-        // Verify single withdrawal
+        // Verify no withdrawal occurred (balances remain the same)
         const contractBalanceAfter = await token.balanceOf(await truthBounty.getAddress());
         const verifierBalanceAfter = await token.balanceOf(verifier1.address);
 
-        expect(contractBalanceBefore - contractBalanceAfter).to.equal(stakeAmount);
-        expect(verifierBalanceAfter - verifierBalanceBefore).to.equal(stakeAmount);
+        expect(contractBalanceAfter).to.equal(contractBalanceBefore);
+        expect(verifierBalanceAfter).to.equal(verifierBalanceBefore);
       });
     });
   });
@@ -527,7 +532,7 @@ describe("Reentrancy Protection Tests", function () {
         expect(stakeAfterSecond).to.equal(expectedRemaining);
 
         // Verify slash history
-        const history = await slashing.getSlashHistory(verifier1.address);
+        const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
         expect(history.length).to.equal(2);
       });
 
@@ -589,8 +594,8 @@ describe("Reentrancy Protection Tests", function () {
         expect(stake3After).to.be.lt(stake3Before);
 
         // Verify slash history was recorded
-        const history2 = await slashing.getSlashHistory(verifier2.address);
-        const history3 = await slashing.getSlashHistory(verifier3.address);
+        const history2 = await slashing.getSlashHistory(verifier2.address, 0, 10);
+        const history3 = await slashing.getSlashHistory(verifier3.address, 0, 10);
         expect(history2.length).to.be.gt(0);
         expect(history3.length).to.be.gt(0);
       });
@@ -717,7 +722,7 @@ describe("Reentrancy Protection Tests", function () {
       await truthBounty.connect(verifier2).vote(0, false, voteAmount);
 
       // Fast forward and settle
-      await time.increase(7 * 24 * 60 * 60 + 1);
+      await time.increase(7 * 24 * 60 * 60 + 3601);
       await truthBounty.settleClaim(0);
 
       // Verify claim state

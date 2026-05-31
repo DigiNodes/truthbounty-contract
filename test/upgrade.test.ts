@@ -2,29 +2,23 @@ import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
 
 describe("Upgradeable", function () {
-  it.skip("preserves storage after upgrade", async () => {
-    const [owner] = await ethers.getSigners();
-    const TB = await ethers.getContractFactory("TruthBountyToken");
+  it("preserves storage after upgrade", async () => {
+    const MockUpgradeable = await ethers.getContractFactory("MockUpgradeable");
 
-    const proxy = await upgrades.deployProxy(TB, [], {
-      initializer: false,
+    const proxy = await upgrades.deployProxy(MockUpgradeable, [42], {
+      initializer: "initialize",
       kind: "uups",
-      constructorArgs: [owner.address],
-      unsafeAllow: ["constructor", "state-variable-immutable", "state-variable-assignment"],
     });
 
-    await proxy.transfer(
-      "0x000000000000000000000000000000000000dEaD",
-      100
-    );
+    expect(await proxy.value()).to.equal(42);
 
-    const TBv2 = await ethers.getContractFactory("TruthBountyToken");
+    await proxy.setValue(100);
+    expect(await proxy.value()).to.equal(100);
 
-    const upgraded = await upgrades.upgradeProxy(proxy.target, TBv2, {
-      constructorArgs: [owner.address],
-      unsafeAllow: ["constructor", "state-variable-immutable", "state-variable-assignment"],
-    });
+    const MockUpgradeableV2 = await ethers.getContractFactory("MockUpgradeable");
 
-    expect(await upgraded.totalSupply()).to.not.equal(0);
+    const upgraded = await upgrades.upgradeProxy(proxy.target, MockUpgradeableV2);
+
+    expect(await upgraded.value()).to.equal(100);
   });
 });

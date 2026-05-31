@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { TruthBounty, TruthBountyToken } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("Claim Existence Fix", function () {
     let truthBounty: TruthBounty;
@@ -25,14 +26,16 @@ describe("Claim Existence Fix", function () {
         );
 
         // Setup roles
-        await bountyToken.grantRole(await bountyToken.RESOLVER_ROLE(), await truthBounty.getAddress());
+        await bountyToken.scheduleResolverRoleGrant(await truthBounty.getAddress());
+        await time.increase(2 * 24 * 60 * 60);
+        await bountyToken.executeResolverRoleGrant(await truthBounty.getAddress());
     });
 
     describe("Claim Existence Check Fix", function () {
         it("Should prevent voting on non-existent claim 0", async function () {
             const stakeAmount = ethers.parseEther("100");
             
-            // Mint and stake tokens for verifier
+            // Transfer and stake tokens for verifier
             await bountyToken.transfer(verifier.address, stakeAmount * 2n);
             await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
@@ -53,43 +56,41 @@ describe("Claim Existence Fix", function () {
         it("Should allow voting on existing claim", async function () {
             const stakeAmount = ethers.parseEther("100");
             
-            // Mint and stake tokens for verifier
+            // Transfer and stake tokens for verifier
             await bountyToken.transfer(verifier.address, stakeAmount * 2n);
             await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
 
             // Create a claim
             await truthBounty.createClaim("QmTest123");
-            const claimId = 0n;
 
             // Should be able to vote on the created claim
             await expect(
-                truthBounty.connect(verifier).vote(claimId, true, stakeAmount)
+                truthBounty.connect(verifier).vote(0n, true, stakeAmount)
             ).to.not.be.reverted;
         });
 
         it("Should allow settling existing claim after verification window", async function () {
             const stakeAmount = ethers.parseEther("100");
             
-            // Mint and stake tokens for verifier
+            // Transfer and stake tokens for verifier
             await bountyToken.transfer(verifier.address, stakeAmount * 2n);
             await bountyToken.connect(verifier).approve(await truthBounty.getAddress(), stakeAmount * 2n);
             await truthBounty.connect(verifier).stake(stakeAmount);
 
             // Create a claim
             await truthBounty.createClaim("QmTest123");
-            const claimId = 0n;
 
             // Vote on the claim
-            await truthBounty.connect(verifier).vote(claimId, true, stakeAmount);
+            await truthBounty.connect(verifier).vote(0n, true, stakeAmount);
 
-            // Fast forward past verification window (7 days)
-            await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60 + 1]);
+            // Fast forward past verification window (7 days) and confirmation delay (1 hour)
+            await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60 + 3601]);
             await ethers.provider.send("evm_mine", []);
 
             // Should be able to settle the claim
             await expect(
-                truthBounty.settleClaim(claimId)
+                truthBounty.settleClaim(0n)
             ).to.not.be.reverted;
         });
     });
