@@ -23,4 +23,12 @@ interface IReputationOracle {
      * @return isActive True if the oracle is operational
      */
     function isActive() external view returns (bool isActive);
+
+    /**
+     * @notice Get the timestamp of the last reputation update for a user
+     * @param user The address to query
+     * @return timestamp The Unix timestamp of the last update (0 if never updated)
+     * @dev This method is optional for oracle implementations
+     */
+    function getLastReputationUpdate(address user) external view returns (uint256 timestamp);
 }
