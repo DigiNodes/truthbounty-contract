@@ -14,7 +14,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
     /// @notice Mapping of user addresses to their reputation scores
     mapping(address => uint256) private reputationScores;
     /// @notice Mapping of user addresses to their last reputation update timestamp
-    mapping(address => uint256) private lastUpdateTimes;
+    mapping(address => uint256) private lastUpdateTimestamp;
 
     /// @notice Whether the oracle is active
     bool private _isActive = true;
@@ -69,7 +69,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
      * @return timestamp The last update timestamp, or 0 if never updated
      */
     function getLastReputationUpdate(address user) external view override returns (uint256 timestamp) {
-        return lastUpdateTimes[user];
+        return lastUpdateTimestamp[user];
     }
 
     // ============ Admin Functions ============
@@ -82,7 +82,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
     function setReputationScore(address user, uint256 score) external onlyOwner {
         require(user != address(0), "Invalid address");
         reputationScores[user] = score;
-        lastUpdateTimes[user] = block.timestamp;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, score);
     }
 
@@ -103,7 +103,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         for (uint256 i = 0; i < length; i++) {
             require(users[i] != address(0), "Invalid address");
             reputationScores[users[i]] = scores[i];
-            lastUpdateTimes[users[i]] = block.timestamp;
+            lastUpdateTimestamp[users[i]] = block.timestamp;
             emit ReputationScoreSet(users[i], scores[i]);
         }
     }
@@ -133,7 +133,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
      */
     function setHighReputation(address user) external onlyOwner {
         reputationScores[user] = 3e18; // 3.0 (300%)
-        lastUpdateTimes[user] = block.timestamp;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, 3e18);
     }
 
@@ -142,7 +142,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
      */
     function setLowReputation(address user) external onlyOwner {
         reputationScores[user] = 5e17; // 0.5 (50%)
-        lastUpdateTimes[user] = block.timestamp;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, 5e17);
     }
 
@@ -151,7 +151,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
      */
     function setNeutralReputation(address user) external onlyOwner {
         reputationScores[user] = 1e18; // 1.0 (100%)
-        lastUpdateTimes[user] = block.timestamp;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, 1e18);
     }
 
@@ -160,7 +160,7 @@ contract MockReputationOracle is IReputationOracle, Ownable {
      */
     function resetReputationScore(address user) external onlyOwner {
         reputationScores[user] = 0;
-        lastUpdateTimes[user] = block.timestamp;
+        lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, 0);
     }
 }

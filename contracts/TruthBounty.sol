@@ -41,6 +41,8 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
         uint256 remainingStake,
         string reason
     );
+    event SettlementContractUpdated(address indexed oldSettlement, address indexed newSettlement);
+    event SlashPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
 
     // Restricts access to the resolver (formerly settlement) role
     modifier onlyResolver() {
@@ -59,16 +61,18 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
     }
 
     function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
+        address oldSettlement = settlementContract;
         settlementContract = _settlement;
-        // Automatically schedule RESOLVER_ROLE for the settlement contract; execution is timelocked.
-        if (!hasRole(RESOLVER_ROLE, _settlement)) {
-            _scheduleResolverRoleGrant(_settlement);
-        }
+        // Automatically grant RESOLVER_ROLE to the settlement contract
+        _grantRole(RESOLVER_ROLE, _settlement);
+        emit SettlementContractUpdated(oldSettlement, _settlement);
     }
 
     function setSlashPercentage(uint256 percentage) external onlyRole(ADMIN_ROLE) {
         require(percentage <= 100, "Invalid percentage");
+        uint256 oldPercentage = slashPercentage;
         slashPercentage = percentage;
+        emit SlashPercentageUpdated(oldPercentage, percentage);
     }
 
     /// @dev DEPRECATED — use TruthBountyWeighted.stake() instead.
@@ -111,6 +115,10 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
         );
     }
 
+    /**
+     * @dev Storage gap to allow future upgrades without shifting variables.
+     */
+    uint256[50] private __gap;
     function _resolverRole() internal pure override returns (bytes32) {
         return RESOLVER_ROLE;
     }
