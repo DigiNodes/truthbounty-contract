@@ -222,6 +222,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event WeightedStakingToggled(bool enabled);
+    event DefaultReputationScoreUpdated(uint256 oldScore, uint256 newScore);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
     event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
@@ -493,6 +494,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             vote.stakeReturned = true;
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
         }
     }
 
@@ -533,6 +535,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
         if (stakeToReturn > 0) {
             require(bountyToken.transfer(msg.sender, stakeToReturn), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, stakeToReturn);
         }
     }
 
@@ -873,7 +876,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
         require(_defaultScore > 0, "Invalid default");
+        uint256 oldScore = defaultReputationScore;
         defaultReputationScore = _defaultScore;
+        emit DefaultReputationScoreUpdated(oldScore, _defaultScore);
     }
 
     // ============ Governance Parameter Updates ============
