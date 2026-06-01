@@ -3,9 +3,130 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./governance/GovernanceOwnable.sol";
+import "./governance/GovernanceHooks.sol";
+
+/**
+ * @title TruthBountyToken
+ * @notice ERC20 token for TruthBounty rewards with staking capabilities
+ * @dev The stake/withdrawStake/slashVerifier functions on this contract are DEPRECATED.
+ *      They create an untracked parallel stake pool with no claim linkage.
+ *      Use TruthBountyWeighted.stake() / withdrawStake() for all verifier staking.
+ *      See docs/protocol-spec.md for the canonical architecture.
+ */
+contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpgradeable {
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant RESOLVER_ROLE = keccak256("RESOLVER_ROLE");
+    
+    // Legacy mapping
+    bytes32 public constant SETTLEMENT_ROLE = RESOLVER_ROLE;
+    address public settlementContract;
+    uint256 public slashPercentage = 10; // 10%
+
+    mapping(address => uint256) public verifierStake;
+
+    event StakeDeposited(address indexed verifier, uint256 amount);
+    event StakeWithdrawn(address indexed verifier, uint256 amount);
+    event VerifierSlashed(
+        address indexed verifier,
+        uint256 slashedAmount,
+        uint256 remainingStake,
+        string reason
+    );
+    event SettlementContractUpdated(address indexed oldSettlement, address indexed newSettlement);
+    event SlashPercentageUpdated(uint256 oldPercentage, uint256 newPercentage);
+
+    // Restricts access to the resolver (formerly settlement) role
+    modifier onlyResolver() {
+        _checkRole(RESOLVER_ROLE, msg.sender);
+        _;
+    }
+
+    constructor(address initialAdmin) ERC20("TruthBounty", "BOUNTY") {
+        require(initialAdmin != address(0), "Invalid admin address");
+        _mint(initialAdmin, 10_000_000 * 10 ** decimals());
+        
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        
+        _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+    }
+
+    function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
+        address oldSettlement = settlementContract;
+        settlementContract = _settlement;
+        // Automatically grant RESOLVER_ROLE to the settlement contract
+        _grantRole(RESOLVER_ROLE, _settlement);
+        emit SettlementContractUpdated(oldSettlement, _settlement);
+    }
+
+    function setSlashPercentage(uint256 percentage) external onlyRole(ADMIN_ROLE) {
+        require(percentage <= 100, "Invalid percentage");
+        uint256 oldPercentage = slashPercentage;
+        slashPercentage = percentage;
+        emit SlashPercentageUpdated(oldPercentage, percentage);
+    }
+
+    /// @dev DEPRECATED — use TruthBountyWeighted.stake() instead.
+    function stake(uint256 amount) external {
+        require(amount > 0, "Invalid amount");
+        _transfer(msg.sender, address(this), amount);
+        verifierStake[msg.sender] += amount;
+
+        emit StakeDeposited(msg.sender, amount);
+    }
+
+    /// @dev DEPRECATED — use TruthBountyWeighted.withdrawStake() instead.
+    function withdrawStake(uint256 amount) external {
+        require(verifierStake[msg.sender] >= amount, "Insufficient stake");
+
+        verifierStake[msg.sender] -= amount;
+        _transfer(address(this), msg.sender, amount);
+
+        emit StakeWithdrawn(msg.sender, amount);
+    }
+
+    /// @dev DEPRECATED — use VerifierSlashing.slash() for admin-initiated slashing.
+    function slashVerifier(
+        address verifier,
+        string calldata reason
+    ) external onlyResolver {
+        uint256 verifierStakeAmount = verifierStake[verifier];
+        require(verifierStakeAmount > 0, "No stake to slash");
+
+        uint256 slashedAmount = (verifierStakeAmount * slashPercentage) / 100;
+        verifierStake[verifier] -= slashedAmount;
+
+        _burn(address(this), slashedAmount);
+
+        emit VerifierSlashed(
+            verifier,
+            slashedAmount,
+            verifierStake[verifier],
+            reason
+        );
+    }
+
+    /**
+     * @dev Storage gap to allow future upgrades without shifting variables.
+     */
+    uint256[50] private __gap;
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    /**
+     * @dev Required by UUPSUpgradeable
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(ADMIN_ROLE) {}
+}
 
 /**
  * @title TruthBounty
@@ -123,6 +244,8 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     event StakeDeposited(address indexed verifier, uint256 amount);
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event RewardsClaimed(address indexed verifier, uint256 amount);
+    event ETHReceived(address indexed sender, uint256 amount);
+    event ETHRescued(address indexed recipient, uint256 amount);
 
     // ── Constructor ────────────────────────────────────────────────────────
 

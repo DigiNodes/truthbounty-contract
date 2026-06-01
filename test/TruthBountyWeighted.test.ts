@@ -1,13 +1,13 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Contract, Signer } from "ethers";
+import { Signer } from "ethers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 
 describe("TruthBountyWeighted", function () {
-  let truthBounty: Contract;
-  let bountyToken: Contract;
-  let mockOracle: Contract;
+  let truthBounty: any;
+  let bountyToken: any;
+  let mockOracle: any;
   let owner: Signer;
   let submitter: Signer;
   let verifier1: Signer;
@@ -17,6 +17,7 @@ describe("TruthBountyWeighted", function () {
   const INITIAL_SUPPLY = ethers.parseEther("1000000");
   const MIN_STAKE = ethers.parseEther("100");
   const VERIFICATION_WINDOW = 7 * 24 * 60 * 60; // 7 days
+  const CONFIRMATION_DELAY = 1 * 60 * 60; // 1 hour
 
   beforeEach(async function () {
     [owner, submitter, verifier1, verifier2, verifier3] = await ethers.getSigners();
@@ -219,7 +220,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 300 / 400 = 75% > 60% threshold
       // Should PASS
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
 
       await expect(truthBounty.settleClaim(claimId))
         .to.emit(truthBounty, "ClaimSettled")
@@ -258,7 +259,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 50 / 650 ≈ 7.7% < 60% threshold
       // Should FAIL
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
 
       await truthBounty.settleClaim(claimId);
 
@@ -278,7 +279,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier2).vote(claimId, true, stakeAmount);
 
       // Settle
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.settleClaim(claimId);
 
       const settlement = await truthBounty.settlementResults(claimId);
@@ -303,8 +304,8 @@ describe("TruthBountyWeighted", function () {
       const balanceAfter2 = await bountyToken.balanceOf(await verifier2.getAddress());
 
       // Check proportional distribution (allowing for rounding)
-      const reward1 = balanceAfter1 - balanceBefore1 - stakeAmount; // Subtract returned stake
-      const reward2 = balanceAfter2 - balanceBefore2 - stakeAmount;
+      const reward1 = BigInt(balanceAfter1) - BigInt(balanceBefore1) - stakeAmount; // Subtract returned stake
+      const reward2 = BigInt(balanceAfter2) - BigInt(balanceBefore2) - stakeAmount;
 
       expect(reward1).to.be.closeTo(verifier1RewardShare, ethers.parseEther("0.01"));
       expect(reward2).to.be.closeTo(verifier2RewardShare, ethers.parseEther("0.01"));
@@ -326,7 +327,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert settleClaim when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.pause();
 
       await expect(truthBounty.settleClaim(claimId)).to.be.revertedWithCustomError(
@@ -336,7 +337,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert claimSettlementRewards when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.settleClaim(claimId);
       await truthBounty.pause();
 
@@ -474,6 +475,57 @@ describe("TruthBountyWeighted", function () {
 
       const vote = await truthBounty.getVote(0, await verifier1.getAddress());
       expect(vote.reputationScore).to.equal(ethers.parseEther("1")); // Default
+    });
+  });
+
+  describe("Withdraw Event Emissions", function () {
+    let claimId: bigint;
+    const stakeAmount = ethers.parseEther("100");
+
+    beforeEach(async function () {
+      // Create a claim
+      await truthBounty.connect(submitter).createClaim("QmTestHash");
+      claimId = 0n;
+
+      // Stake for verifiers
+      await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
+      await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
+
+      // Make verifier2 stronger so the claim clearly fails without hitting the tie branch
+      await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("2"));
+
+      // Verifier1 votes FOR with 100 effective stake
+      await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
+      // Verifier2 votes AGAINST with 200 effective stake
+      await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
+
+      // Advance time and settle claim. The claim fails because 100/300 < 60%.
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
+      await truthBounty.settleClaim(claimId);
+    });
+
+    it("Should emit StakeWithdrawn on partial withdrawal for losers in withdrawSettledStake", async function () {
+      // Verifier1 (FOR) lost and is slashed 20%, so they receive 80% of their raw stake (80 BOUNTY)
+      const expectedReturn = ethers.parseEther("80");
+
+      await expect(truthBounty.connect(verifier1).withdrawSettledStake(claimId))
+        .to.emit(truthBounty, "StakeWithdrawn")
+        .withArgs(await verifier1.getAddress(), expectedReturn);
+    });
+
+    it("Should emit StakeWithdrawn on full withdrawal for winners in claimSettlementRewards", async function () {
+      // Verifier2 (AGAINST) won and gets full raw stake (100 BOUNTY) returned
+      await expect(truthBounty.connect(verifier2).claimSettlementRewards(claimId))
+        .to.emit(truthBounty, "StakeWithdrawn")
+        .withArgs(await verifier2.getAddress(), stakeAmount);
+    });
+
+    it("Should emit StakeWithdrawn on full withdrawal for winners in withdrawSettledStake", async function () {
+      // Verifier2 (AGAINST) won. They call withdrawSettledStake and get full raw stake (100 BOUNTY) returned
+      await expect(truthBounty.connect(verifier2).withdrawSettledStake(claimId))
+        .to.emit(truthBounty, "StakeWithdrawn")
+        .withArgs(await verifier2.getAddress(), stakeAmount);
     });
   });
 });
