@@ -3,9 +3,8 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
-
-import "../../src/Rewards.sol";
-import "../../src/Staking.sol";
+import "../../contracts/WeightedStaking.sol";
+import "../../contracts/staking.sol";
 
 
 contract RewardsInvariant is StdInvariant, Test {
