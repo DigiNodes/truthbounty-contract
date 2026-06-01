@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -21,6 +22,7 @@ interface IVerifierSlashing {
 contract ExampleSettlement is Ownable, ReentrancyGuard {
     
     IVerifierSlashing public slashingContract;
+    IERC20 public immutable bountyToken;
     
     // Claim states
     enum ClaimStatus { Pending, Verified, Disputed, Settled }
@@ -45,9 +47,11 @@ contract ExampleSettlement is Ownable, ReentrancyGuard {
     event ClaimSettled(uint256 indexed claimId, bool verificationCorrect);
     event VerifierSlashed(uint256 indexed claimId, address indexed verifier, uint256 percentage, string reason);
     
-    constructor(address _slashingContract) Ownable(msg.sender) {
+    constructor(address _slashingContract, address _bountyToken) Ownable(msg.sender) {
         require(_slashingContract != address(0), "Invalid slashing contract");
+        require(_bountyToken != address(0), "Invalid token address");
         slashingContract = IVerifierSlashing(_slashingContract);
+        bountyToken = IERC20(_bountyToken);
     }
     
     /**

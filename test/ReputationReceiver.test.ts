@@ -131,4 +131,122 @@ describe("ReputationReceiver", function () {
       )
     ).to.be.revertedWithCustomError(receiver, "InvalidProof");
   });
+
+  it("reverts when proof length exceeds limit", async function () {
+    const { admin, user, other, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 20;
+    const score = 4000;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    const sibling = makeLeaf(other.address, 11, timestamp);
+    const root = makeRoot(leaf, sibling);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, root);
+
+    // Build an oversized proof (MAX_PROOF_DEPTH + 1)
+    const depth = Number(await receiver.MAX_PROOF_DEPTH());
+    const bigProof = new Array(depth + 1).fill(sibling);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        bigProof,
+        0
+      )
+    ).to.be.revertedWithCustomError(receiver, "InvalidProofLength");
+  });
+
+  it("reverts when proofIndex is out of range", async function () {
+    const { admin, user, other, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 25;
+    const score = 5000;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    const sibling = makeLeaf(other.address, 22, timestamp);
+    const root = makeRoot(leaf, sibling);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, root);
+
+    // proof length 1 -> maxLeaves = 2, so proofIndex 2 is invalid
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        [sibling],
+        2
+      )
+    ).to.be.revertedWithCustomError(receiver, "InvalidProofIndex");
+  });
+
+  it("reverts when timestamp is too old", async function () {
+    const { admin, user, other, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const maxAge = Number(await receiver.MAX_TIMESTAMP_AGE());
+    const timestamp = latestBlock.timestamp - maxAge - 10;
+    const score = 6000;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    const sibling = makeLeaf(other.address, 33, timestamp);
+    const root = makeRoot(leaf, sibling);
+
+    await receiver.connect(admin).verifySnapshotRoot(1, 1, root);
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        1,
+        score,
+        timestamp,
+        [sibling],
+        0
+      )
+    ).to.be.revertedWithCustomError(receiver, "TimestampTooOld");
+  });
+
+  it("reverts when snapshotId is zero", async function () {
+    const { admin, user, other, receiver } = await loadFixture(deployFixture);
+
+    await receiver.connect(admin).setChainSupport(1, true);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const timestamp = latestBlock.timestamp + 30;
+    const score = 7000;
+
+    const leaf = makeLeaf(user.address, score, timestamp);
+    const sibling = makeLeaf(other.address, 44, timestamp);
+    const root = makeRoot(leaf, sibling);
+
+    // don't verify root under snapshot 0 (invalid)
+
+    await expect(
+      receiver.connect(admin).receiveBridgedReputation(
+        user.address,
+        1,
+        0,
+        score,
+        timestamp,
+        [sibling],
+        0
+      )
+    ).to.be.revertedWithCustomError(receiver, "InvalidSnapshotId");
+  });
 });
