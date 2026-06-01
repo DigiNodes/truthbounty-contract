@@ -4,18 +4,28 @@ import { Contract, Signer } from "ethers";
 
 describe("TruthBountyToken Legacy & Role Tests", function () {
     let token: Contract;
+    let truthBounty: Contract;
     let owner: Signer;
     let addr1: Signer;
     let addr2: Signer;
+    let governanceController: Signer;
 
     const INITIAL_SUPPLY = ethers.parseEther("10000000");
 
     beforeEach(async function () {
-        [owner, addr1, addr2] = await ethers.getSigners();
+        [owner, addr1, addr2, governanceController] = await ethers.getSigners();
 
         const TruthBountyTokenFactory = await ethers.getContractFactory("TruthBountyToken");
         token = await TruthBountyTokenFactory.deploy(await owner.getAddress());
         await token.waitForDeployment();
+
+        const TruthBountyFactory = await ethers.getContractFactory("TruthBounty");
+        truthBounty = await TruthBountyFactory.deploy(
+            await token.getAddress(),
+            await owner.getAddress(),
+            await governanceController.getAddress()
+        );
+        await truthBounty.waitForDeployment();
     });
 
     describe("Deployment", function () {
@@ -69,6 +79,43 @@ describe("TruthBountyToken Legacy & Role Tests", function () {
         it("Should fail if unstaking more than staked legacy way", async function () {
             const stakeAmount = ethers.parseEther("100");
             await expect(token.connect(addr1).withdrawStake(stakeAmount)).to.be.revertedWith("Insufficient stake");
+        });
+    });
+
+    describe("ETH Transfer Logic", function () {
+        it("Should accept Ether via receive", async function () {
+            const amount = ethers.parseEther("1");
+            await owner.sendTransaction({ to: await truthBounty.getAddress(), value: amount });
+
+            expect(await ethers.provider.getBalance(await truthBounty.getAddress())).to.equal(amount);
+        });
+
+        it("Should allow TREASURY_ROLE to rescue Ether", async function () {
+            const amount = ethers.parseEther("1");
+            const treasuryRole = await truthBounty.TREASURY_ROLE();
+            await truthBounty.grantRole(treasuryRole, await owner.getAddress());
+
+            await owner.sendTransaction({ to: await truthBounty.getAddress(), value: amount });
+            expect(await ethers.provider.getBalance(await truthBounty.getAddress())).to.equal(amount);
+
+            const recipient = await addr1.getAddress();
+            const balanceBefore = await ethers.provider.getBalance(recipient);
+
+            await expect(truthBounty.rescueETH(recipient, amount))
+                .to.emit(truthBounty, "ETHRescued")
+                .withArgs(recipient, amount);
+
+            expect(await ethers.provider.getBalance(await truthBounty.getAddress())).to.equal(0);
+            expect(await ethers.provider.getBalance(recipient)).to.equal(balanceBefore + amount);
+        });
+
+        it("Should revert rescueETH for unauthorized caller", async function () {
+            const amount = ethers.parseEther("1");
+            await owner.sendTransaction({ to: await truthBounty.getAddress(), value: amount });
+
+            await expect(
+                truthBounty.connect(addr1).rescueETH(await addr1.getAddress(), amount)
+            ).to.be.revertedWith(/AccessControl/);
         });
     });
 });
