@@ -24,11 +24,7 @@ describe("WeightedStaking", function () {
     await mockOracle.waitForDeployment();
 
     // Deploy WeightedStaking
-<<<<<<< HEAD
-    const WeightedStaking = await ethers.getContractFactory("WeightedStaking");
-=======
     const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
->>>>>>> 23a2d0ed0b4d493cd99c11db1f8772eb8e0ec656
     weightedStaking = await WeightedStaking.deploy(await mockOracle.getAddress(), await owner.getAddress(), await owner.getAddress());
     await weightedStaking.waitForDeployment();
 

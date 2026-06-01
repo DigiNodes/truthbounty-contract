@@ -9,8 +9,8 @@ import "./IReputationOracle.sol";
  * @title ReputationSnapshot
  * @notice Creates snapshots of reputation data for cross-chain bridging
  * @dev Generates Merkle trees from reputation data for efficient verification.
- *      Includes double-hashed leaves, sorted-pair tree construction, snapshot
- *      expiry, pagination, and a full user-index registry for O(1) lookups.
+ *      Includes double-hashed leaves, canonical left-right tree construction,
+ *      snapshot expiry, pagination, and a full user-index registry for O(1) lookups.
  */
 contract ReputationSnapshot is AccessControl, Pausable {
 
@@ -321,8 +321,9 @@ contract ReputationSnapshot is AccessControl, Pausable {
 
     /**
      * @dev Build the full Merkle tree bottom-up and cache every level.
-     *      Uses sorted-pair hashing so proofs are position-independent.
-     *      Odd nodes are promoted (not duplicated) to avoid extension attacks.
+     *      Uses canonical left-right hashing so proof verification matches
+     *      the receiver's index-aware Merkle verification.
+     *      Odd nodes are duplicated at the end of a level to preserve tree shape.
      */
     function _buildAndCacheTree(
         uint256 snapshotId,
@@ -346,10 +347,9 @@ contract ReputationSnapshot is AccessControl, Pausable {
                 bytes32 left  = current[i];
                 bytes32 right = (i + 1 < levelSize) ? current[i + 1] : left; // promote last if odd
 
-                // Sorted-pair hash: order by value, not position
-                nextLevel[i / 2] = left < right
-                    ? keccak256(abi.encodePacked(left, right))
-                    : keccak256(abi.encodePacked(right, left));
+                // Canonical left-right hash: preserve tree position and avoid the
+                // extra comparison required by sorted-pair hashing.
+                nextLevel[i / 2] = keccak256(abi.encodePacked(left, right));
             }
 
             level++;
