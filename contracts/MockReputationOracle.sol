@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./IReputationOracle.sol";
+import "../../contracts/IReputationOracle.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -19,6 +19,11 @@ contract MockReputationOracle is IReputationOracle, Ownable {
 
     /// @notice Default score for users without explicit reputation
     uint256 public defaultScore = 1e18; // 1.0 (100%)
+
+    /// @notice Maximum number of scores that can be set in a single batch.
+    /// @dev Bounds the loop to avoid out-of-gas. Mirrors the production batch
+    ///      caps for consistency. (Audit #156)
+    uint256 public constant MAX_BATCH_SIZE = 200;
 
     // ============ Events ============
 
@@ -78,9 +83,12 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         address[] calldata users,
         uint256[] calldata scores
     ) external onlyOwner {
-        require(users.length == scores.length, "Array length mismatch");
+        uint256 length = users.length;
+        require(length == scores.length, "Array length mismatch");
+        require(length > 0, "Empty batch");
+        require(length <= MAX_BATCH_SIZE, "Batch size too large");
 
-        for (uint256 i = 0; i < users.length; i++) {
+        for (uint256 i = 0; i < length; i++) {
             require(users[i] != address(0), "Invalid address");
             reputationScores[users[i]] = scores[i];
             emit ReputationScoreSet(users[i], scores[i]);
