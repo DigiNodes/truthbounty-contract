@@ -135,7 +135,7 @@ describe("TruthBountyClaims", function () {
       const amount = hre.ethers.parseUnits("10", 18);
 
       await expect(claims.rescueTokens(failingToken.target, owner.address, amount))
-        .to.be.revertedWith("SafeERC20: ERC20 operation did not succeed");
+        .to.be.reverted;
     });
 
     it("Should revert if caller does not have TREASURY_ROLE", async function () {

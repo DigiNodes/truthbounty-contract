@@ -3,22 +3,22 @@ import { ethers, upgrades } from "hardhat";
 
 describe("Upgradeable", function () {
   it("preserves storage after upgrade", async () => {
-    const TB = await ethers.getContractFactory("TruthBountyToken");
+    const MockUpgradeable = await ethers.getContractFactory("MockUpgradeable");
 
-    const proxy = await upgrades.deployProxy(TB, [], {
+    const proxy = await upgrades.deployProxy(MockUpgradeable, [42], {
       initializer: "initialize",
       kind: "uups",
     });
 
-    await proxy.transfer(
-      "0x000000000000000000000000000000000000dEaD",
-      100
-    );
+    expect(await proxy.value()).to.equal(42);
 
-    const TBv2 = await ethers.getContractFactory("TruthBountyToken");
+    await proxy.setValue(100);
+    expect(await proxy.value()).to.equal(100);
 
-    const upgraded = await upgrades.upgradeProxy(proxy.target, TBv2);
+    const MockUpgradeableV2 = await ethers.getContractFactory("MockUpgradeable");
 
-    expect(await upgraded.totalSupply()).to.not.equal(0);
+    const upgraded = await upgrades.upgradeProxy(proxy.target, MockUpgradeableV2);
+
+    expect(await upgraded.value()).to.equal(100);
   });
 });

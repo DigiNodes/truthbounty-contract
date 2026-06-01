@@ -281,5 +281,8 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     /**
      * @dev Storage gap to allow future upgrades without shifting variables.
      */
+    // ============ Reserved Storage ============
+
+    /// @dev Storage gap for future upgrades (reserved 50 slots)
     uint256[50] private __gap;
 }
