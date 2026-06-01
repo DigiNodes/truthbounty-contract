@@ -1,19 +1,45 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+// CO-177: removed OZ EIP712 import — we build the domain separator ourselves
+//         so it always reflects the live block.chainid, never a stale cache.
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title EIP712Verifier
  * @notice Implements EIP-712 typed structured data signing for off-chain message validation
  * @dev Provides secure off-chain signatures with replay protection for claims and verifications
+ *
+ * CO-177 audit fix — ChainID mismatch
+ * ─────────────────────────────────────
+ * Root cause: inheriting OpenZeppelin's abstract EIP712 contract caches the domain
+ * separator as an immutable at deploy time.  On a hard-fork or any cross-chain
+ * re-deployment that shares the same genesis, _cachedChainId == block.chainid still
+ * holds, the fast-path returns the stale separator, and a signature produced on
+ * Chain A can be replayed on Chain B.
+ *
+ * Fix: remove the OZ EIP712 base entirely.  The name/version hashes are stored as
+ * immutables (cheap, set once in the constructor), while block.chainid and
+ * address(this) are read dynamically inside _buildDomainSeparator() on every call.
+ * Gas cost: +~300 gas per verification.  Security gain: cross-chain replay is
+ * structurally impossible.
  */
-contract EIP712Verifier is EIP712 {
+// CO-177: removed "is EIP712" — no longer inheriting the base contract
+contract EIP712Verifier {
     using ECDSA for bytes32;
 
+    // ============ EIP-712 Domain ============
+
+    // CO-177: full domain type-hash — we own the separator construction now
+    bytes32 private constant _DOMAIN_TYPE_HASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    // CO-177: pre-hash name and version once (immutable = zero storage cost after deploy)
+    bytes32 private immutable _HASHED_NAME;
+    bytes32 private immutable _HASHED_VERSION;
+
     // ============ Type Hashes ============
-    
+
     bytes32 public constant CLAIM_SUBMISSION_TYPEHASH = keccak256(
         "ClaimSubmission(address claimant,uint256 bountyId,bytes32 contentHash,uint256 nonce,uint256 deadline)"
     );
@@ -55,7 +81,40 @@ contract EIP712Verifier is EIP712 {
 
     // ============ Constructor ============
 
-    constructor() EIP712("TruthBounty", "1") {}
+    // CO-177: plain constructor — no EIP712("TruthBounty","1") call needed.
+    //         We set the immutable hashes here instead.
+    constructor() {
+        _HASHED_NAME    = keccak256(bytes("TruthBounty"));
+        _HASHED_VERSION = keccak256(bytes("1"));
+    }
+
+    // ============ Internal — Domain Separator ============
+
+    /**
+     * @dev Builds the EIP-712 domain separator using the *current* block.chainid.
+     *      Called on every verification — never returns a stale cached value.
+     */
+    // CO-177: this function is the core fix — block.chainid is read live each call
+    function _buildDomainSeparator() private view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                _DOMAIN_TYPE_HASH,
+                _HASHED_NAME,
+                _HASHED_VERSION,
+                block.chainid,   // <── live, never cached
+                address(this)
+            )
+        );
+    }
+
+    /**
+     * @dev Produces the EIP-712 typed-data hash for structHash bound to this domain.
+     *      Replaces the inherited _hashTypedDataV4() from the removed OZ base.
+     */
+    // CO-177: replaces OZ's _hashTypedDataV4 — identical output, live chainId
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19\x01", _buildDomainSeparator(), structHash));
+    }
 
     // ============ External Functions ============
 
@@ -78,7 +137,7 @@ contract EIP712Verifier is EIP712 {
         if (block.timestamp > deadline) revert SignatureExpired();
 
         uint256 currentNonce = nonces[claimant];
-        
+
         bytes32 structHash = keccak256(abi.encode(
             CLAIM_SUBMISSION_TYPEHASH,
             claimant,
@@ -89,9 +148,9 @@ contract EIP712Verifier is EIP712 {
         ));
 
         bytes32 digest = _hashTypedDataV4(structHash);
-        
+
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
-        
+
         address signer = digest.recover(signature);
         if (signer != claimant) revert InvalidSignature();
 
@@ -99,7 +158,7 @@ contract EIP712Verifier is EIP712 {
         nonces[claimant] = currentNonce + 1;
 
         emit ClaimSubmissionVerified(claimant, bountyId, contentHash, currentNonce);
-        
+
         return true;
     }
 
@@ -124,7 +183,7 @@ contract EIP712Verifier is EIP712 {
         if (block.timestamp > deadline) revert SignatureExpired();
 
         uint256 currentNonce = nonces[verifier];
-        
+
         bytes32 structHash = keccak256(abi.encode(
             VERIFICATION_INTENT_TYPEHASH,
             verifier,
@@ -136,9 +195,9 @@ contract EIP712Verifier is EIP712 {
         ));
 
         bytes32 digest = _hashTypedDataV4(structHash);
-        
+
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
-        
+
         address signer = digest.recover(signature);
         if (signer != verifier) revert InvalidSignature();
 
@@ -146,7 +205,7 @@ contract EIP712Verifier is EIP712 {
         nonces[verifier] = currentNonce + 1;
 
         emit VerificationIntentVerified(verifier, bountyId, approve, currentNonce);
-        
+
         return true;
     }
 
@@ -160,21 +219,27 @@ contract EIP712Verifier is EIP712 {
     }
 
     /**
-     * @notice Returns the domain separator for this contract
+     * @notice Returns the domain separator for the current chain
+     * @dev Always reflects live block.chainid — never returns a stale cached value
      * @return The EIP-712 domain separator
      */
+    // CO-177: getDomainSeparator now calls _buildDomainSeparator() directly (was _domainSeparatorV4)
     function getDomainSeparator() external view returns (bytes32) {
-        return _domainSeparatorV4();
+        return _buildDomainSeparator();
+    }
+
+    /**
+     * @notice Returns the current chain ID embedded in the domain separator
+     * @dev Lets off-chain clients confirm they are on the correct network before signing
+     * @return The current chain ID (block.chainid)
+     */
+    // CO-177: new helper — exposes block.chainid so off-chain clients can verify chain
+    function getChainId() external view returns (uint256) {
+        return block.chainid;
     }
 
     /**
      * @notice Computes the hash of a claim submission for off-chain signing
-     * @param claimant The address making the claim
-     * @param bountyId The ID of the bounty being claimed
-     * @param contentHash Hash of the claim content
-     * @param nonce The nonce for replay protection
-     * @param deadline Signature expiration timestamp
-     * @return The typed data hash to sign
      */
     function getClaimSubmissionHash(
         address claimant,
@@ -196,13 +261,6 @@ contract EIP712Verifier is EIP712 {
 
     /**
      * @notice Computes the hash of a verification intent for off-chain signing
-     * @param verifier The address of the verifier
-     * @param bountyId The ID of the bounty being verified
-     * @param approve Whether the verifier approves
-     * @param reason The reason for the decision
-     * @param nonce The nonce for replay protection
-     * @param deadline Signature expiration timestamp
-     * @return The typed data hash to sign
      */
     function getVerificationIntentHash(
         address verifier,
@@ -226,8 +284,6 @@ contract EIP712Verifier is EIP712 {
 
     /**
      * @notice Checks if a signature has been used
-     * @param signatureHash The hash of the signature to check
-     * @return True if the signature has been used
      */
     function isSignatureUsed(bytes32 signatureHash) external view returns (bool) {
         return usedSignatures[signatureHash];

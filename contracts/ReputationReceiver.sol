@@ -53,6 +53,12 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
 
     /// @notice Basis points denominator
     uint256 public constant BPS = 10_000;
+    
+    /// @notice Maximum allowed Merkle proof depth (number of siblings)
+    uint256 public constant MAX_PROOF_DEPTH = 32;
+
+    /// @notice Maximum allowed age for a snapshot timestamp
+    uint256 public constant MAX_TIMESTAMP_AGE = 30 days;
 
     // ----------------------------------------------------------------
     // Events
@@ -103,6 +109,9 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
     error ZeroAddress();
     error InvalidWeight(uint256 weight);
     error InvalidSnapshotId();
+    error InvalidProofLength(uint256 provided);
+    error InvalidProofIndex(uint256 provided, uint256 maxAllowed);
+    error TimestampTooOld(uint256 provided, uint256 oldestAllowed);
     error StaleTimestamp(uint256 provided, uint256 current);
 
     // ----------------------------------------------------------------
@@ -260,6 +269,21 @@ contract ReputationReceiver is AccessControl, ReentrancyGuard, Pausable {
         // Reject timestamps more than 1 hour in the future
         if (timestamp > block.timestamp + 1 hours)
             revert StaleTimestamp(timestamp, block.timestamp);
+
+        // Basic snapshot and proof bounds validation
+        if (snapshotId == 0) revert InvalidSnapshotId();
+
+        if (proof.length == 0 || proof.length > MAX_PROOF_DEPTH)
+            revert InvalidProofLength(proof.length);
+
+        // Ensure proofIndex fits within the tree of the provided depth
+        uint256 maxLeaves = uint256(1) << proof.length;
+        if (proofIndex >= maxLeaves)
+            revert InvalidProofIndex(proofIndex, maxLeaves - 1);
+
+        // Reject timestamps that are too old (prevent replay with ancient snapshots)
+        if (timestamp < block.timestamp - MAX_TIMESTAMP_AGE)
+            revert TimestampTooOld(timestamp, block.timestamp - MAX_TIMESTAMP_AGE);
 
         // ── Root lookup ──────────────────────────────────────────────
         bytes32 root = verifiedRoots[sourceChainId][snapshotId];

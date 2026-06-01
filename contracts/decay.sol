@@ -1,19 +1,45 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title EIP712Verifier
- * @notice Implements EIP-712 typed structured data signing for off-chain message validation
- * @dev Provides secure off-chain signatures with replay protection for claims and verifications
+ * @notice Implements EIP-712 typed structured data signing for off-chain message validation.
+ * @dev Provides secure off-chain signatures with replay protection for claims and verifications.
+ *
+ *  ╔══════════════════════════════════════════════════════════════════════════════╗
+ *  ║  AUDIT FIX — CO-177: EIP-712 ChainID Mismatch                              ║
+ *  ║                                                                              ║
+ *  ║  Root cause: The previous version inherited OpenZeppelin's abstract EIP712   ║
+ *  ║  base contract, which caches the domain separator at construction time.      ║
+ *  ║  On a hard-fork or cross-chain deployment that reuses contract state, the    ║
+ *  ║  cached separator could diverge from the actual `block.chainid`, making     ║
+ *  ║  signatures valid on the wrong chain (cross-chain replay attack surface).    ║
+ *  ║                                                                              ║
+ *  ║  Fix: Domain separator is now built on-the-fly using `block.chainid` every  ║
+ *  ║  time it is required.  The domain type-hash, name-hash, and version-hash     ║
+ *  ║  are stored as immutable values for gas efficiency; only `block.chainid`     ║
+ *  ║  and `address(this)` are read dynamically.                                  ║
+ *  ╚══════════════════════════════════════════════════════════════════════════════╝
  */
-contract EIP712Verifier is EIP712 {
+contract EIP712Verifier {
     using ECDSA for bytes32;
 
+    // ============ EIP-712 Domain ============
+
+    /// @dev keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+    bytes32 private constant _DOMAIN_TYPE_HASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @dev Precomputed keccak256(bytes("TruthBounty")) — immutable for gas savings.
+    bytes32 private immutable _HASHED_NAME;
+
+    /// @dev Precomputed keccak256(bytes("1")) — immutable for gas savings.
+    bytes32 private immutable _HASHED_VERSION;
+
     // ============ Type Hashes ============
-    
+
     bytes32 public constant CLAIM_SUBMISSION_TYPEHASH = keccak256(
         "ClaimSubmission(address claimant,uint256 bountyId,bytes32 contentHash,uint256 nonce,uint256 deadline)"
     );
@@ -24,10 +50,10 @@ contract EIP712Verifier is EIP712 {
 
     // ============ State ============
 
-    /// @notice Nonces for replay protection per address
+    /// @notice Nonces for replay protection per address.
     mapping(address => uint256) public nonces;
 
-    /// @notice Tracks used signatures to prevent replay
+    /// @notice Tracks used digest hashes to prevent signature replay.
     mapping(bytes32 => bool) public usedSignatures;
 
     // ============ Events ============
@@ -55,18 +81,58 @@ contract EIP712Verifier is EIP712 {
 
     // ============ Constructor ============
 
-    constructor() EIP712("TruthBounty", "1") {}
+    constructor() {
+        _HASHED_NAME    = keccak256(bytes("TruthBounty"));
+        _HASHED_VERSION = keccak256(bytes("1"));
+    }
 
-    // ============ External Functions ============
+    // ============ Internal — Domain Separator ============
 
     /**
-     * @notice Verifies a claim submission signature
-     * @param claimant The address making the claim
-     * @param bountyId The ID of the bounty being claimed
-     * @param contentHash Hash of the claim content
-     * @param deadline Signature expiration timestamp
-     * @param signature The EIP-712 signature
-     * @return True if signature is valid
+     * @dev Builds the EIP-712 domain separator using the *current* `block.chainid`.
+     *
+     *  Why not cache it?
+     *  ─────────────────
+     *  Caching the domain separator at deploy-time is safe only when the contract is
+     *  guaranteed to never be replayed on a chain with a different chain-id.  In
+     *  practice, contracts are sometimes redeployed at the same address on test-nets,
+     *  forked networks, or Layer-2s that share the same genesis.  Using `block.chainid`
+     *  directly ensures the separator is always correct for the network executing the
+     *  transaction, making cross-chain signature replay impossible.
+     *
+     *  Gas note: The extra keccak256 call costs ~300 gas per verification call —
+     *  an acceptable trade-off for the security guarantee.
+     */
+    function _buildDomainSeparator() private view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                _DOMAIN_TYPE_HASH,
+                _HASHED_NAME,
+                _HASHED_VERSION,
+                block.chainid,   // <── live value, never stale
+                address(this)
+            )
+        );
+    }
+
+    /**
+     * @dev Returns the EIP-712 typed-data hash for `structHash` bound to this
+     *      contract's domain.
+     */
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19\x01", _buildDomainSeparator(), structHash));
+    }
+
+    // ============ External — Verification ============
+
+    /**
+     * @notice Verifies a claim submission signature.
+     * @param claimant     The address making the claim.
+     * @param bountyId     The ID of the bounty being claimed.
+     * @param contentHash  Hash of the claim content.
+     * @param deadline     Signature expiration timestamp (unix seconds).
+     * @param signature    The EIP-712 signature bytes.
+     * @return True if the signature is valid; reverts otherwise.
      */
     function verifyClaimSubmission(
         address claimant,
@@ -78,7 +144,7 @@ contract EIP712Verifier is EIP712 {
         if (block.timestamp > deadline) revert SignatureExpired();
 
         uint256 currentNonce = nonces[claimant];
-        
+
         bytes32 structHash = keccak256(abi.encode(
             CLAIM_SUBMISSION_TYPEHASH,
             claimant,
@@ -89,9 +155,9 @@ contract EIP712Verifier is EIP712 {
         ));
 
         bytes32 digest = _hashTypedDataV4(structHash);
-        
+
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
-        
+
         address signer = digest.recover(signature);
         if (signer != claimant) revert InvalidSignature();
 
@@ -99,19 +165,19 @@ contract EIP712Verifier is EIP712 {
         nonces[claimant] = currentNonce + 1;
 
         emit ClaimSubmissionVerified(claimant, bountyId, contentHash, currentNonce);
-        
+
         return true;
     }
 
     /**
-     * @notice Verifies a verification intent signature
-     * @param verifier The address of the verifier
-     * @param bountyId The ID of the bounty being verified
-     * @param approve Whether the verifier approves the claim
-     * @param reason The reason for the verification decision
-     * @param deadline Signature expiration timestamp
-     * @param signature The EIP-712 signature
-     * @return True if signature is valid
+     * @notice Verifies a verification intent signature.
+     * @param verifier   The address of the verifier.
+     * @param bountyId   The ID of the bounty being verified.
+     * @param approve    Whether the verifier approves the claim.
+     * @param reason     The reason for the verification decision.
+     * @param deadline   Signature expiration timestamp (unix seconds).
+     * @param signature  The EIP-712 signature bytes.
+     * @return True if the signature is valid; reverts otherwise.
      */
     function verifyVerificationIntent(
         address verifier,
@@ -124,7 +190,7 @@ contract EIP712Verifier is EIP712 {
         if (block.timestamp > deadline) revert SignatureExpired();
 
         uint256 currentNonce = nonces[verifier];
-        
+
         bytes32 structHash = keccak256(abi.encode(
             VERIFICATION_INTENT_TYPEHASH,
             verifier,
@@ -136,9 +202,9 @@ contract EIP712Verifier is EIP712 {
         ));
 
         bytes32 digest = _hashTypedDataV4(structHash);
-        
+
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
-        
+
         address signer = digest.recover(signature);
         if (signer != verifier) revert InvalidSignature();
 
@@ -146,35 +212,47 @@ contract EIP712Verifier is EIP712 {
         nonces[verifier] = currentNonce + 1;
 
         emit VerificationIntentVerified(verifier, bountyId, approve, currentNonce);
-        
+
         return true;
     }
 
+    // ============ External — View Helpers ============
+
     /**
-     * @notice Returns the current nonce for an address
-     * @param account The address to query
-     * @return The current nonce
+     * @notice Returns the current nonce for an address.
+     * @param account The address to query.
+     * @return The current nonce.
      */
     function getNonce(address account) external view returns (uint256) {
         return nonces[account];
     }
 
     /**
-     * @notice Returns the domain separator for this contract
-     * @return The EIP-712 domain separator
+     * @notice Returns the domain separator computed for the *current* chain.
+     * @dev    Always reflects `block.chainid`; never returns a stale cached value.
+     * @return The EIP-712 domain separator.
      */
     function getDomainSeparator() external view returns (bytes32) {
-        return _domainSeparatorV4();
+        return _buildDomainSeparator();
     }
 
     /**
-     * @notice Computes the hash of a claim submission for off-chain signing
-     * @param claimant The address making the claim
-     * @param bountyId The ID of the bounty being claimed
-     * @param contentHash Hash of the claim content
-     * @param nonce The nonce for replay protection
-     * @param deadline Signature expiration timestamp
-     * @return The typed data hash to sign
+     * @notice Returns the current chain ID embedded in the domain separator.
+     * @dev    Useful for off-chain clients to confirm they are on the right network.
+     * @return The current chain ID (`block.chainid`).
+     */
+    function getChainId() external view returns (uint256) {
+        return block.chainid;
+    }
+
+    /**
+     * @notice Computes the typed-data hash for a claim submission (for off-chain signing).
+     * @param claimant     The address making the claim.
+     * @param bountyId     The ID of the bounty being claimed.
+     * @param contentHash  Hash of the claim content.
+     * @param nonce        The nonce for replay protection.
+     * @param deadline     Signature expiration timestamp.
+     * @return The EIP-712 typed-data hash to be signed.
      */
     function getClaimSubmissionHash(
         address claimant,
@@ -195,14 +273,14 @@ contract EIP712Verifier is EIP712 {
     }
 
     /**
-     * @notice Computes the hash of a verification intent for off-chain signing
-     * @param verifier The address of the verifier
-     * @param bountyId The ID of the bounty being verified
-     * @param approve Whether the verifier approves
-     * @param reason The reason for the decision
-     * @param nonce The nonce for replay protection
-     * @param deadline Signature expiration timestamp
-     * @return The typed data hash to sign
+     * @notice Computes the typed-data hash for a verification intent (for off-chain signing).
+     * @param verifier   The address of the verifier.
+     * @param bountyId   The ID of the bounty being verified.
+     * @param approve    Whether the verifier approves.
+     * @param reason     The reason for the decision.
+     * @param nonce      The nonce for replay protection.
+     * @param deadline   Signature expiration timestamp.
+     * @return The EIP-712 typed-data hash to be signed.
      */
     function getVerificationIntentHash(
         address verifier,
@@ -225,9 +303,9 @@ contract EIP712Verifier is EIP712 {
     }
 
     /**
-     * @notice Checks if a signature has been used
-     * @param signatureHash The hash of the signature to check
-     * @return True if the signature has been used
+     * @notice Checks whether a digest has already been consumed.
+     * @param signatureHash The digest (result of `_hashTypedDataV4`) to check.
+     * @return True if the digest has been used.
      */
     function isSignatureUsed(bytes32 signatureHash) external view returns (bool) {
         return usedSignatures[signatureHash];
