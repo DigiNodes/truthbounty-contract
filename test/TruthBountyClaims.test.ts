@@ -1,3 +1,56 @@
+import { expect } from "chai";
+import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { ethers } from "hardhat";
+
+describe("TruthBountyClaims", function () {
+  async function deployFixture() {
+    const [admin, user, other] = await ethers.getSigners();
+
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const TruthBountyClaims = await ethers.getContractFactory("TruthBountyClaims");
+
+    const token = await MockERC20.deploy("Test Token", "TT");
+    await token.waitForDeployment();
+
+    const claims = await TruthBountyClaims.deploy(await token.getAddress(), admin.address);
+    await claims.waitForDeployment();
+
+    return { admin, user, other, token, claims };
+  }
+
+  it("emits ClaimSettled and transfers tokens for single claim", async function () {
+    const { admin, user, token, claims } = await loadFixture(deployFixture);
+
+    const amount = ethers.parseUnits("100", 18);
+
+    // Fund the claims contract
+    await token.mint(claims.target, amount);
+
+    await expect(claims.connect(admin).settleClaim(user.address, amount))
+      .to.emit(claims, "ClaimSettled")
+      .withArgs(user.address, amount);
+
+    expect(await token.balanceOf(user.address)).to.equal(amount);
+  });
+
+  it("processes a batch and emits BatchSettlementCompleted and ClaimSettled events", async function () {
+    const { admin, user, other, token, claims } = await loadFixture(deployFixture);
+
+    const a1 = ethers.parseUnits("10", 18);
+    const a2 = ethers.parseUnits("20", 18);
+    const total = a1 + a2;
+
+    // Fund contract
+    await token.mint(claims.target, total);
+
+    await expect(claims.connect(admin).settleClaimsBatch([user.address, other.address], [a1, a2]))
+      .to.emit(claims, "BatchSettlementCompleted")
+      .withArgs(2);
+
+    expect(await token.balanceOf(user.address)).to.equal(a1);
+    expect(await token.balanceOf(other.address)).to.equal(a2);
+  });
+});
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
