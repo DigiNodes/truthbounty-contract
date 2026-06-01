@@ -105,12 +105,13 @@ async function main() {
   // Predict outcome
   const totalStake = claim.totalStakedFor + claim.totalStakedAgainst;
   const forPercent = (claim.totalStakedFor * BigInt(100)) / totalStake;
+  const isTie = claim.totalStakedFor === claim.totalStakedAgainst && totalStake > BigInt(0);
   const passed = forPercent >= BigInt(60); // SETTLEMENT_THRESHOLD_PERCENT
   
   console.log("\n📈 Voting Results:");
   console.log("Votes For (Pass):", ethers.formatUnits(claim.totalStakedFor, 18), `BOUNTY (${forPercent.toString()}%)`);
   console.log("Votes Against (Fail):", ethers.formatUnits(claim.totalStakedAgainst, 18), `BOUNTY (${100 - Number(forPercent)}%)`);
-  console.log("\n🎯 Predicted Outcome:", passed ? "✅ PASSED" : "❌ FAILED");
+  console.log("\n🎯 Predicted Outcome:", isTie ? "⚖️ TIE" : passed ? "✅ PASSED" : "❌ FAILED");
   console.log("Threshold: 60% required to pass");
   
   // Settle the claim
@@ -135,6 +136,9 @@ async function main() {
     console.log("Total Slashed:", ethers.formatUnits(result.totalSlashed, 18), "BOUNTY");
     console.log("Winner Stake:", ethers.formatUnits(result.winnerStake, 18), "BOUNTY");
     console.log("Loser Stake:", ethers.formatUnits(result.loserStake, 18), "BOUNTY");
+    if (result.totalRewards === BigInt(0) && result.totalSlashed === BigInt(0) && result.winnerStake === BigInt(0) && result.loserStake === BigInt(0)) {
+      console.log("Resolution: Tie refund");
+    }
     
     console.log("\n💡 Next Steps:");
     console.log("- Winners can now claim rewards using: npx hardhat run scripts/claimRewards.ts --network <network>");

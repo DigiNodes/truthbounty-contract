@@ -100,6 +100,9 @@ async function main() {
     console.log("Total Rewards:", ethers.formatUnits(result.totalRewards, 18), "BOUNTY");
     console.log("Total Slashed:", ethers.formatUnits(result.totalSlashed, 18), "BOUNTY");
     console.log("Winner Stake:", ethers.formatUnits(result.winnerStake, 18), "BOUNTY");
+    if (result.totalRewards === BigInt(0) && result.totalSlashed === BigInt(0) && result.winnerStake === BigInt(0) && result.loserStake === BigInt(0)) {
+      console.log("Resolution: Tie refund");
+    }
   } catch (error) {
     console.error("\n⚠️  Could not retrieve settlement result (may not be settled yet)");
   }
