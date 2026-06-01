@@ -8,6 +8,39 @@ import { Contract } from "ethers";
  * @dev Tests critical protocol invariants that must hold regardless of input size
  */
 
+function makeLeaf(user: string, score: bigint, timestamp: bigint): string {
+    const inner = hre.ethers.solidityPackedKeccak256(
+        ["address", "uint256", "uint256"],
+        [user, score, timestamp]
+    );
+
+    return hre.ethers.keccak256(hre.ethers.solidityPacked(["bytes32"], [inner]));
+}
+
+function hashPair(left: string, right: string): string {
+    return hre.ethers.keccak256(
+        hre.ethers.solidityPacked(["bytes32", "bytes32"], [left, right])
+    );
+}
+
+function verifyProof(
+    leaf: string,
+    proof: string[],
+    index: bigint
+): string {
+    let computed = leaf;
+    let currentIndex = index;
+
+    for (const sibling of proof) {
+        computed = currentIndex % 2n === 0n
+            ? hashPair(computed, sibling)
+            : hashPair(sibling, computed);
+        currentIndex /= 2n;
+    }
+
+    return computed;
+}
+
 describe("ReputationSnapshot - Protocol Invariants", function () {
     let reputationSnapshot: Contract;
     let mockOracle: Contract;
@@ -76,11 +109,14 @@ describe("ReputationSnapshot - Protocol Invariants", function () {
 
             await reputationSnapshot.createSnapshot(userAddresses, oracleAddr);
             const snapshotId = 1;
+            const metadata = await reputationSnapshot.snapshotMeta(snapshotId);
 
             for (const userAddr of userAddresses) {
                 const [proof, index] = await reputationSnapshot.getMerkleProof(snapshotId, userAddr);
-                expect(proof).to.be.an("array");
-                expect(Number(index)).to.be.lessThan(userAddresses.length);
+                const data = await reputationSnapshot.getSnapshotData(snapshotId, userAddr);
+                const leaf = makeLeaf(userAddr, data.score, data.timestamp);
+
+                expect(verifyProof(leaf, proof, index)).to.equal(metadata.root);
             }
 
             console.log("✓ INV2: All users have valid Merkle proofs");
@@ -266,10 +302,14 @@ describe("ReputationSnapshot - Protocol Invariants", function () {
                 const oracleAddr = await mockOracle.getAddress();
                 await reputationSnapshot.createSnapshot(userAddresses, oracleAddr);
                 const snapshotId = 1;
+                const metadata = await reputationSnapshot.snapshotMeta(snapshotId);
 
                 for (const userAddr of userAddresses) {
-                    const [proof] = await reputationSnapshot.getMerkleProof(snapshotId, userAddr);
-                    expect(proof).to.be.an("array");
+                    const [proof, proofIndex] = await reputationSnapshot.getMerkleProof(snapshotId, userAddr);
+                    const data = await reputationSnapshot.getSnapshotData(snapshotId, userAddr);
+                    const leaf = makeLeaf(userAddr, data.score, data.timestamp);
+
+                    expect(verifyProof(leaf, proof, proofIndex)).to.equal(metadata.root);
                 }
             }
 

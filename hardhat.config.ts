@@ -48,7 +48,7 @@ const config: HardhatUserConfig = {
     },
   },
   gasReporter: {
-    enabled: true,
+    enabled: process.env.REPORT_GAS === "true",
     outputFile: ".gas-reports.json",
     noColors: true,
     excludeContracts: [],

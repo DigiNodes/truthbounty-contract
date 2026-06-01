@@ -430,13 +430,16 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
         claim.settled = true;
 
-        // Determine outcome based on WEIGHTED votes
-        bool passed = _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
+        // Determine outcome based on WEIGHTED votes. Exact ties are resolved as
+        // a refund-only outcome so no side is left unable to recover stake.
+        bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
 
         // Calculate rewards and slashing
         (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(
             claimId,
-            passed
+            passed,
+            isTie
         );
 
         emit ClaimSettled(
@@ -463,6 +466,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(!vote.rewardClaimed, "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            require(!vote.stakeReturned, "Stake already returned");
+
+            vote.rewardClaimed = true;
+            vote.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
+
         require(settlement.winnerWeightedStake > 0, "No winners");
 
         // Check if verifier was on the winning side
@@ -512,6 +528,17 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(!vote.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            vote.stakeReturned = true;
+            vote.rewardClaimed = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
+
         bool isWinner = (vote.support == settlement.passed);
 
         uint256 stakeToReturn;
@@ -738,9 +765,25 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function _calculateSettlement(
         uint256 claimId,
-        bool passed
+        bool passed,
+        bool isTie
     ) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
         Claim storage claim = claims[claimId];
+
+        if (isTie) {
+            settlementResults[claimId] = SettlementResult({
+                passed: false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerWeightedStake: 0,
+                loserWeightedStake: 0,
+                winnerCount: 0,
+                winnersClaimed: 0,
+                rewardsClaimed: 0
+            });
+
+            return (0, 0);
+        }
 
         // Use WEIGHTED stakes for determining winner/loser totals
         uint256 winnerWeightedStake = passed ? claim.totalWeightedFor : claim.totalWeightedAgainst;
@@ -784,6 +827,17 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 count += 1;
             }
         }
+    }
+
+    /**
+     * @notice Check whether settlement should be treated as a tie refund
+     */
+    function _isTieSettlement(SettlementResult storage settlement) internal view returns (bool) {
+        return
+            settlement.totalRewards == 0 &&
+            settlement.totalSlashed == 0 &&
+            settlement.winnerWeightedStake == 0 &&
+            settlement.loserWeightedStake == 0;
     }
 
     /**
@@ -1076,4 +1130,3 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bountyToken = IERC20(_newBountyToken);
     }
 }
-

@@ -57,6 +57,15 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         return _isActive;
     }
 
+    /**
+     * @notice Get the timestamp of the last reputation update for a user
+     * @param user The address to query
+     * @return timestamp The last update timestamp, or 0 if never updated
+     */
+    function getLastReputationUpdate(address user) external view override returns (uint256 timestamp) {
+        return lastUpdateTimestamp[user];
+    }
+
     // ============ Admin Functions ============
 
     /**
@@ -144,9 +153,5 @@ contract MockReputationOracle is IReputationOracle, Ownable {
         reputationScores[user] = 0;
         lastUpdateTimestamp[user] = block.timestamp;
         emit ReputationScoreSet(user, 0);
-    }
-
-    function getLastReputationUpdate(address user) external view override returns (uint256 timestamp) {
-        return lastUpdateTimestamp[user];
     }
 }
