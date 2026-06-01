@@ -309,9 +309,10 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         require(claim.totalStakeAmount > 0, "No votes cast");
 
         claim.settled = true;
-        bool passed = _determineOutcome(claim.totalStakedFor, claim.totalStakedAgainst);
+        bool isTie = claim.totalStakedFor == claim.totalStakedAgainst && claim.totalStakedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalStakedFor, claim.totalStakedAgainst);
 
-        (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(claimId, passed);
+        (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(claimId, passed, isTie);
 
         emit ClaimSettled(claimId, passed, claim.totalStakedFor, claim.totalStakedAgainst, rewardAmount, slashedAmount);
     }
@@ -323,8 +324,21 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         return forPercent >= settlementThresholdPercent;
     }
 
-    function _calculateSettlement(uint256 claimId, bool passed) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
+    function _calculateSettlement(uint256 claimId, bool passed, bool isTie) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
         Claim storage claim = claims[claimId];
+
+        if (isTie) {
+            settlementResults[claimId] = SettlementResult({
+                passed: false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerStake: 0,
+                loserStake: 0
+            });
+
+            return (0, 0);
+        }
+
         uint256 winnerStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
         uint256 loserStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
@@ -343,6 +357,14 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         });
     }
 
+    function _isTieSettlement(SettlementResult storage settlement) internal view returns (bool) {
+        return
+            settlement.totalRewards == 0 &&
+            settlement.totalSlashed == 0 &&
+            settlement.winnerStake == 0 &&
+            settlement.loserStake == 0;
+    }
+
     function claimSettlementRewards(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.settled, "Claim not settled");
@@ -352,6 +374,19 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         require(!vote.rewardClaimed, "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            require(!vote.stakeReturned, "Stake already returned");
+
+            vote.rewardClaimed = true;
+            vote.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
+
         require(settlement.winnerStake > 0, "No winners");
 
         bool isWinner = (vote.support == settlement.passed);
@@ -381,6 +416,16 @@ contract TruthBounty is ResolverRoleTimelock, ReentrancyGuard, Pausable, Governa
         require(!vote.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            vote.stakeReturned = true;
+            vote.rewardClaimed = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
 
         bool isWinner = (vote.support == settlement.passed);
         require(!isWinner, "Winners should use claimSettlementRewards");

@@ -17,6 +17,7 @@ describe("TruthBountyWeighted", function () {
   const INITIAL_SUPPLY = ethers.parseEther("1000000");
   const MIN_STAKE = ethers.parseEther("100");
   const VERIFICATION_WINDOW = 7 * 24 * 60 * 60; // 7 days
+  const CONFIRMATION_DELAY = 1 * 60 * 60; // 1 hour
 
   beforeEach(async function () {
     [owner, submitter, verifier1, verifier2, verifier3] = await ethers.getSigners();
@@ -219,7 +220,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 300 / 400 = 75% > 60% threshold
       // Should PASS
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
 
       await expect(truthBounty.settleClaim(claimId))
         .to.emit(truthBounty, "ClaimSettled")
@@ -258,7 +259,7 @@ describe("TruthBountyWeighted", function () {
       // Percentage FOR: 50 / 650 ≈ 7.7% < 60% threshold
       // Should FAIL
 
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
 
       await truthBounty.settleClaim(claimId);
 
@@ -278,7 +279,7 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier2).vote(claimId, true, stakeAmount);
 
       // Settle
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.settleClaim(claimId);
 
       const settlement = await truthBounty.settlementResults(claimId);
@@ -326,7 +327,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert settleClaim when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.pause();
 
       await expect(truthBounty.settleClaim(claimId)).to.be.revertedWithCustomError(
@@ -336,7 +337,7 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should revert claimSettlementRewards when paused", async function () {
-      await time.increase(VERIFICATION_WINDOW + 1);
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.settleClaim(claimId);
       await truthBounty.pause();
 
@@ -490,18 +491,17 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
 
-      // Set reputations to 1x to keep effective stakes simple
+      // Make verifier2 stronger so the claim clearly fails without hitting the tie branch
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));
-      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1"));
+      await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("2"));
 
-      // Verifier1 votes FOR
+      // Verifier1 votes FOR with 100 effective stake
       await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
-      // Verifier2 votes AGAINST
+      // Verifier2 votes AGAINST with 200 effective stake
       await truthBounty.connect(verifier2).vote(claimId, false, stakeAmount);
 
-      // Advance time and settle claim (FOR wins because 100/200 = 50%... wait, 50% doesn't pass threshold of 60%. So it will FAIL!)
-      // Since it FAILS, Verifier2 (AGAINST) is the winner, and Verifier1 (FOR) is the loser.
-      await time.increase(VERIFICATION_WINDOW + 1);
+      // Advance time and settle claim. The claim fails because 100/300 < 60%.
+      await time.increase(VERIFICATION_WINDOW + CONFIRMATION_DELAY + 1);
       await truthBounty.settleClaim(claimId);
     });
 
