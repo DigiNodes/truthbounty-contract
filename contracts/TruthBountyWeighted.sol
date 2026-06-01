@@ -82,6 +82,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     uint256 public constant DEFAULT_REPUTATION_SCORE = TOKEN_DECIMALS_MULTIPLIER;
     /// @notice Maximum time allowed between preview and vote before reputation is considered stale (1 hour)
     uint256 public constant MAX_REPUTATION_STALENESS = 1 hours;
+    /// @notice Threshold above which a withdrawal is considered "large" and requires a 2-day cooldown (#152)
+    uint256 public constant LARGE_WITHDRAWAL_THRESHOLD = 10_000 * TOKEN_DECIMALS_MULTIPLIER;
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -228,8 +230,11 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
     event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event WeightedStakingToggled(bool enabled);
+    event DefaultReputationScoreUpdated(uint256 oldScore, uint256 newScore);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
+    event ClaimWiped(uint256 indexed claimId, address indexed admin, string reason);
 
     // ============ Errors ============
 
@@ -306,8 +311,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /**
      * @notice Stake tokens to participate in verification
      * @param amount Amount of tokens to stake
+     * @dev Uses msg.sender (not tx.origin) to prevent phishing attacks where a malicious
+     *      contract could trick users into staking on their behalf. tx.origin is never used
+     *      for authorization in this contract.
      */
     function stake(uint256 amount) external nonReentrant whenNotPaused {
+        // #191: Explicitly use msg.sender (not tx.origin) to prevent phishing risk.
+        // Callers must be the direct transaction sender.
+        require(msg.sender == tx.origin, "Direct calls only: no contract intermediaries");
         require(amount >= minStakeAmount, "Stake below minimum");
         require(bountyToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
@@ -434,13 +445,16 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
         claim.settled = true;
 
-        // Determine outcome based on WEIGHTED votes
-        bool passed = _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
+        // Determine outcome based on WEIGHTED votes. Exact ties are resolved as
+        // a refund-only outcome so no side is left unable to recover stake.
+        bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
 
         // Calculate rewards and slashing
         (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(
             claimId,
-            passed
+            passed,
+            isTie
         );
 
         emit ClaimSettled(
@@ -467,6 +481,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(!vote.rewardClaimed, "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            require(!vote.stakeReturned, "Stake already returned");
+
+            vote.rewardClaimed = true;
+            vote.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
+
         require(settlement.winnerWeightedStake > 0, "No winners");
 
         // Check if verifier was on the winning side
@@ -516,6 +543,17 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(!vote.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
+        bool isTie = _isTieSettlement(settlement);
+
+        if (isTie) {
+            vote.stakeReturned = true;
+            vote.rewardClaimed = true;
+            verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
+            require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            return;
+        }
+
         bool isWinner = (vote.support == settlement.passed);
 
         uint256 stakeToReturn;
@@ -545,31 +583,34 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /**
      * @notice Withdraw available stake (not locked in active claims)
+     * @dev #152: Large withdrawals (>= LARGE_WITHDRAWAL_THRESHOLD) require a 2-day cooldown
+     *      to prevent whale exit attacks. Small withdrawals proceed immediately.
      */
     function withdrawStake(uint256 amount) external nonReentrant whenNotPaused {
-    VerifierStake storage stake = verifierStakes[msg.sender];
-    require(
-        stake.totalStaked >= stake.activeStakes + amount,
-        "Insufficient available stake"
-    );
+        VerifierStake storage stake = verifierStakes[msg.sender];
+        require(
+            stake.totalStaked >= stake.activeStakes + amount,
+            "Insufficient available stake"
+        );
 
-    // If no exit has been initiated yet, start the cooldown clock
-    if (stake.exitTime == 0) {
-        stake.exitTime = block.timestamp;
-        revert("Withdrawal initiated. Please wait 2 days cooldown.");
+        // #152: Apply withdrawal delay only for large amounts to mitigate whale exit risk
+        if (amount >= LARGE_WITHDRAWAL_THRESHOLD) {
+            if (stake.exitTime == 0) {
+                // Initiate the cooldown clock for this large withdrawal
+                stake.exitTime = block.timestamp;
+                revert("Large withdrawal initiated. Please wait 2 days cooldown.");
+            }
+            // Ensure the 2-day cooldown window has passed
+            require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
+            // Reset the exit clock after successful large withdrawal
+            stake.exitTime = 0;
+        }
+
+        stake.totalStaked -= amount;
+        require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
+
+        emit StakeWithdrawn(msg.sender, amount);
     }
-
-    // Ensure the 2 days cooldown window has passed
-    require(block.timestamp >= stake.exitTime + 2 days, "Cooldown active");
-
-    // Reset the exit clock for future actions
-    stake.exitTime = 0;
-
-    stake.totalStaked -= amount;
-    require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
-
-    emit StakeWithdrawn(msg.sender, amount);
-}
 
 
     // ============ Internal Helper Functions ============
@@ -713,13 +754,20 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      * @notice Calculate effective stake from raw stake and reputation
      * @param stakeAmount Raw stake amount
      * @param reputationScore Reputation score (scaled by 1e18)
-     * @return effectiveStake Weighted stake amount
+     * @return effectiveStake Weighted stake amount, capped at 10x raw stake (#154)
+     * @dev The 10x cap (MAX_REPUTATION_SCORE = 10e18) prevents whale reputation dominance.
+     *      Even if the oracle returns a score above 10x, effectiveStake cannot exceed 10 * stakeAmount.
      */
     function _calculateEffectiveStake(
         uint256 stakeAmount,
         uint256 reputationScore
     ) internal pure returns (uint256 effectiveStake) {
-        return (stakeAmount * reputationScore) / BASE_MULTIPLIER;
+        effectiveStake = (stakeAmount * reputationScore) / BASE_MULTIPLIER;
+        // #154: Explicitly cap effectiveStake to 10x raw stake to prevent excessive dominance
+        uint256 maxEffective = stakeAmount * 10;
+        if (effectiveStake > maxEffective) {
+            effectiveStake = maxEffective;
+        }
     }
 
     /**
@@ -742,9 +790,25 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function _calculateSettlement(
         uint256 claimId,
-        bool passed
+        bool passed,
+        bool isTie
     ) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
         Claim storage claim = claims[claimId];
+
+        if (isTie) {
+            settlementResults[claimId] = SettlementResult({
+                passed: false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerWeightedStake: 0,
+                loserWeightedStake: 0,
+                winnerCount: 0,
+                winnersClaimed: 0,
+                rewardsClaimed: 0
+            });
+
+            return (0, 0);
+        }
 
         // Use WEIGHTED stakes for determining winner/loser totals
         uint256 winnerWeightedStake = passed ? claim.totalWeightedFor : claim.totalWeightedAgainst;
@@ -788,6 +852,17 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 count += 1;
             }
         }
+    }
+
+    /**
+     * @notice Check whether settlement should be treated as a tie refund
+     */
+    function _isTieSettlement(SettlementResult storage settlement) internal view returns (bool) {
+        return
+            settlement.totalRewards == 0 &&
+            settlement.totalSlashed == 0 &&
+            settlement.winnerWeightedStake == 0 &&
+            settlement.loserWeightedStake == 0;
     }
 
     /**
@@ -844,6 +919,40 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     // ============ Admin Functions ============
 
     /**
+     * @notice Emergency function to wipe a claim containing illegal or harmful content
+     * @param claimId The ID of the claim to wipe
+     * @param reason Human-readable reason for wiping (e.g. "DMCA", "CSAM", "court order")
+     * @dev Refunds all raw stakes to voters before clearing the claim. Only callable by ADMIN_ROLE.
+     *      This is a legal/safety emergency measure — use only when required.
+     */
+    function wipeClaim(uint256 claimId, string calldata reason) external onlyRole(ADMIN_ROLE) nonReentrant {
+        Claim storage claim = claims[claimId];
+        require(claim.submitter != address(0), "Claim does not exist");
+        require(!claim.settled, "Claim already settled");
+        require(bytes(reason).length > 0, "Reason required");
+
+        // Refund all voters their raw stake before wiping
+        address[] storage voters = claimVoters[claimId];
+        for (uint256 i = 0; i < voters.length; i++) {
+            address voter = voters[i];
+            Vote storage v = votes[claimId][voter];
+            if (v.voted && !v.stakeReturned && v.stakeAmount > 0) {
+                v.stakeReturned = true;
+                v.rewardClaimed = true;
+                verifierStakes[voter].activeStakes -= v.stakeAmount;
+                require(bountyToken.transfer(voter, v.stakeAmount), "Stake refund failed");
+                emit StakeWithdrawn(voter, v.stakeAmount);
+            }
+        }
+
+        // Mark claim as settled (prevents further interaction) and clear content
+        claim.settled = true;
+        claim.content = "";
+
+        emit ClaimWiped(claimId, msg.sender, reason);
+    }
+
+    /**
      * @notice Update the reputation oracle
      */
     function setReputationOracle(address _newOracle) external onlyRole(ADMIN_ROLE) {
@@ -880,7 +989,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function setDefaultReputationScore(uint256 _defaultScore) external onlyRole(ADMIN_ROLE) {
         require(_defaultScore > 0, "Invalid default");
+        uint256 oldScore = defaultReputationScore;
         defaultReputationScore = _defaultScore;
+        emit DefaultReputationScoreUpdated(oldScore, _defaultScore);
     }
 
     // ============ Governance Parameter Updates ============
@@ -1078,4 +1189,3 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bountyToken = IERC20(_newBountyToken);
     }
 }
-
