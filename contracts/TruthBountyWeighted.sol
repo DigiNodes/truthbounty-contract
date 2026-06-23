@@ -1023,9 +1023,11 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /**
      * @notice Update minimum stake amount (governance or admin)
      * @param newAmount New minimum stake amount
+     * @dev Prevents Denial of Service by ensuring minStakeAmount does not exceed token supply
      */
     function setMinStakeAmount(uint256 newAmount) external onlyGovernanceOrAdmin {
         require(newAmount > 0, "Invalid amount");
+        require(newAmount <= bountyToken.totalSupply(), "Min stake exceeds token supply");
         
         uint256 oldAmount = minStakeAmount;
         minStakeAmount = newAmount;
