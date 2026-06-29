@@ -50,6 +50,33 @@ describe("TruthBountyClaims", function () {
     expect(await token.balanceOf(user.address)).to.equal(a1);
     expect(await token.balanceOf(other.address)).to.equal(a2);
   });
+
+  // Audit #190: ensures renamed internal _settle params do not shadow
+  // event/storage identifiers and that single + batch paths still emit
+  // the correct indexed args and token amounts.
+  it("does not introduce shadowing: ClaimSettled args match across single and batch paths", async function () {
+    const { admin, user, other, token, claims } = await loadFixture(deployFixture);
+
+    const singleAmount = ethers.parseUnits("5", 18);
+    const batch1 = ethers.parseUnits("7", 18);
+    const batch2 = ethers.parseUnits("9", 18);
+    await token.mint(claims.target, singleAmount + batch1 + batch2);
+
+    // Single path
+    await expect(claims.connect(admin).settleClaim(user.address, singleAmount))
+      .to.emit(claims, "ClaimSettled")
+      .withArgs(user.address, singleAmount);
+
+    // Batch path - same internal _settle, no shadowing across iterations
+    const tx = claims
+      .connect(admin)
+      .settleClaimsBatch([user.address, other.address], [batch1, batch2]);
+    await expect(tx).to.emit(claims, "ClaimSettled").withArgs(user.address, batch1);
+    await expect(tx).to.emit(claims, "ClaimSettled").withArgs(other.address, batch2);
+
+    expect(await token.balanceOf(user.address)).to.equal(singleAmount + batch1);
+    expect(await token.balanceOf(other.address)).to.equal(batch2);
+  });
 });
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
