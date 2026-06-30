@@ -486,6 +486,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
 
     function setMinStakeAmount(uint256 v) external onlyGovernanceOrAdmin {
         require(v > 0, "Invalid amount");
+        require(v <= bountyToken.totalSupply(), "Min stake exceeds token supply");
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_MIN_STAKE, minStakeAmount, v);
         minStakeAmount = v;
     }

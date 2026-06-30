@@ -454,6 +454,25 @@ describe("TruthBountyWeighted", function () {
         .to.emit(truthBounty, "StakeDeposited")
         .withArgs(await verifier1.getAddress(), newMinStake);
     });
+
+    it("Should prevent Denial of Service by rejecting minStakeAmount exceeding token supply", async function () {
+      // Get token supply
+      const tokenSupply = await bountyToken.totalSupply();
+
+      // Attempt to set minStakeAmount exceeding token supply
+      await expect(truthBounty.setMinStakeAmount(tokenSupply + 1n))
+        .to.be.revertedWith("Min stake exceeds token supply");
+
+      // Setting to exactly token supply should fail too (no one can stake)
+      await expect(truthBounty.setMinStakeAmount(tokenSupply))
+        .to.be.revertedWith("Min stake exceeds token supply");
+
+      // Setting to token supply - 1 should succeed
+      await expect(truthBounty.setMinStakeAmount(tokenSupply - 1n))
+        .to.emit(truthBounty, "ParameterUpdatedByGovernance");
+
+      expect(await truthBounty.minStakeAmount()).to.equal(tokenSupply - 1n);
+    });
   });
 
   describe("Edge Cases", function () {
