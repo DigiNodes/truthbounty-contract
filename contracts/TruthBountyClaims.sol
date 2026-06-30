@@ -81,15 +81,17 @@ contract TruthBountyClaims is AccessControl, ReentrancyGuard {
 
     /**
      * @dev Internal function to handle the transfer logic.
+     *      Parameters use an underscore prefix to avoid any potential
+     *      shadowing with inherited declarations (Audit #190).
      */
-    function _settle(address beneficiary, uint256 amount) internal {
-        require(beneficiary != address(0), "Invalid beneficiary");
-        require(amount > 0, "Amount must be > 0");
+    function _settle(address _beneficiary, uint256 _amount) internal {
+        require(_beneficiary != address(0), "Invalid beneficiary");
+        require(_amount > 0, "Amount must be > 0");
 
         // The contract must hold enough tokens to cover the transfer
-        bountyToken.safeTransfer(beneficiary, amount);
+        bountyToken.safeTransfer(_beneficiary, _amount);
 
-        emit ClaimSettled(beneficiary, amount);
+        emit ClaimSettled(_beneficiary, _amount);
     }
 
     /**
