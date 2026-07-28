@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./governance/GovernanceHooks.sol";
+import "./treasury/ITreasuryAccounting.sol";
 
 /**
  * @title VerifierSlashing
@@ -52,6 +53,9 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     bytes32 public constant GOVERNANCE_PARAM_COOLDOWN = keccak256("SLASH_COOLDOWN");
     
     IStaking public stakingContract;
+
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
     
     // Slashing tracking
     struct SlashRecord {
@@ -90,6 +94,7 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     );
     
     event StakingContractUpdated(address newStakingContract);
+    event TreasuryAccountingUpdated(address newTreasuryAccounting);
     event CriticalSlashed(
         address indexed verifier,
         uint256 amount,
@@ -110,6 +115,7 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     error EmptyBatch();
     error BatchSizeExceeded(uint256 provided, uint256 maxAllowed);
     error BatchLengthMismatch();
+    error InvalidTreasuryAddress();
     
     /**
      * @dev Constructor sets up roles and initial configuration
@@ -480,6 +486,18 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         
         stakingContract = IStaking(_stakingContract);
         emit StakingContractUpdated(_stakingContract);
+    }
+    
+    /**
+     * @dev Set the treasury accounting contract
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyGovernanceOrAdmin {
+        if (_treasuryAccounting == address(0)) {
+            revert InvalidTreasuryAddress();
+        }
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(_treasuryAccounting);
     }
     
     /**
