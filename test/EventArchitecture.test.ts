@@ -12,21 +12,21 @@ describe("Event Architecture", function () {
     return { harness, actor, verifier };
   }
 
-  it("emits a versioned ClaimCreated event with indexed identifiers", async function () {
+  it("emits a versioned ClaimCreatedV1 event with indexed identifiers", async function () {
     const { harness, actor } = await deployFixture();
     const metadataHash = ethers.keccak256(ethers.toUtf8Bytes("claim-metadata"));
 
-    const tx = await harness.emitClaimCreated(7, actor.address, metadataHash);
+    const tx = await harness.emitClaimCreatedV1(7, actor.address, metadataHash);
     const receipt = await tx.wait();
     const block = await ethers.provider.getBlock(receipt!.blockNumber);
 
     await expect(tx)
-      .to.emit(harness, "ClaimCreated")
+      .to.emit(harness, "ClaimCreatedV1")
       .withArgs(7, actor.address, metadataHash, BigInt(block!.timestamp), VERSION);
 
     const log = receipt!.logs.find((entry) => {
       try {
-        return harness.interface.parseLog(entry)?.name === "ClaimCreated";
+        return harness.interface.parseLog(entry)?.name === "ClaimCreatedV1";
       } catch {
         return false;
       }
@@ -40,12 +40,12 @@ describe("Event Architecture", function () {
     const { harness, verifier } = await deployFixture();
     const reason = ethers.keccak256(ethers.toUtf8Bytes("DOUBLE_VOTE"));
 
-    await expect(harness.emitVerificationSubmitted(9, verifier.address, true, 1000))
-      .to.emit(harness, "VerificationSubmitted")
+    await expect(harness.emitVerificationSubmittedV1(9, verifier.address, true, 1000))
+      .to.emit(harness, "VerificationSubmittedV1")
       .withArgs(9, verifier.address, true, 1000, anyUint64, VERSION);
 
-    await expect(harness.emitSlashExecuted(9, verifier.address, reason, 250))
-      .to.emit(harness, "SlashExecuted")
+    await expect(harness.emitSlashExecutedV1(9, verifier.address, reason, 250))
+      .to.emit(harness, "SlashExecutedV1")
       .withArgs(9, verifier.address, reason, 250, anyUint64, VERSION);
   });
 });

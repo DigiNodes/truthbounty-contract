@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IReputationOracle.sol";
 import "./governance/GovernanceOwnable.sol";
+import "./interfaces/ITruthBountyEvents.sol";
 
 /**
  * @title TruthBountyWeighted
@@ -20,7 +21,7 @@ import "./governance/GovernanceOwnable.sol";
  * - Prevents low-reputation dominance
  * - Maintains backward compatibility with equal-weight fallback
  */
-contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -79,6 +80,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     uint256 public constant MAX_REPUTATION_STALENESS = 1 hours;
     /// @notice Threshold above which a withdrawal is considered "large" and requires a 2-day cooldown (#152)
     uint256 public constant LARGE_WITHDRAWAL_THRESHOLD = 10_000 * TOKEN_DECIMALS_MULTIPLIER;
+
+    /// @notice Canonical indexing schema emitted by this module.
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -303,6 +307,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         });
 
         emit ClaimCreated(claimId, msg.sender, content, verificationWindowEnd);
+        emit ClaimCreatedV1(
+            claimId,
+            msg.sender,
+            keccak256(bytes(content)),
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
         return claimId;
     }
 
@@ -323,6 +334,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         verifierStakes[msg.sender].totalStaked += amount;
 
         emit StakeDeposited(msg.sender, amount);
+        emit StakeDepositedV1(
+            msg.sender,
+            amount,
+            verifierStakes[msg.sender].totalStaked,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
 
     /**
@@ -430,6 +448,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         claim.totalStakeAmount += stakeAmount; // Still track raw stake total
 
         emit VoteCast(claimId, msg.sender, support, stakeAmount, effectiveStake, reputationScore);
+        emit VerificationSubmittedV1(
+            claimId,
+            msg.sender,
+            support,
+            stakeAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
 
     /**
@@ -465,6 +491,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             rewardAmount,
             slashedAmount
         );
+        emit ClaimResolvedV1(
+            claimId,
+            msg.sender,
+            passed,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
+        emit ClaimFinalizedV1(
+            claimId,
+            msg.sender,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
 
     /**
@@ -491,6 +530,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            emit StakeWithdrawnV1(
+                msg.sender,
+                vote.stakeAmount,
+                verifierStakes[msg.sender].totalStaked,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
             return;
         }
 
@@ -518,6 +564,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         if (reward > 0) {
             require(bountyToken.transfer(msg.sender, reward), "Reward transfer failed");
             emit RewardsDistributed(claimId, msg.sender, reward);
+            emit RewardClaimedV1(
+                claimId,
+                msg.sender,
+                reward,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
         }
 
         // Return stake (winners get full RAW stake back)
@@ -526,6 +579,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            emit StakeWithdrawnV1(
+                msg.sender,
+                vote.stakeAmount,
+                verifierStakes[msg.sender].totalStaked,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
         }
     }
 
@@ -551,6 +611,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
+            emit StakeWithdrawnV1(
+                msg.sender,
+                vote.stakeAmount,
+                verifierStakes[msg.sender].totalStaked,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
             return;
         }
 
@@ -566,6 +633,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             stakeToReturn = vote.stakeAmount - slashAmount;
 
             emit StakeSlashed(claimId, msg.sender, slashAmount);
+            emit SlashExecutedV1(
+                claimId,
+                msg.sender,
+                keccak256("LOSING_VERIFICATION_POSITION"),
+                slashAmount,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
         }
 
         vote.stakeReturned = true;
@@ -578,6 +653,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         if (stakeToReturn > 0) {
             require(bountyToken.transfer(msg.sender, stakeToReturn), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, stakeToReturn);
+            emit StakeWithdrawnV1(
+                msg.sender,
+                stakeToReturn,
+                verifierStakes[msg.sender].totalStaked,
+                uint64(block.timestamp),
+                EVENT_SCHEMA_VERSION
+            );
         }
     }
 
@@ -610,6 +692,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
         emit StakeWithdrawn(msg.sender, amount);
+        emit StakeWithdrawnV1(
+            msg.sender,
+            amount,
+            verifierStakes[msg.sender].totalStaked,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
 
 

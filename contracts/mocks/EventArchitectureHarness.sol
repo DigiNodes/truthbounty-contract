@@ -6,12 +6,12 @@ import "../interfaces/ITruthBountyEvents.sol";
 contract EventArchitectureHarness is ITruthBountyEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
 
-    function emitClaimCreated(
+    function emitClaimCreatedV1(
         uint256 claimId,
         address actor,
         bytes32 metadataHash
     ) external {
-        emit ClaimCreated(
+        emit ClaimCreatedV1(
             claimId,
             actor,
             metadataHash,
@@ -20,13 +20,13 @@ contract EventArchitectureHarness is ITruthBountyEvents {
         );
     }
 
-    function emitVerificationSubmitted(
+    function emitVerificationSubmittedV1(
         uint256 claimId,
         address verifier,
         bool support,
         uint256 stakeAmount
     ) external {
-        emit VerificationSubmitted(
+        emit VerificationSubmittedV1(
             claimId,
             verifier,
             support,
@@ -36,13 +36,13 @@ contract EventArchitectureHarness is ITruthBountyEvents {
         );
     }
 
-    function emitSlashExecuted(
+    function emitSlashExecutedV1(
         uint256 claimId,
         address verifier,
         bytes32 reason,
         uint256 amount
     ) external {
-        emit SlashExecuted(
+        emit SlashExecutedV1(
             claimId,
             verifier,
             reason,

@@ -8,28 +8,28 @@ pragma solidity ^0.8.20;
 ///      represented by the literal value `1` in each event's `version` field.
 interface ITruthBountyEvents {
     // Claims
-    event ClaimCreated(
+    event ClaimCreatedV1(
         uint256 indexed claimId,
         address indexed actor,
         bytes32 indexed metadataHash,
         uint64 timestamp,
         uint16 version
     );
-    event ClaimUpdated(
+    event ClaimUpdatedV1(
         uint256 indexed claimId,
         address indexed actor,
         bytes32 indexed metadataHash,
         uint64 timestamp,
         uint16 version
     );
-    event ClaimResolved(
+    event ClaimResolvedV1(
         uint256 indexed claimId,
         address indexed actor,
         bool outcome,
         uint64 timestamp,
         uint16 version
     );
-    event ClaimFinalized(
+    event ClaimFinalizedV1(
         uint256 indexed claimId,
         address indexed actor,
         uint64 timestamp,
@@ -37,7 +37,7 @@ interface ITruthBountyEvents {
     );
 
     // Verification
-    event VerificationSubmitted(
+    event VerificationSubmittedV1(
         uint256 indexed claimId,
         address indexed verifier,
         bool support,
@@ -45,7 +45,7 @@ interface ITruthBountyEvents {
         uint64 timestamp,
         uint16 version
     );
-    event VerificationChallenged(
+    event VerificationChallengedV1(
         uint256 indexed claimId,
         address indexed challenger,
         bytes32 indexed reasonHash,
@@ -54,21 +54,21 @@ interface ITruthBountyEvents {
     );
 
     // Staking and slashing
-    event StakeDeposited(
+    event StakeDepositedV1(
         address indexed verifier,
         uint256 amount,
         uint256 newBalance,
         uint64 timestamp,
         uint16 version
     );
-    event StakeWithdrawn(
+    event StakeWithdrawnV1(
         address indexed verifier,
         uint256 amount,
         uint256 newBalance,
         uint64 timestamp,
         uint16 version
     );
-    event SlashExecuted(
+    event SlashExecutedV1(
         uint256 indexed claimId,
         address indexed verifier,
         bytes32 indexed reason,
@@ -78,28 +78,28 @@ interface ITruthBountyEvents {
     );
 
     // Rewards and treasury
-    event RewardCalculated(
+    event RewardCalculatedV1(
         uint256 indexed claimId,
         address indexed recipient,
         uint256 amount,
         uint64 timestamp,
         uint16 version
     );
-    event RewardEscrowed(
+    event RewardEscrowedV1(
         uint256 indexed claimId,
         address indexed recipient,
         uint256 amount,
         uint64 timestamp,
         uint16 version
     );
-    event RewardClaimed(
+    event RewardClaimedV1(
         uint256 indexed claimId,
         address indexed recipient,
         uint256 amount,
         uint64 timestamp,
         uint16 version
     );
-    event TreasuryTransfer(
+    event TreasuryTransferV1(
         bytes32 indexed operationId,
         address indexed token,
         address indexed recipient,
@@ -109,26 +109,26 @@ interface ITruthBountyEvents {
     );
 
     // Governance and emergency controls
-    event GovernanceProposalCreated(
+    event GovernanceProposalCreatedV1(
         uint256 indexed proposalId,
         address indexed proposer,
         bytes32 indexed metadataHash,
         uint64 timestamp,
         uint16 version
     );
-    event GovernanceProposalExecuted(
+    event GovernanceProposalExecutedV1(
         uint256 indexed proposalId,
         address indexed executor,
         uint64 timestamp,
         uint16 version
     );
-    event EmergencyPauseActivated(
+    event EmergencyPauseActivatedV1(
         address indexed actor,
         bytes32 indexed reason,
         uint64 timestamp,
         uint16 version
     );
-    event EmergencyPauseRecovered(
+    event EmergencyPauseRecoveredV1(
         address indexed actor,
         uint64 timestamp,
         uint16 version

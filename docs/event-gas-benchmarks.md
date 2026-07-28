@@ -14,9 +14,9 @@ Record the compiler version, optimizer runs, EVM target, event signature, indexe
 
 ## Required cases
 
-- `ClaimCreated`: three indexed fields plus timestamp and schema version.
-- `VerificationSubmitted`: claim and verifier filters plus vote payload.
-- `SlashExecuted`: claim, verifier, and reason filters plus amount payload.
+- `ClaimCreatedV1`: three indexed fields plus timestamp and schema version.
+- `VerificationSubmittedV1`: claim and verifier filters plus vote payload.
+- `SlashExecutedV1`: claim, verifier, and reason filters plus amount payload.
 - Governance and emergency events when their protocol modules adopt the canonical interface.
 
 ## Interpretation

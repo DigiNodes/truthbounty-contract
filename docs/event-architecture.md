@@ -11,7 +11,7 @@ The Solidity source of truth is `contracts/interfaces/ITruthBountyEvents.sol`.
 ## Design rules
 
 1. Events are emitted only after the corresponding state transition succeeds.
-2. Event names use past-tense domain actions such as `ClaimCreated` and `RewardClaimed`.
+2. Event names use past-tense domain actions such as `ClaimCreatedV1` and `RewardClaimedV1`.
 3. Entity identifiers, actors, and stable lookup keys are indexed where practical.
 4. Dynamic metadata is referenced by a deterministic `bytes32` hash rather than duplicated in logs.
 5. Every canonical event includes a block-context timestamp and schema version.
@@ -37,35 +37,35 @@ Business logic must not depend on event ordering. Events reflect completed state
 
 ### Claims
 
-- `ClaimCreated`: a new claim is persisted.
-- `ClaimUpdated`: claim metadata changes.
-- `ClaimResolved`: the canonical outcome is determined.
-- `ClaimFinalized`: settlement and all required accounting are complete.
+- `ClaimCreatedV1`: a new claim is persisted.
+- `ClaimUpdatedV1`: claim metadata changes.
+- `ClaimResolvedV1`: the canonical outcome is determined.
+- `ClaimFinalizedV1`: settlement and all required accounting are complete.
 
 ### Verification
 
-- `VerificationSubmitted`: a verifier records a position and stake.
-- `VerificationChallenged`: a verification or claim is challenged.
+- `VerificationSubmittedV1`: a verifier records a position and stake.
+- `VerificationChallengedV1`: a verification or claim is challenged.
 
 ### Staking and slashing
 
-- `StakeDeposited`: verifier collateral increases.
-- `StakeWithdrawn`: verifier collateral decreases through a valid withdrawal.
-- `SlashExecuted`: locked collateral is confiscated for a unique offence.
+- `StakeDepositedV1`: verifier collateral increases.
+- `StakeWithdrawnV1`: verifier collateral decreases through a valid withdrawal.
+- `SlashExecutedV1`: locked collateral is confiscated for a unique offence.
 
 ### Rewards and treasury
 
-- `RewardCalculated`: a deterministic reward amount is established.
-- `RewardEscrowed`: funds become reserved for a recipient.
-- `RewardClaimed`: reserved funds are transferred or marked paid.
-- `TreasuryTransfer`: treasury-controlled value moves for a uniquely identified operation.
+- `RewardCalculatedV1`: a deterministic reward amount is established.
+- `RewardEscrowedV1`: funds become reserved for a recipient.
+- `RewardClaimedV1`: reserved funds are transferred or marked paid.
+- `TreasuryTransferV1`: treasury-controlled value moves for a uniquely identified operation.
 
 ### Governance and emergency controls
 
-- `GovernanceProposalCreated`: a governance proposal is registered.
-- `GovernanceProposalExecuted`: an approved proposal is executed.
-- `EmergencyPauseActivated`: protocol emergency controls are activated.
-- `EmergencyPauseRecovered`: normal operation is restored.
+- `GovernanceProposalCreatedV1`: a governance proposal is registered.
+- `GovernanceProposalExecutedV1`: an approved proposal is executed.
+- `EmergencyPauseActivatedV1`: protocol emergency controls are activated.
+- `EmergencyPauseRecoveredV1`: normal operation is restored.
 
 ## Indexing guidance
 
