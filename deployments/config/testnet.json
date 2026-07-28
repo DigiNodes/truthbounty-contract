@@ -1,0 +1,17 @@
+{
+  "environment": "testnet",
+  "chainId": 11155420,
+  "rpcUrl": "${OPTIMISM_SEPOLIA_RPC_URL}",
+  "admin": "${ADMIN_ADDRESS}",
+  "governanceController": "${GOVERNANCE_CONTROLLER}",
+  "verificationWindowDuration": 604800,
+  "minStakeAmount": "100000000000000000000",
+  "settlementThresholdPercent": 60,
+  "rewardPercent": 80,
+  "slashPercent": 20,
+  "confirmationDelay": 3600,
+  "minReputationScore": "100000000000000000",
+  "maxReputationScore": "10000000000000000000",
+  "defaultReputationScore": "1000000000000000000",
+  "stakingLockDuration": 604800
+}

@@ -1,0 +1,121 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'testnet'
+        type: choice
+        options:
+          - local
+          - testnet
+          - mainnet
+      release_version:
+        description: 'Semantic release version (e.g. 2.0.0)'
+        required: true
+        default: '2.0.0'
+        type: string
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: latest
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Deploy contracts
+        run: >
+          forge script script/deploy/Deploy.s.sol:Deploy
+          --sig "run(string)" "${{ github.event.inputs.environment }}"
+          --rpc-url ${{ vars.RPC_URL }}
+          --private-key ${{ secrets.PRIVATE_KEY }}
+          --broadcast
+          --verify
+        env:
+          DEPLOY_ENV: ${{ github.event.inputs.environment }}
+          DEPLOYER_ADDRESS: ${{ vars.DEPLOYER_ADDRESS }}
+          ADMIN_ADDRESS: ${{ vars.ADMIN_ADDRESS }}
+          GOVERNANCE_CONTROLLER: ${{ vars.GOVERNANCE_CONTROLLER }}
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          GIT_COMMIT: ${{ github.sha }}
+          VERIFICATION_WINDOW: ${{ vars.VERIFICATION_WINDOW }}
+          MIN_STAKE: ${{ vars.MIN_STAKE }}
+          STAKING_LOCK_DURATION: ${{ vars.STAKING_LOCK_DURATION }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+
+      - name: Verify deployment
+        run: >
+          forge script script/deploy/Verify.s.sol:Verify
+          --sig "verifyDeployment(address,address,address,address,address,address)"
+          --rpc-url ${{ vars.RPC_URL }}
+          --private-key ${{ secrets.PRIVATE_KEY }}
+        env:
+          DEPLOY_ENV: ${{ github.event.inputs.environment }}
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts-${{ github.event.inputs.environment }}
+          path: deployments/${{ github.event.inputs.environment }}/
+          retention-days: 90
+
+      - name: Create release tag
+        if: github.event.inputs.environment == 'mainnet'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/v${{ github.event.inputs.release_version }}',
+              sha: context.sha
+            });
+
+  verify-etherscan:
+    name: Verify on Etherscan
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: latest
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-artifacts-${{ github.event.inputs.environment }}
+          path: deployments/${{ github.event.inputs.environment }}/
+
+      - name: Verify contracts on Etherscan
+        run: |
+          jq -r '.contracts | to_entries[] | "\(.key) \(.value)"' deployments/${{ github.event.inputs.environment }}/manifest.json |
+          while read name address; do
+            forge verify-contract $address \
+              --chain-id ${{ vars.CHAIN_ID }} \
+              --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} \
+              --watch
+          done
