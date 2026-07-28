@@ -4,10 +4,9 @@ pragma solidity ^0.8.20;
 /// @title ITruthBountyEvents
 /// @notice Canonical, versioned event surface for TruthBounty protocol indexers.
 /// @dev Events are public protocol APIs. Implementations should emit events only
-///      after the corresponding state transition succeeds.
+///      after the corresponding state transition succeeds. Schema version 1 is
+///      represented by the literal value `1` in each event's `version` field.
 interface ITruthBountyEvents {
-    uint16 constant EVENT_SCHEMA_VERSION = 1;
-
     // Claims
     event ClaimCreated(
         uint256 indexed claimId,
