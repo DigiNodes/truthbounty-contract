@@ -1,307 +1,188 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./governance/GovernanceOwnable.sol";
+import "./IReputationOracle.sol";
 
-/**
- * @title ReputationDecay
- * @dev Manages user reputation with time-based decay for inactive users.
- *
- * Decay is calculated on-read (view function) for gas efficiency.
- * Users experience gradual reputation decay after an inactivity threshold.
- *
- * Decay Formula:
- *   epochsInactive = (currentTime - lastActivity) / epochDuration
- *   effectiveInactiveEpochs = max(0, epochsInactive - inactivityThreshold)
- *   decayPercent = min(effectiveInactiveEpochs * decayRatePerEpoch, maxDecayPercent)
- *   effectiveReputation = baseReputation * (100 - decayPercent) / 100
- */
-contract ReputationDecay is AccessControl {
-    // ============ Roles ============
-
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+contract ReputationDecay is GovernanceOwnable, IReputationOracle {
     bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");
-    // ============ Storage ============
 
-    /// @notice Base reputation scores (before decay calculation)
-    mapping(address => uint256) public baseReputation;
-
-    /// @notice Last activity timestamp for each user
-    mapping(address => uint256) public lastActivityTimestamp;
-
-    // ============ Decay Parameters ============
-
-    /// @notice Percentage of reputation lost per epoch (in basis points, e.g., 100 = 1%)
-    uint256 public decayRatePerEpoch = 100; // 1%
-
-    /// @notice Duration of one epoch in seconds (default: 7 days)
-    uint256 public epochDuration = 7 days;
-
-    /// @notice Number of epochs before decay starts (default: 4 epochs = 28 days)
-    uint256 public inactivityThreshold = 4;
-
-    /// @notice Maximum total decay percentage (in basis points, e.g., 5000 = 50%)
-    uint256 public maxDecayPercent = 5000; // 50%
-
-    /// @notice Basis points constant for percentage calculations
-    uint256 private constant BASIS_POINTS = 10000;
-
-    // ============ Events ============
-
-    /// @notice Emitted when a user's base reputation is updated
-    event ReputationUpdated(
-        address indexed user,
-        uint256 oldReputation,
-        uint256 newReputation,
-        uint256 timestamp
-    );
-
-    /// @notice Emitted when user activity is recorded
-    event ActivityRecorded(address indexed user, uint256 timestamp);
-
-    /// @notice Emitted when decay parameters are updated
-    event DecayParametersUpdated(
-        uint256 rate,
-        uint256 epochDuration,
-        uint256 threshold,
-        uint256 maxDecay
-    );
-
-    // ============ Errors ============
-
-    error InvalidDecayRate();
-    error InvalidEpochDuration();
-    error InvalidMaxDecayPercent();
-
-    // ============ Constructor ============
-
-    constructor(address initialAdmin) {
-        require(initialAdmin != address(0), "Invalid admin address");
-        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
-        _grantRole(ADMIN_ROLE, initialAdmin);
-        _grantRole(ORACLE_ROLE, initialAdmin);
-        
-        _setRoleAdmin(ORACLE_ROLE, ADMIN_ROLE);
+    struct ReputationDecayConfig {
+        uint256 decayInterval;
+        uint256 decayPercentage;
+        uint256 minimumReputation;
+        bool enabled;
     }
 
-    // ============ Core Functions ============
+    struct InactivityTracking {
+        uint256 lastActiveBlock;
+        uint256 lastVerificationTimestamp;
+        uint256 lastSuccessfulVerification;
+    }
 
-    /**
-     * @notice Get the effective reputation after applying decay
-     * @param user The address to query
-     * @return The current effective reputation (after decay)
-     */
-    function getEffectiveReputation(
-        address user
-    ) public view returns (uint256) {
+    mapping(address => uint256) public baseReputation;
+    mapping(address => uint256) public lastActivityTimestamp;
+    mapping(address => InactivityTracking) public inactivityTracking;
+
+    ReputationDecayConfig public decayConfig;
+
+    uint256 private constant BASIS_POINTS = 10000;
+    uint256 private constant DEFAULT_MINIMUM_REPUTATION = 1;
+
+    event ReputationUpdated(address indexed user, uint256 oldReputation, uint256 newReputation, uint256 timestamp);
+    event ActivityRecorded(address indexed user, uint256 timestamp);
+    event ReputationDecayed(address indexed verifier, uint256 previousScore, uint256 newScore);
+    event DecayConfigUpdated(uint256 decayInterval, uint256 decayPercentage, uint256 minimumReputation, bool enabled);
+
+    error InvalidDecayPercentage();
+    error InvalidDecayInterval();
+
+    constructor(address initialAdmin) {
+        _initializeGovernance(address(0), initialAdmin, initialAdmin);
+        _grantRole(ORACLE_ROLE, initialAdmin);
+        _setRoleAdmin(ORACLE_ROLE, GOVERNANCE_ADMIN_ROLE);
+
+        decayConfig = ReputationDecayConfig({
+            decayInterval: 7 days,
+            decayPercentage: 100,
+            minimumReputation: DEFAULT_MINIMUM_REPUTATION,
+            enabled: true
+        });
+    }
+
+    function getEffectiveReputation(address user) public view returns (uint256) {
         uint256 base = baseReputation[user];
         if (base == 0) return 0;
 
+        if (!decayConfig.enabled) return base;
+
         uint256 lastActivity = lastActivityTimestamp[user];
-        if (lastActivity == 0) {
-            // No activity recorded, return base reputation
-            return base;
+        if (lastActivity == 0) return base;
+
+        uint256 intervalsSinceActivity = (block.timestamp - lastActivity) / decayConfig.decayInterval;
+        if (intervalsSinceActivity == 0) return base;
+
+        uint256 totalDecayBps = intervalsSinceActivity * decayConfig.decayPercentage;
+        if (totalDecayBps > BASIS_POINTS) totalDecayBps = BASIS_POINTS;
+
+        uint256 effective = (base * (BASIS_POINTS - totalDecayBps)) / BASIS_POINTS;
+
+        if (effective < decayConfig.minimumReputation) {
+            effective = decayConfig.minimumReputation;
         }
 
-        // Calculate epochs since last activity
-        uint256 timeSinceActivity = block.timestamp - lastActivity;
-        uint256 epochsInactive = timeSinceActivity / epochDuration;
-
-        // Check if within grace period
-        if (epochsInactive <= inactivityThreshold) {
-            return base;
-        }
-
-        // Calculate effective inactive epochs (after grace period)
-        uint256 effectiveInactiveEpochs = epochsInactive - inactivityThreshold;
-
-        // Calculate decay percentage (in basis points)
-        uint256 decayPercent = effectiveInactiveEpochs * decayRatePerEpoch;
-
-        // Cap at maximum decay
-        if (decayPercent > maxDecayPercent) {
-            decayPercent = maxDecayPercent;
-        }
-
-        // Apply decay
-        uint256 effectiveReputation = (base * (BASIS_POINTS - decayPercent)) /
-            BASIS_POINTS;
-
-        return effectiveReputation;
+        return effective;
     }
 
-    /**
-     * @notice Record activity for a user (resets decay timer)
-     * @param user The address to record activity for
-     */
+    function applyDecay(address user) external onlyRole(ORACLE_ROLE) {
+        uint256 effective = getEffectiveReputation(user);
+        uint256 base = baseReputation[user];
+
+        if (effective < base) {
+            baseReputation[user] = effective;
+            lastActivityTimestamp[user] = block.timestamp;
+            inactivityTracking[user] = InactivityTracking({
+                lastActiveBlock: block.number,
+                lastVerificationTimestamp: block.timestamp,
+                lastSuccessfulVerification: block.timestamp
+            });
+
+            emit ReputationDecayed(user, base, effective);
+        }
+    }
+
     function recordActivity(address user) external onlyRole(ORACLE_ROLE) {
-        lastActivityTimestamp[user] = block.timestamp;
-        emit ActivityRecorded(user, block.timestamp);
+        _recordActivity(user);
     }
 
-    /**
-     * @notice Set base reputation for a user (also records activity)
-     * @param user The address to set reputation for
-     * @param amount The new base reputation amount
-     */
+    function recordActivityBatch(address[] calldata users) external onlyRole(ORACLE_ROLE) {
+        for (uint256 i = 0; i < users.length; i++) {
+            _recordActivity(users[i]);
+        }
+    }
+
     function setReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
         baseReputation[user] = amount;
-        lastActivityTimestamp[user] = block.timestamp;
+        _recordActivity(user);
 
         emit ReputationUpdated(user, oldReputation, amount, block.timestamp);
-        emit ActivityRecorded(user, block.timestamp);
     }
 
-    /**
-     * @notice Add to user's base reputation (also records activity)
-     * @param user The address to add reputation to
-     * @param amount The amount to add
-     */
     function addReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
         uint256 newReputation = oldReputation + amount;
         baseReputation[user] = newReputation;
-        lastActivityTimestamp[user] = block.timestamp;
+        _recordActivity(user);
 
-        emit ReputationUpdated(
-            user,
-            oldReputation,
-            newReputation,
-            block.timestamp
-        );
-        emit ActivityRecorded(user, block.timestamp);
+        emit ReputationUpdated(user, oldReputation, newReputation, block.timestamp);
     }
 
-    /**
-     * @notice Deduct from user's base reputation
-     * @param user The address to deduct reputation from
-     * @param amount The amount to deduct
-     */
     function deductReputation(address user, uint256 amount) external onlyRole(ORACLE_ROLE) {
         uint256 oldReputation = baseReputation[user];
-        uint256 newReputation = oldReputation > amount
-            ? oldReputation - amount
-            : 0;
+        uint256 newReputation = oldReputation > amount ? oldReputation - amount : 0;
         baseReputation[user] = newReputation;
 
-        emit ReputationUpdated(
-            user,
-            oldReputation,
-            newReputation,
-            block.timestamp
+        emit ReputationUpdated(user, oldReputation, newReputation, block.timestamp);
+    }
+
+    function setDecayConfig(ReputationDecayConfig calldata newConfig) external onlyGovernanceOrAdmin {
+        if (newConfig.decayPercentage > BASIS_POINTS) revert InvalidDecayPercentage();
+        if (newConfig.decayInterval == 0) revert InvalidDecayInterval();
+
+        decayConfig = newConfig;
+
+        emit DecayConfigUpdated(
+            newConfig.decayInterval,
+            newConfig.decayPercentage,
+            newConfig.minimumReputation,
+            newConfig.enabled
         );
     }
 
-    // ============ Admin Functions ============
-
-    /**
-     * @notice Set the decay rate per epoch
-     * @param rate The new decay rate in basis points (e.g., 100 = 1%)
-     */
-    function setDecayRatePerEpoch(uint256 rate) external onlyRole(ADMIN_ROLE) {
-        if (rate > BASIS_POINTS) revert InvalidDecayRate();
-        decayRatePerEpoch = rate;
-        emit DecayParametersUpdated(
-            rate,
-            epochDuration,
-            inactivityThreshold,
-            maxDecayPercent
-        );
-    }
-
-    /**
-     * @notice Set the epoch duration
-     * @param duration The new epoch duration in seconds
-     */
-    function setEpochDuration(uint256 duration) external onlyRole(ADMIN_ROLE) {
-        if (duration == 0) revert InvalidEpochDuration();
-        epochDuration = duration;
-        emit DecayParametersUpdated(
-            decayRatePerEpoch,
-            duration,
-            inactivityThreshold,
-            maxDecayPercent
-        );
-    }
-
-    /**
-     * @notice Set the inactivity threshold (grace period in epochs)
-     * @param threshold The number of epochs before decay starts
-     */
-    function setInactivityThreshold(uint256 threshold) external onlyRole(ADMIN_ROLE) {
-        inactivityThreshold = threshold;
-        emit DecayParametersUpdated(
-            decayRatePerEpoch,
-            epochDuration,
-            threshold,
-            maxDecayPercent
-        );
-    }
-
-    /**
-     * @notice Set the maximum decay percentage
-     * @param maxDecay The maximum decay in basis points (e.g., 5000 = 50%)
-     */
-    function setMaxDecayPercent(uint256 maxDecay) external onlyRole(ADMIN_ROLE) {
-        if (maxDecay > BASIS_POINTS) revert InvalidMaxDecayPercent();
-        maxDecayPercent = maxDecay;
-        emit DecayParametersUpdated(
-            decayRatePerEpoch,
-            epochDuration,
-            inactivityThreshold,
-            maxDecay
-        );
-    }
-
-    // ============ View Functions ============
-
-    /**
-     * @notice Get all decay parameters
-     * @return rate The decay rate per epoch (basis points)
-     * @return duration The epoch duration (seconds)
-     * @return threshold The inactivity threshold (epochs)
-     * @return maxDecay The maximum decay percentage (basis points)
-     */
-    function getDecayParameters()
-        external
-        view
-        returns (
-            uint256 rate,
-            uint256 duration,
-            uint256 threshold,
-            uint256 maxDecay
-        )
-    {
-        return (
-            decayRatePerEpoch,
-            epochDuration,
-            inactivityThreshold,
-            maxDecayPercent
-        );
-    }
-
-    /**
-     * @notice Calculate how much reputation a user would lose at current time
-     * @param user The address to query
-     * @return decayAmount The amount of reputation lost to decay
-     */
-    function getDecayAmount(
-        address user
-    ) external view returns (uint256 decayAmount) {
+    function calculateDecay(address user) external view returns (uint256 decayAmount) {
         uint256 base = baseReputation[user];
         uint256 effective = getEffectiveReputation(user);
+        if (effective >= base) return 0;
         return base - effective;
     }
 
-    /**
-     * @notice Check if a user is currently experiencing decay
-     * @param user The address to query
-     * @return isDecaying True if the user's reputation is being reduced by decay
-     */
-    function isUserDecaying(
-        address user
-    ) external view returns (bool isDecaying) {
-        return getEffectiveReputation(user) < baseReputation[user];
+    function isDecayRequired(address user) external view returns (bool) {
+        if (!decayConfig.enabled) return false;
+        uint256 base = baseReputation[user];
+        if (base == 0) return false;
+        uint256 lastActivity = lastActivityTimestamp[user];
+        if (lastActivity == 0) return false;
+        return (block.timestamp - lastActivity) >= decayConfig.decayInterval;
     }
+
+    function nextDecayTimestamp(address user) external view returns (uint256) {
+        uint256 lastActivity = lastActivityTimestamp[user];
+        if (lastActivity == 0) return type(uint256).max;
+        return lastActivity + decayConfig.decayInterval;
+    }
+
+    function getReputationScore(address user) external view returns (uint256 score) {
+        return getEffectiveReputation(user);
+    }
+
+    function isActive() external view returns (bool) {
+        return decayConfig.enabled;
+    }
+
+    function getLastReputationUpdate(address user) external view returns (uint256 timestamp) {
+        return lastActivityTimestamp[user];
+    }
+
+    function _recordActivity(address user) internal {
+        lastActivityTimestamp[user] = block.timestamp;
+        inactivityTracking[user] = InactivityTracking({
+            lastActiveBlock: block.number,
+            lastVerificationTimestamp: block.timestamp,
+            lastSuccessfulVerification: block.timestamp
+        });
+        emit ActivityRecorded(user, block.timestamp);
+    }
+
+    uint256[50] private __gap;
 }
