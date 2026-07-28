@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+/// @title ITruthBountyEvents
+/// @notice Canonical, versioned event surface for TruthBounty protocol indexers.
+/// @dev Events are public protocol APIs. Implementations should emit events only
+///      after the corresponding state transition succeeds.
+interface ITruthBountyEvents {
+    uint16 constant EVENT_SCHEMA_VERSION = 1;
+
+    // Claims
+    event ClaimCreated(
+        uint256 indexed claimId,
+        address indexed actor,
+        bytes32 indexed metadataHash,
+        uint64 timestamp,
+        uint16 version
+    );
+    event ClaimUpdated(
+        uint256 indexed claimId,
+        address indexed actor,
+        bytes32 indexed metadataHash,
+        uint64 timestamp,
+        uint16 version
+    );
+    event ClaimResolved(
+        uint256 indexed claimId,
+        address indexed actor,
+        bool outcome,
+        uint64 timestamp,
+        uint16 version
+    );
+    event ClaimFinalized(
+        uint256 indexed claimId,
+        address indexed actor,
+        uint64 timestamp,
+        uint16 version
+    );
+
+    // Verification
+    event VerificationSubmitted(
+        uint256 indexed claimId,
+        address indexed verifier,
+        bool support,
+        uint256 stakeAmount,
+        uint64 timestamp,
+        uint16 version
+    );
+    event VerificationChallenged(
+        uint256 indexed claimId,
+        address indexed challenger,
+        bytes32 indexed reasonHash,
+        uint64 timestamp,
+        uint16 version
+    );
+
+    // Staking and slashing
+    event StakeDeposited(
+        address indexed verifier,
+        uint256 amount,
+        uint256 newBalance,
+        uint64 timestamp,
+        uint16 version
+    );
+    event StakeWithdrawn(
+        address indexed verifier,
+        uint256 amount,
+        uint256 newBalance,
+        uint64 timestamp,
+        uint16 version
+    );
+    event SlashExecuted(
+        uint256 indexed claimId,
+        address indexed verifier,
+        bytes32 indexed reason,
+        uint256 amount,
+        uint64 timestamp,
+        uint16 version
+    );
+
+    // Rewards and treasury
+    event RewardCalculated(
+        uint256 indexed claimId,
+        address indexed recipient,
+        uint256 amount,
+        uint64 timestamp,
+        uint16 version
+    );
+    event RewardEscrowed(
+        uint256 indexed claimId,
+        address indexed recipient,
+        uint256 amount,
+        uint64 timestamp,
+        uint16 version
+    );
+    event RewardClaimed(
+        uint256 indexed claimId,
+        address indexed recipient,
+        uint256 amount,
+        uint64 timestamp,
+        uint16 version
+    );
+    event TreasuryTransfer(
+        bytes32 indexed operationId,
+        address indexed token,
+        address indexed recipient,
+        uint256 amount,
+        uint64 timestamp,
+        uint16 version
+    );
+
+    // Governance and emergency controls
+    event GovernanceProposalCreated(
+        uint256 indexed proposalId,
+        address indexed proposer,
+        bytes32 indexed metadataHash,
+        uint64 timestamp,
+        uint16 version
+    );
+    event GovernanceProposalExecuted(
+        uint256 indexed proposalId,
+        address indexed executor,
+        uint64 timestamp,
+        uint16 version
+    );
+    event EmergencyPauseActivated(
+        address indexed actor,
+        bytes32 indexed reason,
+        uint64 timestamp,
+        uint16 version
+    );
+    event EmergencyPauseRecovered(
+        address indexed actor,
+        uint64 timestamp,
+        uint16 version
+    );
+}
