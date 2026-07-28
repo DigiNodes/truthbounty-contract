@@ -322,6 +322,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
         verifierStakes[msg.sender].totalStaked += amount;
 
+        if (reputationSnapshots[msg.sender].timestamp == 0) {
+            reputationSnapshots[msg.sender] = ReputationSnapshot({
+                reputationScore: _getReputationScore(msg.sender),
+                timestamp: block.timestamp
+            });
+        }
+
         emit StakeDeposited(msg.sender, amount);
     }
 
@@ -724,13 +731,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxDrift
     ) internal {
-        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
-        
-        // If no previous snapshot, this is the first preview - allow it
-        if (lastSnapshot.timestamp == 0) {
-            return;
-        }
-        
         // Check if reputation has changed more than the allowed drift
         if (maxDrift > 0) {
             // Calculate percentage change: (|current - expected| / expected) * 10000
@@ -743,8 +743,11 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
         
         // Check if reputation is too stale (timestamp-based)
-        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
-        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
+        if (lastSnapshot.timestamp > 0) {
+            uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
+            require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        }
         
         // Emit validation event
         emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);

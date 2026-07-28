@@ -2,22 +2,41 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 
+async function getSlashHistoryHelper(slashing: any, verifier: string, offset: number, limit: number) {
+  const res = await slashing.getSlashHistory(verifier, offset, limit);
+  const history = [];
+  for (let i = 0; i < res.timestamps.length; i++) {
+    history.push({
+      timestamp: res.timestamps[i],
+      amount: res.amounts[i],
+      percentage: res.percentages[i],
+      reason: ethers.decodeBytes32String(res.reasons[i]),
+      slashedBy: res.slashedBys[i]
+    });
+  }
+  return history;
+}
+
 describe("VerifierSlashing", function () {
   // Fixture for deploying contracts
   async function deploySlashingFixture() {
+    console.log("DEBUG: Getting signers...");
     const [owner, admin, settlement, verifier1, verifier2, unauthorized] = await ethers.getSigners();
 
-    // Deploy TruthBountyToken
+    console.log("DEBUG: Deploying TruthBountyToken...");
     const TruthBountyToken = await ethers.getContractFactory("TruthBountyToken");
     const token = await TruthBountyToken.deploy(owner.address);
+    console.log("DEBUG: TruthBountyToken deployed at:", await token.getAddress());
 
-    // Deploy Staking contract
+    console.log("DEBUG: Deploying Staking...");
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address); // 1 day lock
+    console.log("DEBUG: Staking deployed at:", await staking.getAddress());
 
-    // Deploy VerifierSlashing contract
+    console.log("DEBUG: Deploying VerifierSlashing...");
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
     const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
+    console.log("DEBUG: VerifierSlashing deployed at:", await slashing.getAddress());
 
     // Set up the slashing contract in staking
     await staking.connect(owner).setSlashingContract(await slashing.getAddress());
@@ -129,11 +148,16 @@ describe("VerifierSlashing", function () {
         );
 
       // Check slash history
-      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
-      expect(history.length).to.equal(1);
-      expect(history[0].amount).to.equal(expectedSlashAmount);
-      expect(history[0].percentage).to.equal(slashPercentage);
-      expect(history[0].reason).to.equal("Incorrect verification");
+      try {
+        const history = await getSlashHistoryHelper(slashing, verifier1.address, 0, 10);
+        expect(history.length).to.equal(1);
+        expect(history[0].amount).to.equal(expectedSlashAmount);
+        expect(history[0].percentage).to.equal(slashPercentage);
+        expect(history[0].reason).to.equal("Incorrect verification");
+      } catch (err: any) {
+        console.error("DIAGNOSTIC ERROR IN TEST:", err);
+        throw err;
+      }
 
       // Check total slashed
       expect(await slashing.totalSlashed(verifier1.address)).to.equal(expectedSlashAmount);
@@ -250,7 +274,7 @@ describe("VerifierSlashing", function () {
       await time.increase(3601);
       await slashing.connect(settlement).slash(verifier1.address, 15, "Second reason");
 
-      const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
+      const history = await getSlashHistoryHelper(slashing, verifier1.address, 0, 10);
       expect(history.length).to.equal(2);
       expect(history[0].reason).to.equal("First reason");
       expect(history[1].reason).to.equal("Second reason");
@@ -266,16 +290,16 @@ describe("VerifierSlashing", function () {
       await time.increase(3601);
       await slashing.connect(settlement).slash(verifier1.address, 20, "Third reason");
 
-      const page1 = await slashing.getSlashHistory(verifier1.address, 0, 2);
+      const page1 = await getSlashHistoryHelper(slashing, verifier1.address, 0, 2);
       expect(page1.length).to.equal(2);
       expect(page1[0].reason).to.equal("First reason");
       expect(page1[1].reason).to.equal("Second reason");
 
-      const page2 = await slashing.getSlashHistory(verifier1.address, 2, 2);
+      const page2 = await getSlashHistoryHelper(slashing, verifier1.address, 2, 2);
       expect(page2.length).to.equal(1);
       expect(page2[0].reason).to.equal("Third reason");
 
-      const emptyPage = await slashing.getSlashHistory(verifier1.address, 4, 2);
+      const emptyPage = await getSlashHistoryHelper(slashing, verifier1.address, 4, 2);
       expect(emptyPage.length).to.equal(0);
     });
   });
@@ -385,6 +409,78 @@ describe("VerifierSlashing", function () {
       await expect(
         slashing.connect(settlement).slash(verifier1.address, 100, "Maximum slash")
       ).to.not.be.reverted;
+    });
+  });
+
+  describe("Economic Enforcement Framework", function () {
+    it("Should initialize default offence configurations", async function () {
+      const { slashing } = await loadFixture(deploySlashingFixture);
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      const config = await slashing.offenceConfigs(offenceId);
+      expect(config.slashPercentage).to.equal(50);
+      expect(config.reputationPenalty).to.equal(30);
+      expect(config.active).to.be.true;
+    });
+
+    it("Should successfully execute penalty and route slashed tokens to Treasury", async function () {
+      const { token, staking, slashing, admin, settlement, verifier1, stakeAmount } = await loadFixture(deploySlashingFixture);
+
+      const [,, reserve, secFund, insFund, burnAddr] = await ethers.getSigners();
+      
+      // Set treasury routing splits
+      await slashing.connect(admin).setTreasuryRouting(
+        reserve.address,
+        secFund.address,
+        insFund.address,
+        burnAddr.address,
+        20, // reserve %
+        30, // secFund %
+        40, // insFund %
+        10  // burnAddr %
+      );
+
+      // Verify routing config lookup
+      const routing = await slashing.getTreasuryRouting();
+      expect(routing._treasuryReserve).to.equal(reserve.address);
+      expect(routing._pctTreasuryReserve).to.equal(20);
+
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      
+      // Execute penalty (Verification Fraud: 50% slash, 7 days suspension)
+      await expect(
+        slashing.connect(settlement).executePenalty(verifier1.address, offenceId, "Fraud detected")
+      ).to.emit(slashing, "StakeSlashed");
+
+      // Verify Staking balance reduced
+      const [finalStake] = await staking.stakes(verifier1.address);
+      expect(finalStake).to.equal(stakeAmount / BigInt(2));
+
+      // Verify splits routed correctly
+      const expectedSlashed = stakeAmount / BigInt(2);
+      expect(await token.balanceOf(reserve.address)).to.equal((expectedSlashed * BigInt(20)) / BigInt(100));
+      expect(await token.balanceOf(secFund.address)).to.equal((expectedSlashed * BigInt(30)) / BigInt(100));
+      expect(await token.balanceOf(insFund.address)).to.equal((expectedSlashed * BigInt(40)) / BigInt(100));
+      expect(await token.balanceOf(burnAddr.address)).to.equal((expectedSlashed * BigInt(10)) / BigInt(100));
+    });
+
+    it("Should enforce suspensions and permanent bans", async function () {
+      const { slashing, admin, settlement, verifier1 } = await loadFixture(deploySlashingFixture);
+
+      const collusionOffence = await slashing.OFFENCE_VERIFICATION_COLLUSION();
+      
+      expect(await slashing.isSuspended(verifier1.address)).to.be.false;
+      expect(await slashing.isBanned(verifier1.address)).to.be.false;
+
+      // Collusion offence triggers a permanent ban
+      await slashing.connect(settlement).executePenalty(verifier1.address, collusionOffence, "Colluded in verification");
+
+      expect(await slashing.isSuspended(verifier1.address)).to.be.true;
+      expect(await slashing.isBanned(verifier1.address)).to.be.true;
+
+      // Try to slash again and expect revert
+      await expect(
+        slashing.connect(settlement).slash(verifier1.address, 10, "Subsequent slash attempt")
+      ).to.be.revertedWithCustomError(slashing, "VerifierBanned");
     });
   });
 });

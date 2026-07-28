@@ -1,6 +1,6 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-import "hardhat-gas-reporter";
+// import "hardhat-gas-reporter";
 import "@nomicfoundation/hardhat-ignition-ethers";
 import * as dotenv from "dotenv";
 import "@openzeppelin/hardhat-upgrades";
@@ -9,12 +9,29 @@ dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.28",
-    settings: {
-      evmVersion: "cancun",
-      optimizer: {
-        enabled: true,
-        runs: 200
+    compilers: [
+      {
+        version: "0.8.28",
+        settings: {
+          evmVersion: "shanghai",
+          optimizer: {
+            enabled: true,
+            runs: 200
+          }
+        }
+      }
+    ],
+    overrides: {
+      "contracts/reward/RewardEngine.sol": {
+        version: "0.8.28",
+        settings: {
+          evmVersion: "shanghai",
+          optimizer: {
+            enabled: true,
+            runs: 200
+          },
+          viaIR: true
+        }
       }
     }
   },
@@ -52,6 +69,7 @@ const config: HardhatUserConfig = {
     outputFile: ".gas-reports.json",
     noColors: true,
     excludeContracts: [],
+    // @ts-ignore
     snapshots: {
       outputFile: ".gas-snapshots.json",
     },

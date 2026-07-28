@@ -49,10 +49,10 @@ describe("Reputation Grace Period for Voting", function () {
 
     // Setup verifiers
     await bountyToken.connect(verifier1).approve(await truthBounty.getAddress(), ethers.parseEther("10000"));
-    await truthBounty.connect(verifier1).deposit(ethers.parseEther("1000"));
+    await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
 
     await bountyToken.connect(verifier2).approve(await truthBounty.getAddress(), ethers.parseEther("10000"));
-    await truthBounty.connect(verifier2).deposit(ethers.parseEther("1000"));
+    await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
 
     // Set initial reputation
     await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1")); // 100%
@@ -310,7 +310,7 @@ describe("Reputation Grace Period for Voting", function () {
       
       await bountyToken.transfer(await newVerifier.getAddress(), ethers.parseEther("10000"));
       await bountyToken.connect(newVerifier).approve(await truthBounty.getAddress(), ethers.parseEther("10000"));
-      await truthBounty.connect(newVerifier).deposit(ethers.parseEther("1000"));
+      await truthBounty.connect(newVerifier).stake(ethers.parseEther("1000"));
 
       // Create claim
       await bountyToken.connect(submitter).approve(await truthBounty.getAddress(), MIN_STAKE);

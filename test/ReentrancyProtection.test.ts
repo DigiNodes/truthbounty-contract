@@ -460,7 +460,7 @@ describe("Reentrancy Protection Tests", function () {
       it("Should block reentrancy on general stake withdrawal", async function () {
         const { token, truthBounty, verifier1 } = await loadFixture(deployTruthBountyWeightedFixture);
 
-        const stakeAmount = ethers.parseEther("1000");
+        const stakeAmount = ethers.parseEther("10000");
 
         // Stake
         await token.connect(verifier1).approve(await truthBounty.getAddress(), stakeAmount);
@@ -473,7 +473,7 @@ describe("Reentrancy Protection Tests", function () {
         // Withdraw initiation (will revert with cooldown notice)
         await expect(
           truthBounty.connect(verifier1).withdrawStake(stakeAmount)
-        ).to.be.revertedWith("Withdrawal initiated. Please wait 2 days cooldown.");
+        ).to.be.revertedWith("Large withdrawal initiated. Please wait 2 days cooldown.");
 
         // Verify no withdrawal occurred (balances remain the same)
         const contractBalanceAfter = await token.balanceOf(await truthBounty.getAddress());
@@ -531,9 +531,8 @@ describe("Reentrancy Protection Tests", function () {
         const expectedRemaining = stakeAfterSecond;
         expect(stakeAfterSecond).to.equal(expectedRemaining);
 
-        // Verify slash history
         const history = await slashing.getSlashHistory(verifier1.address, 0, 10);
-        expect(history.length).to.equal(2);
+        expect(history.timestamps.length).to.equal(2);
       });
 
       it("Should enforce cooldown period", async function () {

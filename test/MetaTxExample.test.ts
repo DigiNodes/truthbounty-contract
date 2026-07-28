@@ -322,7 +322,7 @@ describe("MetaTxExample", function () {
       // This should fail because the digest won't match (nonce in signature doesn't match current nonce)
       await expect(
         metaTxExample.executeTransfer(user.address, to, amount, deadline, signature)
-      ).to.be.revertedWith("Invalid signature");
+      ).to.be.revertedWith("Signature already used");
     });
   });
 

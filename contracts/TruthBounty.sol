@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -60,10 +61,23 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
     }
 
     function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
+        require(_settlement != address(0), "Invalid settlement contract");
+        if (settlementContract != address(0)) {
+            if (hasRole(RESOLVER_ROLE, settlementContract)) {
+                _scheduleResolverRoleRevoke(settlementContract);
+            } else {
+                bytes32 pendingGrant = resolverRoleChangeId(settlementContract, true);
+                if (resolverRoleChangeReadyAt[pendingGrant] != 0) {
+                    delete resolverRoleChangeReadyAt[pendingGrant];
+                    emit ResolverRoleChangeCancelled(pendingGrant, settlementContract, true);
+                }
+            }
+        }
         address oldSettlement = settlementContract;
         settlementContract = _settlement;
-        // Automatically grant RESOLVER_ROLE to the settlement contract
-        _grantRole(RESOLVER_ROLE, _settlement);
+        if (!hasRole(RESOLVER_ROLE, _settlement)) {
+            _scheduleResolverRoleGrant(_settlement);
+        }
         emit SettlementContractUpdated(oldSettlement, _settlement);
     }
 
@@ -201,6 +215,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     mapping(address => uint256)                          public verifierRewards;
 
     uint256 public verificationWindowDuration  = 7 days;
+    uint256 public confirmationDelay           = 1 hours;
     uint256 public minStakeAmount              = 100 * 10**18;
     uint256 public settlementThresholdPercent  = 60;
     uint256 public rewardPercent               = 80;
@@ -332,7 +347,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     function settleClaim(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0),                               "Claim does not exist");
-        require(block.timestamp >= claim.verificationWindowEnd,              "Verification window not closed");
+        require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
         require(!claim.settled,                                              "Claim already settled");
         require(claim.totalStakeAmount > 0,                                  "No votes cast");
 

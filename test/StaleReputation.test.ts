@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 
 /**
  * @title StaleReputation Tests
@@ -87,7 +88,7 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       );
 
       // Mine a new block
-      await time.mine(1);
+      await ethers.provider.send("evm_mine", []);
 
       const [, , timestamp2] = await truthBounty.previewEffectiveStakeWithTimestamp(
         verifier1Addr,
@@ -350,7 +351,7 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await expect(
         truthBounty.connect(verifier1).voteWithValidation(0, true, stakeAmount, 0, 0)
       ).to.emit(truthBounty, "ReputationSnapshotRecorded")
-        .withArgs(verifier1Addr, ethers.parseEther("2.5"));
+        .withArgs(verifier1Addr, ethers.parseEther("2.5"), anyValue);
     });
 
     it("Should calculate correct drift percentage", async function () {

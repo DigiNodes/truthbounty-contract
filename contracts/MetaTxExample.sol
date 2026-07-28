@@ -121,14 +121,15 @@ contract MetaTxExample is ERC2771Context, EIP712 {
         bytes32 digest = _hashTypedDataV4(structHash);
 
         // Check for replay
-        require(!usedSignatures[digest], "Signature already used");
+        bytes32 sigHash = keccak256(signature);
+        require(!usedSignatures[sigHash], "Signature already used");
 
         // Recover signer from signature
         address signer = digest.recover(signature);
         require(signer == from, "Invalid signature");
 
         // Mark signature as used
-        usedSignatures[digest] = true;
+        usedSignatures[sigHash] = true;
 
         // Increment nonce
         nonces[from]++;
