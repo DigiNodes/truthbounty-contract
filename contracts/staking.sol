@@ -168,8 +168,8 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         // Reduce the staked amount
         info.amount -= amount;
         
-        // Keep the slashed tokens in the contract (effectively burning them from circulation)
-        // Alternative: Transfer to a burn address or treasury
+        // Transfer the slashed tokens to the slashing contract for routing
+        stakingToken.transfer(msg.sender, amount);
         
         emit StakeSlashed(user, amount, info.amount);
     }
