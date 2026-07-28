@@ -32,7 +32,21 @@ interface GovernanceHooks {
         TREASURY_ROLE,
         PAUSER_ROLE,
         // Upgrade authorization (40+)
-        UPGRADE_AUTHORIZATION
+        UPGRADE_AUTHORIZATION,
+        // RewardEngine parameters (50+)
+        BASE_REWARD_RATE,
+        MIN_REWARD_AMOUNT,
+        MAX_REWARD_AMOUNT,
+        DAILY_EMISSION_LIMIT,
+        ANTI_WHALE_LIMIT,
+        MIN_REPUTATION_MULTIPLIER,
+        MAX_REPUTATION_MULTIPLIER,
+        MIN_DIFFICULTY_MULTIPLIER,
+        MAX_DIFFICULTY_MULTIPLIER,
+        MIN_STAKE_MULTIPLIER,
+        MAX_STAKE_MULTIPLIER,
+        MIN_GOVERNANCE_MULTIPLIER,
+        MAX_GOVERNANCE_MULTIPLIER
     }
 
     // ============ Events ============
