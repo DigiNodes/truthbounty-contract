@@ -130,6 +130,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 totalWeightedFor;      // Weighted votes for claim (NEW)
         uint256 totalWeightedAgainst;  // Weighted votes against claim (NEW)
         uint256 totalStakeAmount;      // Total raw stake amount
+        uint256 totalStakedFor;        // Total raw stake for (support)
+        uint256 totalStakedAgainst;    // Total raw stake against
     }
 
     struct Vote {
@@ -295,7 +297,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             settled: false,
             totalWeightedFor: 0,
             totalWeightedAgainst: 0,
-            totalStakeAmount: 0
+            totalStakeAmount: 0,
+            totalStakedFor: 0,
+            totalStakedAgainst: 0
         });
 
         emit ClaimCreated(claimId, msg.sender, content, verificationWindowEnd);
@@ -418,8 +422,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         // Update claim totals with WEIGHTED stakes
         if (support) {
             claim.totalWeightedFor += effectiveStake;
+            claim.totalStakedFor += stakeAmount;
         } else {
             claim.totalWeightedAgainst += effectiveStake;
+            claim.totalStakedAgainst += stakeAmount;
         }
         claim.totalStakeAmount += stakeAmount; // Still track raw stake total
 
@@ -808,8 +814,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 winnerWeightedStake = passed ? claim.totalWeightedFor : claim.totalWeightedAgainst;
         uint256 loserWeightedStake = passed ? claim.totalWeightedAgainst : claim.totalWeightedFor;
 
-        // Calculate total RAW stake from losers for slashing
-        uint256 loserRawStake = _calculateLoserRawStake(claimId, passed);
+        // Exact total RAW stake from losing side (pre-calculated during voting)
+        uint256 loserRawStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
         // Slash the configured percentage of losing raw stake.
         slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
@@ -886,28 +892,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 vote.slashAmount = 0;
             }
         }
-    }
-
-    /**
-     * @notice Helper to calculate total raw stake from losing side
-     * @dev Iterates through votes - in production, consider off-chain indexing
-     */
-    function _calculateLoserRawStake(
-        uint256 claimId,
-        bool passed
-    ) internal view returns (uint256 total) {
-        // Note: This is a simplified implementation
-        // In production, you'd want to track this during voting or use off-chain indexing
-        // For now, we'll use the total stake as an approximation
-        Claim storage claim = claims[claimId];
-
-        // Rough approximation: total stake * (loser weighted / total weighted)
-        uint256 totalWeighted = claim.totalWeightedFor + claim.totalWeightedAgainst;
-        uint256 loserWeighted = passed ? claim.totalWeightedAgainst : claim.totalWeightedFor;
-
-        if (totalWeighted == 0) return 0;
-
-        return (claim.totalStakeAmount * loserWeighted) / totalWeighted;
     }
 
     // ============ Admin Functions ============
