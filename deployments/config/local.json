@@ -1,0 +1,16 @@
+{
+  "environment": "local",
+  "chainId": 31337,
+  "rpcUrl": "http://127.0.0.1:8545",
+  "admin": "${DEPLOYER_ADDRESS}",
+  "verificationWindowDuration": 604800,
+  "minStakeAmount": "100000000000000000000",
+  "settlementThresholdPercent": 60,
+  "rewardPercent": 80,
+  "slashPercent": 20,
+  "confirmationDelay": 3600,
+  "minReputationScore": "100000000000000000",
+  "maxReputationScore": "10000000000000000000",
+  "defaultReputationScore": "1000000000000000000",
+  "stakingLockDuration": 86400
+}
