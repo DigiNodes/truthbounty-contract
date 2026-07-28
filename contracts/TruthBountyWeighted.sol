@@ -813,6 +813,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 rewardsClaimed: 0
             });
 
+            // SC-008: Apply neutral reputation updates for all voters in a tie
+            _applyReputationUpdates(claimId, /* isTie */ true);
+
             return (0, 0);
         }
 
@@ -844,6 +847,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             winnersClaimed: 0,
             rewardsClaimed: 0
         });
+
+        // SC-008: Apply reputation updates after settlement is fully recorded
+        _applyReputationUpdates(claimId, /* isTie */ false);
     }
 
     /**
@@ -898,36 +904,62 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 vote.slashAmount = 0;
             }
 
-            // ── SC-008: Reputation update via ReputationUpdateEngine ──
-            _applyReputationUpdate(claimId, voter, isLoser);
+            // ── SC-008: Slash amounts assigned here; reputation updates happen
+            //     after all slashes are computed, via _applyReputationUpdates.
         }
     }
 
     // ============ SC-008: Reputation Update Integration ============
 
     /**
-     * @notice Apply a reputation update for a voter after settlement
+     * @notice Apply reputation updates for all voters after settlement
      * @param claimId The settled claim ID
-     * @param voter   The voter's address
-     * @param isLoser Whether the voter was on the losing side
-     * @dev Winners receive a correct-verification reputation increment.
-     *      Losers receive an incorrect-verification penalty.
+     * @param isTie   Whether the settlement resulted in a tie
+     * @dev Winners (or all voters in a tie) receive correct-verification updates.
+     *      Losers receive incorrect-verification penalties.
+     *      The claim submitter receives a neutral disputed-claim update.
      *      If no update engine is configured, this is a no-op.
      */
-    function _applyReputationUpdate(uint256 claimId, address voter, bool isLoser) internal {
+    function _applyReputationUpdates(uint256 claimId, bool isTie) internal {
         if (address(reputationUpdateEngine) == address(0)) return;
-        if (reputationUpdateEngine.isClaimProcessed(voter, claimId)) return;
 
-        IReputationUpdateEngine.ReputationUpdate memory update = IReputationUpdateEngine.ReputationUpdate({
-            verifier: voter,
-            delta: 0, // Computed by engine based on reason
-            reason: isLoser
-                ? IReputationUpdateEngine.UpdateReason.INCORRECT_VERIFICATION
-                : IReputationUpdateEngine.UpdateReason.CORRECT_VERIFICATION,
-            claimId: claimId
-        });
+        SettlementResult storage settlement = settlementResults[claimId];
+        address[] storage voters = claimVoters[claimId];
 
-        reputationUpdateEngine.updateReputation(update);
+        for (uint256 i = 0; i < voters.length; i++) {
+            address voter = voters[i];
+            if (reputationUpdateEngine.isClaimProcessed(voter, claimId)) continue;
+
+            IReputationUpdateEngine.UpdateReason reason;
+
+            if (isTie) {
+                reason = IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM;
+            } else {
+                bool isWinner = (votes[claimId][voter].support == settlement.passed);
+                reason = isWinner
+                    ? IReputationUpdateEngine.UpdateReason.CORRECT_VERIFICATION
+                    : IReputationUpdateEngine.UpdateReason.INCORRECT_VERIFICATION;
+            }
+
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: voter,
+                delta: 0,
+                reason: reason,
+                claimId: claimId
+            }));
+        }
+
+        // Also update the claim submitter's reputation as a disputed outcome
+        // so submitters cannot spam claims without reputation consequence.
+        address submitter = claims[claimId].submitter;
+        if (submitter != address(0) && !reputationUpdateEngine.isClaimProcessed(submitter, claimId)) {
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: submitter,
+                delta: 0,
+                reason: IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM,
+                claimId: claimId
+            }));
+        }
     }
 
     /**
