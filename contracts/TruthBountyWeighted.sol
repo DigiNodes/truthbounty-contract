@@ -904,8 +904,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 vote.slashAmount = 0;
             }
 
-            // ── SC-008: Slash amounts assigned here; reputation updates happen
-            //     after all slashes are computed, via _applyReputationUpdates.
+            // Reputation updates handled in _calculateSettlement after this returns.
         }
     }
 
