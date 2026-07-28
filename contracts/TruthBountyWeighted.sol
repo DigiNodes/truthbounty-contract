@@ -7,6 +7,7 @@ import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IReputationOracle.sol";
+import "./IReputationUpdateEngine.sol";
 import "./governance/GovernanceOwnable.sol";
 
 /**
@@ -86,6 +87,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /// @notice Reputation oracle for score lookups
     IReputationOracle public reputationOracle;
+
+    /// @notice Reputation update engine for post-settlement reputation changes
+    IReputationUpdateEngine public reputationUpdateEngine;
 
     // ============ Configuration Parameters (Governance-controlled) ============
 
@@ -231,12 +235,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
     event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event ClaimWiped(uint256 indexed claimId, address indexed admin, string reason);
+    event ReputationUpdateEngineUpdated(address indexed oldEngine, address indexed newEngine);
 
     // ============ Errors ============
 
     error InvalidReputationOracle();
     error InvalidReputationBounds();
     error InvalidReputationUpdateGracePeriod();
+    error InvalidReputationUpdateEngine();
 
     // ============ Constructor ============
 
@@ -891,7 +897,50 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 // Winners are not slashed
                 vote.slashAmount = 0;
             }
+
+            // ── SC-008: Reputation update via ReputationUpdateEngine ──
+            _applyReputationUpdate(claimId, voter, isLoser);
         }
+    }
+
+    // ============ SC-008: Reputation Update Integration ============
+
+    /**
+     * @notice Apply a reputation update for a voter after settlement
+     * @param claimId The settled claim ID
+     * @param voter   The voter's address
+     * @param isLoser Whether the voter was on the losing side
+     * @dev Winners receive a correct-verification reputation increment.
+     *      Losers receive an incorrect-verification penalty.
+     *      If no update engine is configured, this is a no-op.
+     */
+    function _applyReputationUpdate(uint256 claimId, address voter, bool isLoser) internal {
+        if (address(reputationUpdateEngine) == address(0)) return;
+        if (reputationUpdateEngine.isClaimProcessed(voter, claimId)) return;
+
+        IReputationUpdateEngine.ReputationUpdate memory update = IReputationUpdateEngine.ReputationUpdate({
+            verifier: voter,
+            delta: 0, // Computed by engine based on reason
+            reason: isLoser
+                ? IReputationUpdateEngine.UpdateReason.INCORRECT_VERIFICATION
+                : IReputationUpdateEngine.UpdateReason.CORRECT_VERIFICATION,
+            claimId: claimId
+        });
+
+        reputationUpdateEngine.updateReputation(update);
+    }
+
+    /**
+     * @notice Set the reputation update engine address
+     * @param _newEngine Address of the ReputationUpdateEngine contract
+     */
+    function setReputationUpdateEngine(address _newEngine) external onlyRole(ADMIN_ROLE) {
+        if (_newEngine == address(0)) revert InvalidReputationUpdateEngine();
+
+        address oldEngine = address(reputationUpdateEngine);
+        reputationUpdateEngine = IReputationUpdateEngine(_newEngine);
+
+        emit ReputationUpdateEngineUpdated(oldEngine, _newEngine);
     }
 
     // ============ Admin Functions ============
