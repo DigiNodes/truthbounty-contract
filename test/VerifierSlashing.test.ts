@@ -387,4 +387,76 @@ describe("VerifierSlashing", function () {
       ).to.not.be.reverted;
     });
   });
+
+  describe("Economic Enforcement Framework", function () {
+    it("Should initialize default offence configurations", async function () {
+      const { slashing } = await loadFixture(deploySlashingFixture);
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      const config = await slashing.offenceConfigs(offenceId);
+      expect(config.slashPercentage).to.equal(50);
+      expect(config.reputationPenalty).to.equal(30);
+      expect(config.active).to.be.true;
+    });
+
+    it("Should successfully execute penalty and route slashed tokens to Treasury", async function () {
+      const { token, staking, slashing, admin, settlement, verifier1, stakeAmount } = await loadFixture(deploySlashingFixture);
+
+      const [,, reserve, secFund, insFund, burnAddr] = await ethers.getSigners();
+      
+      // Set treasury routing splits
+      await slashing.connect(admin).setTreasuryRouting(
+        reserve.address,
+        secFund.address,
+        insFund.address,
+        burnAddr.address,
+        20, // reserve %
+        30, // secFund %
+        40, // insFund %
+        10  // burnAddr %
+      );
+
+      // Verify routing config lookup
+      const routing = await slashing.getTreasuryRouting();
+      expect(routing._treasuryReserve).to.equal(reserve.address);
+      expect(routing._pctTreasuryReserve).to.equal(20);
+
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      
+      // Execute penalty (Verification Fraud: 50% slash, 7 days suspension)
+      await expect(
+        slashing.connect(settlement).executePenalty(verifier1.address, offenceId, "Fraud detected")
+      ).to.emit(slashing, "StakeSlashed");
+
+      // Verify Staking balance reduced
+      const [finalStake] = await staking.stakes(verifier1.address);
+      expect(finalStake).to.equal(stakeAmount / BigInt(2));
+
+      // Verify splits routed correctly
+      const expectedSlashed = stakeAmount / BigInt(2);
+      expect(await token.balanceOf(reserve.address)).to.equal((expectedSlashed * BigInt(20)) / BigInt(100));
+      expect(await token.balanceOf(secFund.address)).to.equal((expectedSlashed * BigInt(30)) / BigInt(100));
+      expect(await token.balanceOf(insFund.address)).to.equal((expectedSlashed * BigInt(40)) / BigInt(100));
+      expect(await token.balanceOf(burnAddr.address)).to.equal((expectedSlashed * BigInt(10)) / BigInt(100));
+    });
+
+    it("Should enforce suspensions and permanent bans", async function () {
+      const { slashing, admin, settlement, verifier1 } = await loadFixture(deploySlashingFixture);
+
+      const collusionOffence = await slashing.OFFENCE_VERIFICATION_COLLUSION();
+      
+      expect(await slashing.isSuspended(verifier1.address)).to.be.false;
+      expect(await slashing.isBanned(verifier1.address)).to.be.false;
+
+      // Collusion offence triggers a permanent ban
+      await slashing.connect(settlement).executePenalty(verifier1.address, collusionOffence, "Colluded in verification");
+
+      expect(await slashing.isSuspended(verifier1.address)).to.be.true;
+      expect(await slashing.isBanned(verifier1.address)).to.be.true;
+
+      // Try to slash again and expect revert
+      await expect(
+        slashing.connect(settlement).slash(verifier1.address, 10, "Subsequent slash attempt")
+      ).to.be.revertedWithCustomError(slashing, "VerifierBanned");
+    });
+  });
 });
