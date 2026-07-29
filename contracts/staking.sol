@@ -2,12 +2,14 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
 import "./treasury/ITreasuryAccounting.sol";
 
 contract Staking is ReentrancyGuard, ResolverRoleTimelock {
+    using SafeERC20 for IERC20;
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -24,6 +26,8 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
 
     // Treasury accounting contract for protocol-wide financial tracking
     ITreasuryAccounting public treasuryAccounting;
+    /// @notice Destination for all confiscated verifier collateral.
+    address public treasury;
 
     struct StakeInfo {
         uint256 amount;      // Total amount currently staked
@@ -40,6 +44,7 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
     event StakeSlashed(address indexed user, uint256 amount, uint256 remainingStake);
     event SlashingContractUpdated(address newSlashingContract);
     event TreasuryAccountingUpdated(address newTreasuryAccounting);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
 
     /**
      * @param _stakingToken Address of the TruthBountyToken
@@ -52,6 +57,7 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         
         stakingToken = IERC20(_stakingToken);
         lockDuration = _initialLockDuration;
+        treasury = initialAdmin;
         
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
@@ -83,7 +89,7 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         require(address(treasuryAccounting) != address(0), "Treasury not configured");
 
         // Transfer tokens from user to contract (requires approve())
-        stakingToken.transferFrom(msg.sender, address(this), amount);
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         // Record the stake in treasury accounting
         treasuryAccounting.recordStake(msg.sender, amount);
@@ -118,7 +124,7 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         treasuryAccounting.recordUnstake(msg.sender, amount);
 
         // Transfer tokens back to user
-        stakingToken.transfer(msg.sender, amount);
+        stakingToken.safeTransfer(msg.sender, amount);
 
         emit Unstaked(msg.sender, amount, info.amount);
     }
@@ -145,6 +151,14 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         emit LockDurationUpdated(_duration);
     }
     
+    /// @notice Update the Treasury destination for confiscated collateral.
+    function setTreasury(address newTreasury) external onlyRole(ADMIN_ROLE) {
+        require(newTreasury != address(0), "Invalid treasury");
+        address oldTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryUpdated(oldTreasury, newTreasury);
+    }
+
     /**
      * @dev Set the authorized slashing contract
      * @param _slashingContract Address of the VerifierSlashing contract
@@ -198,6 +212,10 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         // Transfer the slashed tokens to the slashing contract for routing
         stakingToken.transfer(msg.sender, amount);
         
+        // Settle confiscated collateral directly into Treasury.
+        require(treasury != address(0), "Treasury not configured");
+        stakingToken.safeTransfer(treasury, amount);
+
         emit StakeSlashed(user, amount, info.amount);
     }
 }
