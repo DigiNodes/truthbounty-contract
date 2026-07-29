@@ -19,6 +19,8 @@ interface ITruthBountyWeighted {
     function settlementThresholdPercent() external view returns (uint256);
     function rewardPercent() external view returns (uint256);
     function slashPercent() external view returns (uint256);
+
+    function GOVERNANCE_ROLE() external view returns (bytes32);
 }
 
 interface IStaking {
@@ -43,6 +45,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     // ============ Constants ============
 
@@ -308,7 +311,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         }
     }
 
-    function _validateConfiguration() internal view {
+    function _validateConfiguration() internal {
         BootstrapConfig memory cfg = config;
 
         if (cfg.verificationWindowDuration < 1 days || cfg.verificationWindowDuration > 30 days) {
