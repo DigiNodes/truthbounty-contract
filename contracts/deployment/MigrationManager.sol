@@ -8,6 +8,7 @@ import "../governance/GovernanceOwnable.sol";
 
 contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
