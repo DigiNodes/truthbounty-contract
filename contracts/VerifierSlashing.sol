@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./governance/GovernanceHooks.sol";
+import "./interfaces/ITruthBountyEvents.sol";
 
 /**
  * @title VerifierSlashing
@@ -20,7 +21,7 @@ interface IStaking {
     function forceSlash(address user, uint256 amount) external;
 }
 
-contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     
     // Role definitions
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -40,6 +41,7 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     // making it significantly heavier per item. Bounds gas to avoid
     // out-of-gas / block-gas-limit DoS in batchSlash. (Audit #156)
     uint256 public constant MAX_BATCH_SIZE = 50;
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     
     // Default maximum slashing percentage per incident
     uint256 public maxSlashPercentage = 50; // 50% max per slash
@@ -225,6 +227,14 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             reason,
             msg.sender
         );
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
     
     /**
@@ -317,6 +327,14 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         stakingContract.forceSlash(verifier, slashAmount);
 
         emit CriticalSlashed(verifier, slashAmount, percentage, reason, msg.sender);
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
     
     /**
@@ -381,6 +399,14 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             remainingStake,
             reason,
             msg.sender
+        );
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
         );
     }
     
