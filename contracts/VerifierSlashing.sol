@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./governance/GovernanceHooks.sol";
+import "./treasury/ITreasuryAccounting.sol";
 import "./IReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -51,6 +52,9 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     bytes32 public constant GOVERNANCE_PARAM_COOLDOWN = keccak256("SLASH_COOLDOWN");
     
     IStaking public stakingContract;
+
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
     IReputationOracle public reputationOracle;
     
     // Slashing tracking
@@ -160,6 +164,7 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     );
     
     event StakingContractUpdated(address newStakingContract);
+    event TreasuryAccountingUpdated(address newTreasuryAccounting);
     
     event CriticalSlashed(
         address indexed verifier,
@@ -221,6 +226,7 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     error EmptyBatch();
     error BatchSizeExceeded(uint256 provided, uint256 maxAllowed);
     error BatchLengthMismatch();
+    error InvalidTreasuryAddress();
     error InvalidOffence();
     error VerifierSuspended();
     error VerifierBanned();
@@ -846,6 +852,22 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         emit StakingContractUpdated(_stakingContract);
     }
     
+    /**
+     * @dev Set the treasury accounting contract
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyGovernanceOrAdmin {
+        if (_treasuryAccounting == address(0)) {
+            revert InvalidTreasuryAddress();
+        }
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(_treasuryAccounting);
+    }
+    
+    /**
+     * @dev Grant resolver role to an address (typically the settlement contract)
+     * @param account Address to grant the role to
+     */
     function grantResolverRole(address account) external onlyGovernanceOrAdmin {
         if (hasRole(RESOLVER_ROLE, account)) revert ResolverRoleChangeNoop();
         _scheduleResolverRoleGrant(account);
