@@ -43,6 +43,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
