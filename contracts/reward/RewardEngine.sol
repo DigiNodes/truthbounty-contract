@@ -508,9 +508,29 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
 
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(
+
+            msg.sender,
+
+            keccak256("MANUAL_PAUSE"),
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(
+
+            msg.sender,
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 }
