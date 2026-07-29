@@ -20,6 +20,8 @@ interface ITruthBountyWeighted {
     function settlementThresholdPercent() external view returns (uint256);
     function rewardPercent() external view returns (uint256);
     function slashPercent() external view returns (uint256);
+
+    function GOVERNANCE_ROLE() external view returns (bytes32);
 }
 
 interface IStaking {
