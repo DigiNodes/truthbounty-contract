@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./governance/GovernanceOwnable.sol";
+import "./interfaces/ITruthBountyEvents.sol";
 import "./governance/GovernanceHooks.sol";
 
 /**
@@ -147,7 +148,8 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
  *           unchanged.
  * ────────────────────────────────────────────────────────────────────────────
  */
-contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
 
     // ── Roles ──────────────────────────────────────────────────────────────
 
@@ -472,6 +474,15 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
 
     // ── Pauser ─────────────────────────────────────────────────────────────
 
-    function pause()   external onlyRole(PAUSER_ROLE) { _pause(); }
-    function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); }
+    function pause()   external onlyRole(PAUSER_ROLE) { _pause(); emit EmergencyPauseActivatedV1(
+     msg.sender,
+     keccak256("MANUAL_PAUSE"),
+     uint64(block.timestamp),
+     EVENT_SCHEMA_VERSION
+ ); }
+    function unpause() external onlyRole(PAUSER_ROLE) { _unpause(); emit EmergencyPauseRecoveredV1(
+     msg.sender,
+     uint64(block.timestamp),
+     EVENT_SCHEMA_VERSION
+ ); }
 }
