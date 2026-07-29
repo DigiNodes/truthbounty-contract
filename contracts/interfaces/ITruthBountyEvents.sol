@@ -110,14 +110,14 @@ interface ITruthBountyEvents {
 
     // Governance and emergency controls
     event GovernanceProposalCreatedV1(
-        uint256 indexed proposalId,
+        bytes32 indexed proposalId,
         address indexed proposer,
         bytes32 indexed metadataHash,
         uint64 timestamp,
         uint16 version
     );
     event GovernanceProposalExecutedV1(
-        uint256 indexed proposalId,
+        bytes32 indexed proposalId,
         address indexed executor,
         uint64 timestamp,
         uint16 version
