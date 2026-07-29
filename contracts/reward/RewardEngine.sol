@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../governance/GovernanceOwnable.sol";
 import "../governance/GovernanceHooks.sol";
 import "../IReputationOracle.sol";
+import "../treasury/ITreasuryAccounting.sol";
+import "../IReputationOracle.sol";
 
 contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
@@ -61,6 +63,9 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ State Variables ============
 
     IReputationOracle public reputationOracle;
+    
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
 
     uint256 public baseRewardRate = 0.01e18;
     uint256 public minReward = 0;
@@ -140,6 +145,11 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         uint256 oldHigh,
         uint256 newLow,
         uint256 newHigh
+    );
+
+    event TreasuryAccountingUpdated(
+        address indexed oldTreasury,
+        address indexed newTreasury
     );
 
     // ============ Errors ============
@@ -493,6 +503,31 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         address oldOracle = address(reputationOracle);
         reputationOracle = IReputationOracle(_newOracle);
         emit ReputationOracleUpdated(oldOracle, _newOracle);
+    }
+
+    /**
+     * @dev Set the treasury accounting contract (admin only)
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyRole(ADMIN_ROLE) {
+        require(_treasuryAccounting != address(0), "Invalid treasury address");
+        address oldTreasury = address(treasuryAccounting);
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(oldTreasury, _treasuryAccounting);
+    }
+
+    /**
+     * @dev Distribute a calculated reward to a verifier, recording it in treasury accounting
+     * @param recipient Address to receive the reward
+     * @param amount Amount of reward to distribute
+     */
+    function distributeReward(address recipient, uint256 amount) external onlyRole(REWARD_ENGINE_ROLE) whenNotPaused {
+        require(recipient != address(0), "Invalid recipient");
+        require(amount > 0, "Cannot distribute 0");
+        require(address(treasuryAccounting) != address(0), "Treasury not configured");
+        
+        // Record the reward distribution in treasury accounting
+        treasuryAccounting.recordRewardDistribution(recipient, amount);
     }
 
     // ============ Pause ============
