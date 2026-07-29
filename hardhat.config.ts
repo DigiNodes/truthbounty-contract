@@ -16,7 +16,8 @@ const config: HardhatUserConfig = {
       optimizer: {
         enabled: true,
         runs: 200
-      }
+      },
+      viaIR: true
     }
   },
   networks: {
@@ -53,6 +54,7 @@ const config: HardhatUserConfig = {
     outputFile: ".gas-reports.json",
     noColors: true,
     excludeContracts: [],
+    // @ts-ignore
     snapshots: {
       outputFile: ".gas-snapshots.json",
     },

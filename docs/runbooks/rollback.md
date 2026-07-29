@@ -1,0 +1,5 @@
+Preconditions
+Upgrade rollback
+Ownership verification
+Storage verification
+Resume protocol
