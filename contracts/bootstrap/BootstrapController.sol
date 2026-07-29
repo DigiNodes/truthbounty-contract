@@ -59,6 +59,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
     bytes32 public constant MODULE_REPUTATION_DECAY = keccak256("REPUTATION_DECAY");
     bytes32 public constant MODULE_REPUTATION_SNAPSHOT = keccak256("REPUTATION_SNAPSHOT");
     bytes32 public constant MODULE_REPUTATION_RECEIVER = keccak256("REPUTATION_RECEIVER");
+    bytes32 public constant MODULE_INSURANCE = keccak256("INSURANCE");
 
     bytes32[] private _standardModuleOrder;
 
@@ -358,6 +359,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _initModule(MODULE_VERIFIER_SLASHING);
         _initModule(MODULE_CLAIMS);
         _initModule(MODULE_REPUTATION_RECEIVER);
+        _initModule(MODULE_INSURANCE);
     }
 
     function _initModule(bytes32 moduleId) internal {
@@ -396,6 +398,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _standardModuleOrder.push(MODULE_VERIFIER_SLASHING);
         _standardModuleOrder.push(MODULE_CLAIMS);
         _standardModuleOrder.push(MODULE_REPUTATION_RECEIVER);
+        _standardModuleOrder.push(MODULE_INSURANCE);
     }
 
     // ============ View Functions ============
