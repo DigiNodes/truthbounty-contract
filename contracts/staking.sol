@@ -195,6 +195,8 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         
         // Record the slash in treasury accounting - moves from staking reserve to slashed treasury
         treasuryAccounting.recordSlash(user, amount);
+        // Transfer the slashed tokens to the slashing contract for routing
+        stakingToken.transfer(msg.sender, amount);
         
         emit StakeSlashed(user, amount, info.amount);
     }
