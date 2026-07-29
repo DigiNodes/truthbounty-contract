@@ -1,8 +1,58 @@
 {
   "timestamp": "2026-07-28",
   "version": "2.0.0",
-  "protocol": "TruthBounty Bootstrap Framework",
+  "protocol": "TruthBounty Protocol",
   "critical_functions": {
+    "FeeManager": {
+      "collectFee_5_targets": {
+        "description": "collectFee with 5 active allocation targets (SafeERC20 transferFrom + 5x safeTransfer + accounting + record)",
+        "min": 118000,
+        "max": 152000,
+        "avg": 133000,
+        "calls": 10,
+        "notes": "Gas scales linearly with number of active allocation targets (~18k per target)"
+      },
+      "updateFeeSchedule": {
+        "description": "Governance fee schedule update (archive current + write new + emit events)",
+        "min": 48000,
+        "max": 72000,
+        "avg": 58000,
+        "calls": 10,
+        "notes": "Includes archive write to _feeScheduleHistory mapping"
+      },
+      "setAllocationTargets_5": {
+        "description": "Replace routing table with 5 allocation targets",
+        "min": 78000,
+        "max": 102000,
+        "avg": 88000,
+        "calls": 5,
+        "notes": "Gas scales with number of targets; 5-target replace deletes and rewrites the full array"
+      },
+      "setFeeActive": {
+        "description": "Activate or deactivate a single fee type",
+        "min": 28000,
+        "max": 34000,
+        "avg": 30000,
+        "calls": 5,
+        "notes": "Single storage slot write + event"
+      },
+      "calculateFee": {
+        "description": "View — fee calculation (fixed + bps + min/max enforcement)",
+        "min": 2800,
+        "max": 4200,
+        "avg": 3400,
+        "calls": 10,
+        "notes": "Read-only; no state changes"
+      },
+      "getFeeHistory_page_10": {
+        "description": "View — paginated fee record read (10 records)",
+        "min": 8000,
+        "max": 14000,
+        "avg": 10500,
+        "calls": 5,
+        "notes": "Read-only; cost grows with page size"
+      }
+    },
     "BootstrapController": {
       "registerModule": {
         "min": 42000,
