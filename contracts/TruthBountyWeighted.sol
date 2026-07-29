@@ -79,6 +79,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     uint256 public constant MAX_REPUTATION_STALENESS = 1 hours;
     /// @notice Threshold above which a withdrawal is considered "large" and requires a 2-day cooldown (#152)
     uint256 public constant LARGE_WITHDRAWAL_THRESHOLD = 10_000 * TOKEN_DECIMALS_MULTIPLIER;
+    /// @notice Epoch duration for reputation snapshot tracking (7 days) (SC-013)
+    uint256 public constant EPOCH_DURATION = 7 days;
+
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -156,6 +159,20 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bool rewardClaimed;
         bool stakeReturned;
         uint256 slashAmount;           // Per-vote slash amount calculated at settlement (prevents double-slash)
+        uint256 snapshotTimestamp;     // Block timestamp when snapshot was captured at vote time (SC-013)
+        uint256 snapshotEpoch;         // Protocol epoch at vote time (SC-013)
+        bytes32 snapshotRoot;          // Merkle root reserved for future proof verification (SC-013)
+    }
+
+    struct Verification {
+        address verifier;
+        uint256 reputationSnapshot;
+        uint256 snapshotTimestamp;
+        uint256 snapshotEpoch;
+        bytes32 snapshotRoot;
+        uint256 effectiveStake;
+        uint256 stakeAmount;
+        bool support;
     }
 
     struct SettlementResult {
@@ -426,7 +443,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         // Lock the raw stake
         verifierStakes[msg.sender].activeStakes += stakeAmount;
 
-        // Record the vote with both raw and effective stakes
+        // Record the vote with both raw and effective stakes and immutable reputation snapshot (SC-013)
         votes[claimId][msg.sender] = Vote({
             voted: true,
             support: support,
@@ -435,7 +452,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             reputationScore: reputationScore,
             rewardClaimed: false,
             stakeReturned: false,
-            slashAmount: 0
+            slashAmount: 0,
+            snapshotTimestamp: block.timestamp,
+            snapshotEpoch: block.timestamp / EPOCH_DURATION,
+            snapshotRoot: bytes32(0)
         });
 
         // Store reputation snapshot for future validation
@@ -1321,6 +1341,76 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         
         // Consider stale if reputation changed significantly or too much time has passed
         hasChanged = (currentReputation != previewReputation) || (timeSincePreview > MAX_REPUTATION_STALENESS);
+    }
+
+    /**
+     * @notice Expose historical verification query for inspecting reputation, timestamp, epoch, and aggregation contribution (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return reputationUsed The reputation score captured at vote time
+     * @return timestamp The timestamp when the vote/snapshot was recorded
+     * @return epoch The epoch when the vote/snapshot was recorded
+     * @return aggregationContribution The effective weighted stake contributed during vote aggregation
+     */
+    function getHistoricalVerification(
+        uint256 claimId,
+        address verifier
+    ) external view returns (
+        uint256 reputationUsed,
+        uint256 timestamp,
+        uint256 epoch,
+        uint256 aggregationContribution
+    ) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return (v.reputationScore, v.snapshotTimestamp, v.snapshotEpoch, v.effectiveStake);
+    }
+
+    /**
+     * @notice Get structured Verification data for a claim and verifier (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return verification Struct containing full immutable verification snapshot details
+     */
+    function getVerification(
+        uint256 claimId,
+        address verifier
+    ) external view returns (Verification memory verification) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return Verification({
+            verifier: verifier,
+            reputationSnapshot: v.reputationScore,
+            snapshotTimestamp: v.snapshotTimestamp,
+            snapshotEpoch: v.snapshotEpoch,
+            snapshotRoot: v.snapshotRoot,
+            effectiveStake: v.effectiveStake,
+            stakeAmount: v.stakeAmount,
+            support: v.support
+        });
+    }
+
+    /**
+     * @notice Get verification snapshot details for future Merkle proof compatibility (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return reputationSnapshot Reputation score recorded at vote time
+     * @return snapshotTimestamp Timestamp recorded at vote time
+     * @return snapshotEpoch Epoch recorded at vote time
+     * @return snapshotRoot Merkle root (reserved for future proof verification)
+     */
+    function getVerificationSnapshot(
+        uint256 claimId,
+        address verifier
+    ) external view returns (
+        uint256 reputationSnapshot,
+        uint256 snapshotTimestamp,
+        uint256 snapshotEpoch,
+        bytes32 snapshotRoot
+    ) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return (v.reputationScore, v.snapshotTimestamp, v.snapshotEpoch, v.snapshotRoot);
     }
 
     // ============ Admin & Pauser Functions ============
