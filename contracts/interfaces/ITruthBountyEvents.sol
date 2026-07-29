@@ -79,7 +79,7 @@ interface ITruthBountyEvents {
 
     // Rewards and treasury
     event RewardCalculatedV1(
-        uint256 indexed claimId,
+        bytes32 indexed calculationId,
         address indexed recipient,
         uint256 amount,
         uint64 timestamp,

@@ -6,9 +6,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../governance/GovernanceOwnable.sol";
 import "../governance/GovernanceHooks.sol";
+import "../interfaces/ITruthBountyEvents.sol";
 import "../IReputationOracle.sol";
 
-contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
+contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -17,6 +18,7 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Constants ============
 
     uint256 public constant BASE_MULTIPLIER = 1e18;
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant PERCENT_DENOMINATOR = 100;
     uint256 public constant MAX_MULTIPLIER = 10e18;
     uint256 public constant MIN_MULTIPLIER = 0;
@@ -237,6 +239,13 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         dailyVerifierRewards[dayKey][verifier] += finalAmount;
 
         emit RewardCalculated(verifier, finalAmount, calculationId);
+        emit RewardCalculatedV1(
+            calculationId,
+            verifier,
+            finalAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
 
         return (finalAmount, calculationId);
     }
