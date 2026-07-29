@@ -12,6 +12,7 @@ import "../IReputationOracle.sol";
 interface ITruthBountyWeighted {
     function grantRole(bytes32 role, address account) external;
     function hasRole(bytes32 role, address account) external view returns (bool);
+    function GOVERNANCE_ROLE() external view returns (bytes32);
     function bountyToken() external view returns (address);
     function reputationOracle() external view returns (address);
     function verificationWindowDuration() external view returns (uint256);
@@ -42,7 +43,9 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     // ============ Constants ============
 
@@ -59,6 +62,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
     bytes32 public constant MODULE_REPUTATION_DECAY = keccak256("REPUTATION_DECAY");
     bytes32 public constant MODULE_REPUTATION_SNAPSHOT = keccak256("REPUTATION_SNAPSHOT");
     bytes32 public constant MODULE_REPUTATION_RECEIVER = keccak256("REPUTATION_RECEIVER");
+    bytes32 public constant MODULE_INSURANCE = keccak256("INSURANCE");
 
     bytes32[] private _standardModuleOrder;
 
@@ -308,7 +312,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         }
     }
 
-    function _validateConfiguration() internal view {
+    function _validateConfiguration() internal {
         BootstrapConfig memory cfg = config;
 
         if (cfg.verificationWindowDuration < 1 days || cfg.verificationWindowDuration > 30 days) {
@@ -358,6 +362,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _initModule(MODULE_VERIFIER_SLASHING);
         _initModule(MODULE_CLAIMS);
         _initModule(MODULE_REPUTATION_RECEIVER);
+        _initModule(MODULE_INSURANCE);
     }
 
     function _initModule(bytes32 moduleId) internal {
@@ -396,6 +401,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _standardModuleOrder.push(MODULE_VERIFIER_SLASHING);
         _standardModuleOrder.push(MODULE_CLAIMS);
         _standardModuleOrder.push(MODULE_REPUTATION_RECEIVER);
+        _standardModuleOrder.push(MODULE_INSURANCE);
     }
 
     // ============ View Functions ============
