@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./IReputationOracle.sol";
+import "./IReputationUpdateEngine.sol";
 import "./governance/GovernanceOwnable.sol";
 
 /**
@@ -94,6 +95,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /// @notice Reputation oracle for score lookups
     IReputationOracle public reputationOracle;
+
+    /// @notice Reputation update engine for post-settlement reputation changes
+    IReputationUpdateEngine public reputationUpdateEngine;
 
     // ============ Configuration Parameters (Governance-controlled) ============
 
@@ -254,12 +258,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
     event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event ClaimWiped(uint256 indexed claimId, address indexed admin, string reason);
+    event ReputationUpdateEngineUpdated(address indexed oldEngine, address indexed newEngine);
 
     // ============ Errors ============
 
     error InvalidReputationOracle();
     error InvalidReputationBounds();
     error InvalidReputationUpdateGracePeriod();
+    error InvalidReputationUpdateEngine();
 
     // ============ Constructor ============
 
@@ -833,6 +839,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 rewardsClaimed: 0
             });
 
+            // SC-008: Apply neutral reputation updates for all voters in a tie
+            _applyReputationUpdates(claimId, /* isTie */ true);
+
             return (0, 0);
         }
 
@@ -864,6 +873,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             winnersClaimed: 0,
             rewardsClaimed: 0
         });
+
+        // SC-008: Apply reputation updates after settlement is fully recorded
+        _applyReputationUpdates(claimId, /* isTie */ false);
     }
 
     /**
@@ -917,7 +929,75 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 // Winners are not slashed
                 vote.slashAmount = 0;
             }
+
+            // Reputation updates handled in _calculateSettlement after this returns.
         }
+    }
+
+    // ============ SC-008: Reputation Update Integration ============
+
+    /**
+     * @notice Apply reputation updates for all voters after settlement
+     * @param claimId The settled claim ID
+     * @param isTie   Whether the settlement resulted in a tie
+     * @dev Winners (or all voters in a tie) receive correct-verification updates.
+     *      Losers receive incorrect-verification penalties.
+     *      The claim submitter receives a neutral disputed-claim update.
+     *      If no update engine is configured, this is a no-op.
+     */
+    function _applyReputationUpdates(uint256 claimId, bool isTie) internal {
+        if (address(reputationUpdateEngine) == address(0)) return;
+
+        SettlementResult storage settlement = settlementResults[claimId];
+        address[] storage voters = claimVoters[claimId];
+
+        for (uint256 i = 0; i < voters.length; i++) {
+            address voter = voters[i];
+            if (reputationUpdateEngine.isClaimProcessed(voter, claimId)) continue;
+
+            IReputationUpdateEngine.UpdateReason reason;
+
+            if (isTie) {
+                reason = IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM;
+            } else {
+                bool isWinner = (votes[claimId][voter].support == settlement.passed);
+                reason = isWinner
+                    ? IReputationUpdateEngine.UpdateReason.CORRECT_VERIFICATION
+                    : IReputationUpdateEngine.UpdateReason.INCORRECT_VERIFICATION;
+            }
+
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: voter,
+                delta: 0,
+                reason: reason,
+                claimId: claimId
+            }));
+        }
+
+        // Also update the claim submitter's reputation as a disputed outcome
+        // so submitters cannot spam claims without reputation consequence.
+        address submitter = claims[claimId].submitter;
+        if (submitter != address(0) && !reputationUpdateEngine.isClaimProcessed(submitter, claimId)) {
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: submitter,
+                delta: 0,
+                reason: IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM,
+                claimId: claimId
+            }));
+        }
+    }
+
+    /**
+     * @notice Set the reputation update engine address
+     * @param _newEngine Address of the ReputationUpdateEngine contract
+     */
+    function setReputationUpdateEngine(address _newEngine) external onlyRole(ADMIN_ROLE) {
+        if (_newEngine == address(0)) revert InvalidReputationUpdateEngine();
+
+        address oldEngine = address(reputationUpdateEngine);
+        reputationUpdateEngine = IReputationUpdateEngine(_newEngine);
+
+        emit ReputationUpdateEngineUpdated(oldEngine, _newEngine);
     }
 
     // ============ Admin Functions ============
