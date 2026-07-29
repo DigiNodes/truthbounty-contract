@@ -78,6 +78,64 @@
         "avg": 206215,
         "calls": 2
       }
+    },
+    "ClaimRegistry": {
+      "createClaim_first": {
+        "min": 255308,
+        "max": 255308,
+        "avg": 255308,
+        "calls": 1,
+        "notes": "79-char statement, 46-char CIDv0. Cold storage — all slots written for first time."
+      },
+      "createClaim_subsequent": {
+        "min": 255344,
+        "max": 255344,
+        "avg": 255344,
+        "calls": 1,
+        "notes": "Warm _nextClaimId counter slot. Claim data slots still cold. Measured on second call."
+      },
+      "updateClaimStatus": {
+        "min": 33000,
+        "max": 35000,
+        "avg": 34000,
+        "calls": 5,
+        "notes": "Single SSTORE on packed status field (warm slot from creation)."
+      },
+      "getClaim": {
+        "min": 45155,
+        "max": 45155,
+        "avg": 45155,
+        "calls": 1,
+        "notes": "Full struct read including dynamic strings. Use field-specific accessors for single-field reads."
+      },
+      "claimExists": {
+        "min": 2400,
+        "max": 2600,
+        "avg": 2500,
+        "calls": 10,
+        "notes": "Single SLOAD on createdAt field (null check)."
+      },
+      "totalClaims": {
+        "min": 2200,
+        "max": 2400,
+        "avg": 2300,
+        "calls": 5,
+        "notes": "Single SLOAD on _nextClaimId counter."
+      },
+      "getClaimCreator": {
+        "min": 2600,
+        "max": 2800,
+        "avg": 2700,
+        "calls": 5,
+        "notes": "Reads creator address from storage."
+      },
+      "getClaimStatus": {
+        "min": 2300,
+        "max": 2500,
+        "avg": 2400,
+        "calls": 5,
+        "notes": "Reads packed status field."
+      }
     }
   }
 }
