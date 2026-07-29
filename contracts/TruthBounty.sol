@@ -269,6 +269,7 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE,   ADMIN_ROLE);
+    }
 
     function _resolverRole() internal pure override returns (bytes32) {
         return RESOLVER_ROLE;
@@ -422,10 +423,10 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         require(!isWinner, "Winners should use claimSettlementRewards");
 
         // Calculate slashed portion
-        uint256 slashedAmount = _percentOf(vote.stakeAmount, slashPercent);
-        uint256 returnAmount = vote.stakeAmount - slashedAmount;
+        uint256 slashedAmount = _percentOf(v.stakeAmount, slashPercent);
+        uint256 returnAmount = v.stakeAmount - slashedAmount;
 
-        vote.stakeReturned = true;
+        v.stakeReturned = true;
 
         v.stakeReturned = true;
         verifierStakes[msg.sender].activeStakes -= v.stakeAmount;
