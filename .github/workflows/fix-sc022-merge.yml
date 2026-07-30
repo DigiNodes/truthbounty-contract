@@ -1,0 +1,72 @@
+name: One-time SC-022 merge repair
+
+on:
+  push:
+    branches:
+      - feature/sc-022-event-architecture
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[sc022-repair]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/sc-022-event-architecture
+          fetch-depth: 0
+
+      - name: Apply deterministic repairs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          truth = Path('contracts/TruthBounty.sol')
+          text = truth.read_text()
+
+          start = text.find('    function _resolverRole() internal pure override returns (bytes32) {', text.find('contract TruthBounty is '))
+          end_marker = '    // ── Core Functions'
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('Could not locate stale TruthBounty override block')
+
+          stale = text[start:end]
+          if 'ResolverRoleTimelock.grantRole' not in stale:
+              raise SystemExit('Unexpected TruthBounty block; refusing unsafe edit')
+
+          percent_fn = '''    function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
+              return Math.mulDiv(value, percent, 100);
+          }
+
+'''
+          text = text[:start] + percent_fn + text[end:]
+          truth.write_text(text)
+
+          simulation = Path('contracts/simulation/EconomicSimulation.sol')
+          sim = simulation.read_text()
+          old = 'uint256 totalStakedEnd = stakers * config.minStakeAmount;'
+          new = 'uint256 totalStakedEnd = stakers * gp.minStakeAmount;'
+          if old not in sim:
+              raise SystemExit('Could not locate remaining SimulationConfig minStakeAmount reference')
+          simulation.write_text(sim.replace(old, new, 1))
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npx hardhat compile --force
+
+      - name: Commit validated repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-sc022-merge.yml
+          git add contracts/TruthBounty.sol contracts/simulation/EconomicSimulation.sol
+          git commit -m "fix: complete upstream merge repairs [sc022-repair]"
+          git push origin HEAD:feature/sc-022-event-architecture
