@@ -250,7 +250,7 @@ contract EconomicSimulation is
         // ── Compute final metrics ──────────────────────────────────────
         metrics.treasurySolvency       = treasury;
 
-        uint256 totalStakedEnd = stakers * config.minStakeAmount;
+        uint256 totalStakedEnd = stakers * gp.minStakeAmount;
 
         metrics.totalRewardEmissions   = totalRewards;
         metrics.protocolRevenue        = totalRevenue;

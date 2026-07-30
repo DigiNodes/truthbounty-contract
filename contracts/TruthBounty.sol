@@ -278,17 +278,9 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         );
     }
 
-    function _resolverRole() internal pure override returns (bytes32) {
-        return RESOLVER_ROLE;
-    }
-
     function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
-        return Math.mulDiv(value, percent, 100);
-    }
-
-    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
-        ResolverRoleTimelock.grantRole(role, account);
-    }
+    return Math.mulDiv(value, percent, 100);
+}
 
     // ── Core Functions ─────────────────────────────────────────────────────
 
