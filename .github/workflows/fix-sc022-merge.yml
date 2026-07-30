@@ -27,8 +27,8 @@ jobs:
 
           truth = Path('contracts/TruthBounty.sol')
           text = truth.read_text()
-
-          start = text.find('    function _resolverRole() internal pure override returns (bytes32) {', text.find('contract TruthBounty is '))
+          contract_start = text.find('contract TruthBounty is ')
+          start = text.find('    function _resolverRole() internal pure override returns (bytes32) {', contract_start)
           end_marker = '    // ── Core Functions'
           end = text.find(end_marker, start)
           if start == -1 or end == -1:
@@ -42,9 +42,8 @@ jobs:
               return Math.mulDiv(value, percent, 100);
           }
 
-'''
-          text = text[:start] + percent_fn + text[end:]
-          truth.write_text(text)
+          '''
+          truth.write_text(text[:start] + percent_fn + text[end:])
 
           simulation = Path('contracts/simulation/EconomicSimulation.sol')
           sim = simulation.read_text()
@@ -55,18 +54,34 @@ jobs:
           simulation.write_text(sim.replace(old, new, 1))
           PY
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Compile
-        run: npx hardhat compile --force
-
-      - name: Commit validated repair
+      - name: Commit and push repairs
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/fix-sc022-merge.yml
           git add contracts/TruthBounty.sol contracts/simulation/EconomicSimulation.sol
           git commit -m "fix: complete upstream merge repairs [sc022-repair]"
           git push origin HEAD:feature/sc-022-event-architecture
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        id: compile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npx hardhat compile --force 2>&1 | tee compile-output.txt
+
+      - name: Upload compiler output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sc022-compile-output
+          path: compile-output.txt
+          if-no-files-found: ignore
+
+      - name: Report compile failure
+        if: steps.compile.outcome == 'failure'
+        run: exit 1
