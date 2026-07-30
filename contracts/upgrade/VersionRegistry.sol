@@ -116,7 +116,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         return versionList.entries[versionList.entries.length - 1];
     }
 
-    function getVersion(string calldata contractName, string calldata semanticVersion)
+    function getVersion(string memory contractName, string memory semanticVersion)
         public view override returns (VersionEntry memory)
     {
         if (!_contractRegistered[contractName]) revert ContractNotRegistered(contractName);
