@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./governance/GovernanceOwnable.sol";
@@ -269,9 +269,25 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
 
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
-        _setRoleAdmin(PAUSER_ROLE,   ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
 
-        _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
+        _initializeGovernance(
+            _governanceController,
+            initialAdmin,
+            initialAdmin
+        );
+    }
+
+    function _resolverRole() internal pure override returns (bytes32) {
+        return RESOLVER_ROLE;
+    }
+
+    function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
+        return Math.mulDiv(value, percent, 100);
+    }
+
+    function grantRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.grantRole(role, account);
     }
 
     // ── Core Functions ─────────────────────────────────────────────────────
@@ -347,6 +363,33 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         emit ClaimSettled(claimId, passed, claim.totalStakedFor, claim.totalStakedAgainst, rewardAmount, slashedAmount);
     }
 
+    function _determineOutcome(uint256 stakedFor, uint256 stakedAgainst) internal view returns (bool) {
+        uint256 totalStake = stakedFor + stakedAgainst;
+        if (totalStake == 0) return false;
+        uint256 forPercent = (stakedFor * 100) / totalStake;
+        return forPercent >= settlementThresholdPercent;
+    }
+
+    function _calculateSettlement(uint256 claimId, bool passed) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
+        Claim storage claim = claims[claimId];
+        uint256 winnerStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
+        uint256 loserStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
+
+        slashedAmount = _percentOf(loserStake, slashPercent);
+        rewardAmount = _percentOf(slashedAmount, rewardPercent);
+
+        totalSlashed += slashedAmount;
+        totalRewarded += rewardAmount;
+
+        settlementResults[claimId] = SettlementResult({
+            passed: passed,
+            totalRewards: rewardAmount,
+            totalSlashed: slashedAmount,
+            winnerStake: winnerStake,
+            loserStake: loserStake
+        });
+    }
+
     function claimSettlementRewards(uint256 claimId) external nonReentrant whenNotPaused {
         Claim storage claim = claims[claimId];
         require(claim.settled, "Claim not settled");
@@ -386,8 +429,9 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         bool isWinner = (v.support == settlement.passed);
         require(!isWinner, "Winners should use claimSettlementRewards");
 
-        uint256 slashedAmount = (v.stakeAmount * slashPercent) / 100;
-        uint256 returnAmount  = v.stakeAmount - slashedAmount;
+        // Calculate slashed portion
+        uint256 slashedAmount = _percentOf(v.stakeAmount, slashPercent);
+        uint256 returnAmount = v.stakeAmount - slashedAmount;
 
         v.stakeReturned = true;
         verifierStakes[msg.sender].activeStakes -= v.stakeAmount;
@@ -407,32 +451,6 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     }
 
     // ── Internal Helpers ───────────────────────────────────────────────────
-
-    function _determineOutcome(uint256 stakedFor, uint256 stakedAgainst) internal view returns (bool) {
-        uint256 total = stakedFor + stakedAgainst;
-        if (total == 0) return false;
-        return (stakedFor * 100) / total >= settlementThresholdPercent;
-    }
-
-    function _calculateSettlement(uint256 claimId, bool passed) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
-        Claim storage claim = claims[claimId];
-        uint256 winnerStake = passed ? claim.totalStakedFor   : claim.totalStakedAgainst;
-        uint256 loserStake  = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
-
-        slashedAmount = (loserStake  * slashPercent)  / 100;
-        rewardAmount  = (slashedAmount * rewardPercent) / 100;
-
-        totalSlashed  += slashedAmount;
-        totalRewarded += rewardAmount;
-
-        settlementResults[claimId] = SettlementResult({
-            passed:       passed,
-            totalRewards: rewardAmount,
-            totalSlashed: slashedAmount,
-            winnerStake:  winnerStake,
-            loserStake:   loserStake
-        });
-    }
 
     // ── View Functions ─────────────────────────────────────────────────────
 
