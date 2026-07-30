@@ -1196,6 +1196,30 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         return verifierStakes[verifier];
     }
 
+    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
+        return claimVoters[claimId].length;
+    }
+
+    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
+        return claimVoters[claimId][index];
+    }
+
+    function getVerificationWeight(uint256 claimId, address verifier) external view returns (uint256) {
+        return votes[claimId][verifier].effectiveStake;
+    }
+
+    function getVerificationSupport(uint256 claimId, address verifier) external view returns (bool) {
+        return votes[claimId][verifier].support;
+    }
+
+    function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
+        return claims[claimId].verificationWindowEnd;
+    }
+
+    function getClaimSubmitter(uint256 claimId) external view returns (address) {
+        return claims[claimId].submitter;
+    }
+
     /**
      * @notice Preview the effective stake for a user
      */
