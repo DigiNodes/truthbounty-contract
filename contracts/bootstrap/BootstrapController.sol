@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../governance/GovernanceOwnable.sol";
+import "../interfaces/ITruthBountyEvents.sol";
 import "../governance/GovernanceHooks.sol";
 import "../governance/GovernanceController.sol";
 import "../IReputationOracle.sol";
@@ -39,10 +40,12 @@ interface ITruthBountyClaims {
     function bountyToken() external view returns (address);
 }
 
-contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
+contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant DEPLOYER_ROLE = keccak256("DEPLOYER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -61,6 +64,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
     bytes32 public constant MODULE_REPUTATION_DECAY = keccak256("REPUTATION_DECAY");
     bytes32 public constant MODULE_REPUTATION_SNAPSHOT = keccak256("REPUTATION_SNAPSHOT");
     bytes32 public constant MODULE_REPUTATION_RECEIVER = keccak256("REPUTATION_RECEIVER");
+    bytes32 public constant MODULE_INSURANCE = keccak256("INSURANCE");
 
     bytes32[] private _standardModuleOrder;
 
@@ -360,6 +364,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _initModule(MODULE_VERIFIER_SLASHING);
         _initModule(MODULE_CLAIMS);
         _initModule(MODULE_REPUTATION_RECEIVER);
+        _initModule(MODULE_INSURANCE);
     }
 
     function _initModule(bytes32 moduleId) internal {
@@ -398,6 +403,7 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
         _standardModuleOrder.push(MODULE_VERIFIER_SLASHING);
         _standardModuleOrder.push(MODULE_CLAIMS);
         _standardModuleOrder.push(MODULE_REPUTATION_RECEIVER);
+        _standardModuleOrder.push(MODULE_INSURANCE);
     }
 
     // ============ View Functions ============
@@ -465,9 +471,29 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable {
 
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(
+
+            msg.sender,
+
+            keccak256("MANUAL_PAUSE"),
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(
+
+            msg.sender,
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 }

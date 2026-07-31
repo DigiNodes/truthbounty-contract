@@ -4,19 +4,26 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../governance/GovernanceOwnable.sol";
 import "../governance/GovernanceHooks.sol";
+import "../interfaces/ITruthBountyEvents.sol";
 import "../IReputationOracle.sol";
+import "../treasury/ITreasuryAccounting.sol";
 
-contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
+contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
+    using SafeERC20 for IERC20;
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
     // ============ Constants ============
 
     uint256 public constant BASE_MULTIPLIER = 1e18;
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant PERCENT_DENOMINATOR = 100;
     uint256 public constant MAX_MULTIPLIER = 10e18;
     uint256 public constant MIN_MULTIPLIER = 0;
@@ -47,6 +54,23 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         bytes32 calculationId;
     }
 
+    enum DistributionStatus {
+        NONE,
+        CLAIMABLE,
+        DISTRIBUTED
+    }
+
+    struct RewardDistribution {
+        address recipient;
+        uint256 claimId;
+        bytes32 settlementId;
+        bytes32 calculationId;
+        uint256 amount;
+        uint256 timestamp;
+        DistributionStatus status;
+        bytes32 distributionId;
+    }
+
     struct MultiplierConfig {
         uint256 minReputationMultiplier;
         uint256 maxReputationMultiplier;
@@ -61,6 +85,33 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
     // ============ State Variables ============
 
     IReputationOracle public reputationOracle;
+    
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
+
+    /// @notice ERC20 token used for protocol rewards.
+    IERC20 public rewardToken;
+
+    /// @notice Total rewards funded into the engine.
+    uint256 public totalFunded;
+
+    /// @notice Total rewards allocated to participants.
+    uint256 public totalAllocated;
+
+    /// @notice Total rewards successfully transferred.
+    uint256 public totalDistributed;
+
+    /// @notice Total claimable rewards currently reserved.
+    uint256 public totalReserved;
+
+    /// @notice Maximum records processed in one batch.
+    uint256 public constant MAX_DISTRIBUTION_BATCH_SIZE = 100;
+
+    mapping(bytes32 => RewardDistribution) public rewardDistributions;
+    mapping(address => bytes32[]) private recipientDistributionIds;
+    mapping(address => uint256) public claimableRewards;
+    mapping(bytes32 => bool) public processedSettlements;
+
 
     uint256 public baseRewardRate = 0.01e18;
     uint256 public minReward = 0;
@@ -99,6 +150,42 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         uint256 amount,
         bytes32 indexed calculationId
     );
+
+    event RewardTokenUpdated(
+        address indexed oldToken,
+        address indexed newToken
+    );
+
+    event RewardPoolFunded(
+        address indexed funder,
+        uint256 amount,
+        uint256 newBalance
+    );
+
+    event RewardAllocated(
+        address indexed recipient,
+        uint256 indexed claimId,
+        bytes32 indexed settlementId,
+        bytes32 distributionId,
+        uint256 amount,
+        bool immediatelyDistributed
+    );
+
+    event RewardDistributed(
+        address indexed recipient,
+        uint256 indexed claimId,
+        bytes32 indexed settlementId,
+        uint256 amount
+    );
+
+    event RewardClaimed(
+        address indexed recipient,
+        bytes32 indexed distributionId,
+        uint256 amount
+    );
+
+    event BatchRewardAllocationCompleted(uint256 count);
+    event BatchRewardClaimCompleted(address indexed recipient, uint256 count, uint256 amount);
 
     event RewardMultiplierUpdated(
         bytes32 indexed multiplier,
@@ -142,6 +229,11 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         uint256 newHigh
     );
 
+    event TreasuryAccountingUpdated(
+        address indexed oldTreasury,
+        address indexed newTreasury
+    );
+
     // ============ Errors ============
 
     error InvalidMultiplierConfig();
@@ -152,6 +244,15 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
     error CalculationNotFound(bytes32 calculationId);
     error ZeroVerifier();
     error ZeroStake();
+    error RewardTokenNotConfigured();
+    error InvalidRecipient();
+    error InvalidRewardAmount();
+    error DuplicateRewardSettlement();
+    error InsufficientRewardPool();
+    error RewardNotClaimable();
+    error UnauthorizedRewardClaim();
+    error InvalidDistributionBatch();
+    error DistributionBatchTooLarge(uint256 provided, uint256 maximum);
 
     // ============ Constructor ============
 
@@ -168,8 +269,10 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
         _grantRole(PAUSER_ROLE, initialAdmin);
+        _grantRole(DISTRIBUTOR_ROLE, initialAdmin);
 
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(DISTRIBUTOR_ROLE, ADMIN_ROLE);
 
         categoryMultipliers[ClaimCategory.TRIVIAL] = 1.0e18;
         categoryMultipliers[ClaimCategory.STANDARD] = 1.2e18;
@@ -235,6 +338,13 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         _recordDailyEmission(block.timestamp / 1 days, verifier, finalAmount);
 
         emit RewardCalculated(verifier, finalAmount, calculationId);
+        emit RewardCalculatedV1(
+            calculationId,
+            verifier,
+            finalAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
 
         return (finalAmount, calculationId);
     }
@@ -390,6 +500,357 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         }
     }
 
+
+    // ============ Reward Distribution ============
+
+    /// @notice Configure the ERC20 token used for reward payouts.
+    function setRewardToken(address newToken)
+        external
+        onlyGovernanceOrAdmin
+    {
+        if (newToken == address(0)) revert RewardTokenNotConfigured();
+
+        address oldToken = address(rewardToken);
+        rewardToken = IERC20(newToken);
+
+        emit RewardTokenUpdated(oldToken, newToken);
+    }
+
+    /// @notice Fund the reward pool.
+    function fundRewardPool(uint256 amount)
+        external
+        nonReentrant
+    {
+        if (address(rewardToken) == address(0)) {
+            revert RewardTokenNotConfigured();
+        }
+        if (amount == 0) revert InvalidRewardAmount();
+
+        rewardToken.safeTransferFrom(msg.sender, address(this), amount);
+        totalFunded += amount;
+
+        emit RewardPoolFunded(
+            msg.sender,
+            amount,
+            rewardToken.balanceOf(address(this))
+        );
+    }
+
+    /// @notice Allocate a reward produced by a successful settlement.
+    /// @param immediate When true, the reward is transferred immediately.
+    ///                  Otherwise it becomes claimable by the recipient.
+    function allocateReward(
+        address recipient,
+        uint256 claimId,
+        bytes32 settlementId,
+        bytes32 calculationId,
+        uint256 amount,
+        bool immediate
+    )
+        external
+        onlyRole(DISTRIBUTOR_ROLE)
+        nonReentrant
+        whenNotPaused
+        returns (bytes32 distributionId)
+    {
+        distributionId = _allocateReward(
+            recipient,
+            claimId,
+            settlementId,
+            calculationId,
+            amount,
+            immediate
+        );
+    }
+
+    /// @notice Allocate multiple settlement rewards atomically.
+    function allocateRewardsBatch(
+        address[] calldata recipients,
+        uint256[] calldata claimIds,
+        bytes32[] calldata settlementIds,
+        bytes32[] calldata calculationIds_,
+        uint256[] calldata amounts,
+        bool[] calldata immediate
+    )
+        external
+        onlyRole(DISTRIBUTOR_ROLE)
+        nonReentrant
+        whenNotPaused
+    {
+        uint256 length = recipients.length;
+
+        if (
+            length == 0 ||
+            length != claimIds.length ||
+            length != settlementIds.length ||
+            length != calculationIds_.length ||
+            length != amounts.length ||
+            length != immediate.length
+        ) {
+            revert InvalidDistributionBatch();
+        }
+
+        if (length > MAX_DISTRIBUTION_BATCH_SIZE) {
+            revert DistributionBatchTooLarge(
+                length,
+                MAX_DISTRIBUTION_BATCH_SIZE
+            );
+        }
+
+        for (uint256 i = 0; i < length;) {
+            _allocateReward(
+                recipients[i],
+                claimIds[i],
+                settlementIds[i],
+                calculationIds_[i],
+                amounts[i],
+                immediate[i]
+            );
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        emit BatchRewardAllocationCompleted(length);
+    }
+
+    /// @notice Claim one previously allocated reward.
+    function claimReward(bytes32 distributionId)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        RewardDistribution storage distribution =
+            rewardDistributions[distributionId];
+
+        if (distribution.recipient != msg.sender) {
+            revert UnauthorizedRewardClaim();
+        }
+
+        if (distribution.status != DistributionStatus.CLAIMABLE) {
+            revert RewardNotClaimable();
+        }
+
+        uint256 amount = distribution.amount;
+
+        distribution.status = DistributionStatus.DISTRIBUTED;
+        claimableRewards[msg.sender] -= amount;
+        totalReserved -= amount;
+        totalDistributed += amount;
+
+        rewardToken.safeTransfer(msg.sender, amount);
+
+        emit RewardClaimed(msg.sender, distributionId, amount);
+        emit RewardDistributed(
+            msg.sender,
+            distribution.claimId,
+            distribution.settlementId,
+            amount
+        );
+    }
+
+    /// @notice Claim multiple allocated rewards with one token transfer.
+    function claimRewardsBatch(bytes32[] calldata distributionIds)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        uint256 length = distributionIds.length;
+
+        if (length == 0) revert InvalidDistributionBatch();
+        if (length > MAX_DISTRIBUTION_BATCH_SIZE) {
+            revert DistributionBatchTooLarge(
+                length,
+                MAX_DISTRIBUTION_BATCH_SIZE
+            );
+        }
+
+        uint256 totalAmount;
+
+        for (uint256 i = 0; i < length;) {
+            RewardDistribution storage distribution =
+                rewardDistributions[distributionIds[i]];
+
+            if (distribution.recipient != msg.sender) {
+                revert UnauthorizedRewardClaim();
+            }
+
+            if (distribution.status != DistributionStatus.CLAIMABLE) {
+                revert RewardNotClaimable();
+            }
+
+            distribution.status = DistributionStatus.DISTRIBUTED;
+            totalAmount += distribution.amount;
+
+            emit RewardClaimed(
+                msg.sender,
+                distributionIds[i],
+                distribution.amount
+            );
+
+            emit RewardDistributed(
+                msg.sender,
+                distribution.claimId,
+                distribution.settlementId,
+                distribution.amount
+            );
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        claimableRewards[msg.sender] -= totalAmount;
+        totalReserved -= totalAmount;
+        totalDistributed += totalAmount;
+
+        rewardToken.safeTransfer(msg.sender, totalAmount);
+
+        emit BatchRewardClaimCompleted(
+            msg.sender,
+            length,
+            totalAmount
+        );
+    }
+
+    function _allocateReward(
+        address recipient,
+        uint256 claimId,
+        bytes32 settlementId,
+        bytes32 calculationId,
+        uint256 amount,
+        bool immediate
+    )
+        internal
+        returns (bytes32 distributionId)
+    {
+        if (address(rewardToken) == address(0)) {
+            revert RewardTokenNotConfigured();
+        }
+        if (recipient == address(0)) revert InvalidRecipient();
+        if (amount == 0) revert InvalidRewardAmount();
+
+        distributionId = keccak256(
+            abi.encode(
+                recipient,
+                claimId,
+                settlementId,
+                calculationId
+            )
+        );
+
+        if (
+            processedSettlements[distributionId] ||
+            rewardDistributions[distributionId].status !=
+                DistributionStatus.NONE
+        ) {
+            revert DuplicateRewardSettlement();
+        }
+
+        uint256 currentBalance =
+            rewardToken.balanceOf(address(this));
+
+        if (currentBalance < totalReserved + amount) {
+            revert InsufficientRewardPool();
+        }
+
+        processedSettlements[distributionId] = true;
+        totalAllocated += amount;
+
+        DistributionStatus status = immediate
+            ? DistributionStatus.DISTRIBUTED
+            : DistributionStatus.CLAIMABLE;
+
+        rewardDistributions[distributionId] = RewardDistribution({
+            recipient: recipient,
+            claimId: claimId,
+            settlementId: settlementId,
+            calculationId: calculationId,
+            amount: amount,
+            timestamp: block.timestamp,
+            status: status,
+            distributionId: distributionId
+        });
+
+        recipientDistributionIds[recipient].push(distributionId);
+
+        if (immediate) {
+            totalDistributed += amount;
+            rewardToken.safeTransfer(recipient, amount);
+
+            emit RewardDistributed(
+                recipient,
+                claimId,
+                settlementId,
+                amount
+            );
+        } else {
+            claimableRewards[recipient] += amount;
+            totalReserved += amount;
+        }
+
+        emit RewardAllocated(
+            recipient,
+            claimId,
+            settlementId,
+            distributionId,
+            amount,
+            immediate
+        );
+    }
+
+    function getRecipientDistributionCount(address recipient)
+        external
+        view
+        returns (uint256)
+    {
+        return recipientDistributionIds[recipient].length;
+    }
+
+    function getRecipientDistributions(
+        address recipient,
+        uint256 offset,
+        uint256 limit
+    )
+        external
+        view
+        returns (RewardDistribution[] memory results)
+    {
+        bytes32[] storage ids = recipientDistributionIds[recipient];
+        uint256 total = ids.length;
+
+        if (offset >= total || limit == 0) {
+            return new RewardDistribution[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+
+        results = new RewardDistribution[](end - offset);
+
+        for (uint256 i = offset; i < end;) {
+            results[i - offset] = rewardDistributions[ids[i]];
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function availableRewardBalance()
+        external
+        view
+        returns (uint256)
+    {
+        if (address(rewardToken) == address(0)) return 0;
+
+        uint256 balance = rewardToken.balanceOf(address(this));
+
+        if (balance <= totalReserved) return 0;
+        return balance - totalReserved;
+    }
+
     // ============ Admin/Gov Setter Functions ============
 
     function setBaseRewardRate(uint256 _newRate) external onlyGovernanceOrAdmin {
@@ -501,13 +962,58 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable {
         emit ReputationOracleUpdated(oldOracle, _newOracle);
     }
 
+    /**
+     * @dev Set the treasury accounting contract (admin only)
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyRole(ADMIN_ROLE) {
+        require(_treasuryAccounting != address(0), "Invalid treasury address");
+        address oldTreasury = address(treasuryAccounting);
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(oldTreasury, _treasuryAccounting);
+    }
+
+    /**
+     * @dev Distribute a calculated reward to a verifier, recording it in treasury accounting
+     * @param recipient Address to receive the reward
+     * @param amount Amount of reward to distribute
+     */
+    function distributeReward(address recipient, uint256 amount) external onlyRole(DISTRIBUTOR_ROLE) whenNotPaused {
+        require(recipient != address(0), "Invalid recipient");
+        require(amount > 0, "Cannot distribute 0");
+        require(address(treasuryAccounting) != address(0), "Treasury not configured");
+        
+        // Record the reward distribution in treasury accounting
+        treasuryAccounting.recordRewardDistribution(recipient, amount);
+    }
+
     // ============ Pause ============
 
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(
+
+            msg.sender,
+
+            keccak256("MANUAL_PAUSE"),
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(
+
+            msg.sender,
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 }
