@@ -335,9 +335,7 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         calculationIds.push(calculationId);
         calculationCount++;
 
-        uint256 dayKey = block.timestamp / 1 days;
-        dailyEmission[dayKey] += finalAmount;
-        dailyVerifierRewards[dayKey][verifier] += finalAmount;
+        _recordDailyEmission(block.timestamp / 1 days, verifier, finalAmount);
 
         emit RewardCalculated(verifier, finalAmount, calculationId);
         emit RewardCalculatedV1(
@@ -349,6 +347,14 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         );
 
         return (finalAmount, calculationId);
+    }
+
+    /**
+     * @notice Track per-day aggregate and per-verifier emission totals.
+     */
+    function _recordDailyEmission(uint256 dayKey, address verifier, uint256 amount) internal {
+        dailyEmission[dayKey] += amount;
+        dailyVerifierRewards[dayKey][verifier] += amount;
     }
 
     function previewReward(
