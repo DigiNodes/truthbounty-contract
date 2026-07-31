@@ -1106,6 +1106,28 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         return votes[claimId][verifier];
     }
 
+    // ============ IVerificationSource (SC-005) ============
+
+    /// @notice Number of verifiers that voted on a claim.
+    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
+        return claimVoters[claimId].length;
+    }
+
+    /// @notice Address of the i-th verifier for a claim.
+    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
+        return claimVoters[claimId][index];
+    }
+
+    /// @notice Returns the minimal vote data required by VerificationAggregator.
+    function getVoteData(uint256 claimId, address verifier)
+        external
+        view
+        returns (bool voted, bool support, uint256 effectiveStake)
+    {
+        Vote storage v = votes[claimId][verifier];
+        return (v.voted, v.support, v.effectiveStake);
+    }
+
     function getVerifierStake(address verifier) external view returns (VerifierStake memory) {
         return verifierStakes[verifier];
     }
