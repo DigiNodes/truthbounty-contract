@@ -81,10 +81,14 @@ describe("Unified RBAC System", function () {
                 .to.be.revertedWithCustomError(decay, "AccessControlUnauthorizedAccount");
         });
 
-        it("Should allow ADMIN_ROLE to set decay rate", async function () {
+        it("Should allow ADMIN_ROLE to set decay config", async function () {
             const { decay, admin } = await loadFixture(deployRBACFixture);
-            await expect(decay.connect(admin).setDecayRatePerEpoch(200))
-                .to.emit(decay, "DecayParametersUpdated");
+            await expect(decay.connect(admin).setDecayConfig({
+                decayInterval: 7 * 86400,
+                decayPercentage: 200,
+                minimumReputation: 1,
+                enabled: true
+            })).to.emit(decay, "DecayConfigUpdated");
         });
     });
 
