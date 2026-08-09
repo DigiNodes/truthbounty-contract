@@ -1207,6 +1207,30 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         return (v.voted, v.support, v.effectiveStake);
     }
 
+    /// @notice Get the verification weight (effectiveStake) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationWeight(uint256 claimId, address verifier) external view returns (uint256) {
+        return votes[claimId][verifier].effectiveStake;
+    }
+
+    /// @notice Get the verification support (vote direction) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationSupport(uint256 claimId, address verifier) external view returns (bool) {
+        return votes[claimId][verifier].support;
+    }
+
+    /// @notice Get the verification window end timestamp for a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
+        return claims[claimId].createdAt + verificationWindow;
+    }
+
+    /// @notice Get the claim submitter address
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimSubmitter(uint256 claimId) external view returns (address) {
+        return claims[claimId].submitter;
+    }
+
     // ============ View Functions ============
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
