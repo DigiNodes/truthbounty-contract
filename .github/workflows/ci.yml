@@ -68,7 +68,7 @@ jobs:
       - name: Build contracts (forge build)
         run: forge build
       - name: Run Foundry tests (forge test)
-        run: forge test --no-match-path test/invariant --no-match-path test/fuzz
+        run: forge test --no-match-path "test/{invariant,fuzz}/**"
       - name: Run Hardhat tests
         run: npx hardhat test
 

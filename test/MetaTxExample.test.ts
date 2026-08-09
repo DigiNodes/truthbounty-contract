@@ -172,7 +172,7 @@ describe("MetaTxExample", function () {
   });
 
   describe("Replay Attack Prevention", function () {
-    it("should prevent replay of same signature (same nonce)", async function () {
+    it("should prevent replay of same signature after nonce advances", async function () {
       const to = recipient.address;
       const amount = ethers.parseEther("10");
       const nonce = await metaTxExample.getNonce(user.address);
@@ -210,10 +210,11 @@ describe("MetaTxExample", function () {
         metaTxExample.executeTransfer(user.address, to, amount, deadline, signature)
       ).to.emit(metaTxExample, "TransferExecuted");
 
-      // Second execution with same signature should fail
+      // Second execution with same signature should fail because the digest is
+      // recomputed with the advanced nonce, so the signature no longer matches
       await expect(
         metaTxExample.executeTransfer(user.address, to, amount, deadline, signature)
-      ).to.be.revertedWith("Signature already used");
+      ).to.be.revertedWith("Invalid signature");
     });
 
     it("should allow sequential transactions with different nonces", async function () {

@@ -63,8 +63,8 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
     function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
         address oldSettlement = settlementContract;
         settlementContract = _settlement;
-        // Automatically grant RESOLVER_ROLE to the settlement contract
-        _grantRole(RESOLVER_ROLE, _settlement);
+        // Schedule RESOLVER_ROLE grant to the settlement contract (timelocked)
+        _scheduleResolverRoleGrant(_settlement);
         emit SettlementContractUpdated(oldSettlement, _settlement);
     }
 
@@ -338,8 +338,11 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         require(claim.totalStakeAmount > 0,                                  "No votes cast");
 
         claim.settled = true;
-        bool passed = _determineOutcome(claim.totalStakedFor, claim.totalStakedAgainst);
-        (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(claimId, passed);
+
+        // Exact ties are resolved as a refund-only outcome (no rewards or slashing)
+        bool isTie = claim.totalStakedFor == claim.totalStakedAgainst && claim.totalStakedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalStakedFor, claim.totalStakedAgainst);
+        (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(claimId, passed, isTie);
 
         emit ClaimSettled(claimId, passed, claim.totalStakedFor, claim.totalStakedAgainst, rewardAmount, slashedAmount);
     }
@@ -353,6 +356,23 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         require(!v.rewardClaimed,  "Rewards already claimed");
 
         SettlementResult storage settlement = settlementResults[claimId];
+
+        // Exact ties refund the full stake to every voter
+        bool isTie = settlement.totalRewards == 0 &&
+            settlement.totalSlashed == 0 &&
+            settlement.winnerStake == 0 &&
+            settlement.loserStake == 0;
+
+        if (isTie) {
+            require(!v.stakeReturned, "Stake already returned");
+            v.rewardClaimed = true;
+            v.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= v.stakeAmount;
+            require(bountyToken.transfer(msg.sender, v.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, v.stakeAmount);
+            return;
+        }
+
         require(settlement.winnerStake > 0,              "No winners");
         require(v.support == settlement.passed,          "Not a winner");
 
@@ -380,6 +400,23 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         require(!v.stakeReturned, "Stake already returned");
 
         SettlementResult storage settlement = settlementResults[claimId];
+
+        // Exact ties refund the full stake to every voter
+        bool isTie = settlement.totalRewards == 0 &&
+            settlement.totalSlashed == 0 &&
+            settlement.winnerStake == 0 &&
+            settlement.loserStake == 0;
+
+        if (isTie) {
+            require(!v.stakeReturned, "Stake already returned");
+            v.rewardClaimed = true;
+            v.stakeReturned = true;
+            verifierStakes[msg.sender].activeStakes -= v.stakeAmount;
+            require(bountyToken.transfer(msg.sender, v.stakeAmount), "Stake transfer failed");
+            emit StakeWithdrawn(msg.sender, v.stakeAmount);
+            return;
+        }
+
         bool isWinner = (v.support == settlement.passed);
         require(!isWinner, "Winners should use claimSettlementRewards");
 
@@ -411,8 +448,20 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         return (stakedFor * 100) / total >= settlementThresholdPercent;
     }
 
-    function _calculateSettlement(uint256 claimId, bool passed) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
+    function _calculateSettlement(uint256 claimId, bool passed, bool isTie) internal returns (uint256 rewardAmount, uint256 slashedAmount) {
         Claim storage claim = claims[claimId];
+
+        if (isTie) {
+            settlementResults[claimId] = SettlementResult({
+                passed:       false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerStake:  0,
+                loserStake:   0
+            });
+            return (0, 0);
+        }
+
         uint256 winnerStake = passed ? claim.totalStakedFor   : claim.totalStakedAgainst;
         uint256 loserStake  = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 

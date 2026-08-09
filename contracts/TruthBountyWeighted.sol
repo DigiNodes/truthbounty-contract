@@ -402,7 +402,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Check for last-minute reputation boosts using grace period
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         
         // Validate reputation staleness if expected reputation is provided
         if (expectedReputation > 0) {
@@ -744,13 +745,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxDrift
     ) internal {
-        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
-        
-        // If no previous snapshot, this is the first preview - allow it
-        if (lastSnapshot.timestamp == 0) {
-            return;
-        }
-        
         // Check if reputation has changed more than the allowed drift
         if (maxDrift > 0) {
             // Calculate percentage change: (|current - expected| / expected) * 10000
@@ -763,8 +757,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
         
         // Check if reputation is too stale (timestamp-based)
-        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
-        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        uint256 lastSnapshotTime = reputationSnapshots[user].timestamp;
+        if (lastSnapshotTime == 0) {
+            // No prior snapshot - fall back to the oracle's last update time
+            try reputationOracle.getLastReputationUpdate(user) returns (uint256 lastUpdateTime) {
+                lastSnapshotTime = lastUpdateTime;
+            } catch {
+                lastSnapshotTime = 0;
+            }
+        }
+        if (lastSnapshotTime > 0) {
+            require(block.timestamp - lastSnapshotTime <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        }
         
         // Emit validation event
         emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);
@@ -1031,7 +1035,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function setMinStakeAmount(uint256 newAmount) external onlyGovernanceOrAdmin {
         require(newAmount > 0, "Invalid amount");
-        require(newAmount <= bountyToken.totalSupply(), "Min stake exceeds token supply");
+        require(newAmount < bountyToken.totalSupply(), "Min stake exceeds token supply");
         
         uint256 oldAmount = minStakeAmount;
         minStakeAmount = newAmount;

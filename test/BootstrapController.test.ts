@@ -16,10 +16,121 @@ describe("BootstrapController", function () {
     return { admin, deployer, user, controller };
   }
 
+  // Deploys real modules and registers all 11 standard modules so that
+  // bootstrap() can pass _validateAllModulesRegistered() and _validateDependencies().
+  async function deployAllModulesFixture() {
+    const [admin, deployer] = await ethers.getSigners();
+
+    const BootstrapController = await ethers.getContractFactory("BootstrapController");
+    const controller = await BootstrapController.deploy(admin.address, ethers.ZeroAddress);
+    await controller.waitForDeployment();
+    await controller.grantRole(await controller.DEPLOYER_ROLE(), deployer.address);
+
+    const GovernanceController = await ethers.getContractFactory("GovernanceController");
+    const governance = await GovernanceController.deploy(admin.address);
+    await governance.waitForDeployment();
+
+    const TruthBountyToken = await ethers.getContractFactory("TruthBountyToken");
+    const token = await TruthBountyToken.deploy(admin.address);
+    await token.waitForDeployment();
+
+    const MockReputationOracle = await ethers.getContractFactory("MockReputationOracle");
+    const oracle = await MockReputationOracle.deploy();
+    await oracle.waitForDeployment();
+
+    const Staking = await ethers.getContractFactory("Staking");
+    const staking = await Staking.deploy(await token.getAddress(), 86400, admin.address);
+    await staking.waitForDeployment();
+
+    const WeightedStaking = await ethers.getContractFactory("contracts/WeightedStaking.sol:WeightedStaking");
+    const weightedStaking = await WeightedStaking.deploy(
+      await oracle.getAddress(),
+      admin.address,
+      await governance.getAddress()
+    );
+    await weightedStaking.waitForDeployment();
+
+    const TruthBountyWeighted = await ethers.getContractFactory("TruthBountyWeighted");
+    const bounty = await TruthBountyWeighted.deploy(
+      await token.getAddress(),
+      await oracle.getAddress(),
+      admin.address,
+      await governance.getAddress()
+    );
+    await bounty.waitForDeployment();
+
+    const TruthBountyClaims = await ethers.getContractFactory("TruthBountyClaims");
+    const claims = await TruthBountyClaims.deploy(await token.getAddress(), admin.address);
+    await claims.waitForDeployment();
+
+    const ReputationDecay = await ethers.getContractFactory("ReputationDecay");
+    const decay = await ReputationDecay.deploy(admin.address);
+    await decay.waitForDeployment();
+
+    const ReputationSnapshot = await ethers.getContractFactory("ReputationSnapshot");
+    const snapshot = await ReputationSnapshot.deploy(admin.address);
+    await snapshot.waitForDeployment();
+
+    const ReputationReceiver = await ethers.getContractFactory("ReputationReceiver");
+    const receiver = await ReputationReceiver.deploy(admin.address, await oracle.getAddress());
+    await receiver.waitForDeployment();
+
+    const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
+    const slashing = await VerifierSlashing.deploy(
+      await staking.getAddress(),
+      admin.address,
+      await governance.getAddress()
+    );
+    await slashing.waitForDeployment();
+
+    await controller.connect(deployer).registerModules(
+      [
+        MODULE_GOVERNANCE,
+        MODULE_TOKEN,
+        MODULE_ORACLE,
+        MODULE_STAKING,
+        MODULE_REPUTATION_DECAY,
+        MODULE_REPUTATION_SNAPSHOT,
+        MODULE_WEIGHTED_STAKING,
+        MODULE_BOUNTY,
+        MODULE_VERIFIER_SLASHING,
+        MODULE_CLAIMS,
+        MODULE_REPUTATION_RECEIVER,
+      ],
+      [
+        await governance.getAddress(),
+        await token.getAddress(),
+        await oracle.getAddress(),
+        await staking.getAddress(),
+        await decay.getAddress(),
+        await snapshot.getAddress(),
+        await weightedStaking.getAddress(),
+        await bounty.getAddress(),
+        await slashing.getAddress(),
+        await claims.getAddress(),
+        await receiver.getAddress(),
+      ],
+      [
+        "Governance", "Token", "Oracle", "Staking", "RepDecay",
+        "RepSnapshot", "WeightedStaking", "Bounty", "Slashing",
+        "Claims", "RepReceiver"
+      ]
+    );
+
+    return { controller, admin, deployer };
+  }
+
   const MODULE_GOVERNANCE = ethers.id("GOVERNANCE");
   const MODULE_TOKEN = ethers.id("TOKEN");
   const MODULE_ORACLE = ethers.id("REPUTATION_ORACLE");
   const MODULE_BOUNTY = ethers.id("TRUTH_BOUNTY");
+  const MODULE_STAKING = ethers.id("STAKING");
+  const MODULE_REPUTATION_DECAY = ethers.id("REPUTATION_DECAY");
+  const MODULE_REPUTATION_SNAPSHOT = ethers.id("REPUTATION_SNAPSHOT");
+  const MODULE_WEIGHTED_STAKING = ethers.id("WEIGHTED_STAKING");
+  const MODULE_VERIFIER_SLASHING = ethers.id("VERIFIER_SLASHING");
+  const MODULE_CLAIMS = ethers.id("CLAIMS");
+  const MODULE_REPUTATION_RECEIVER = ethers.id("REPUTATION_RECEIVER");
 
   describe("Deployment", function () {
     it("should set correct admin roles", async function () {
@@ -229,18 +340,7 @@ describe("BootstrapController", function () {
     });
 
     it("should complete bootstrap with all modules registered", async function () {
-      const { controller, deployer } = await loadFixture(deployFixture);
-
-      await controller.connect(deployer).registerModules(
-        [MODULE_GOVERNANCE, MODULE_TOKEN, MODULE_ORACLE, MODULE_BOUNTY],
-        [
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-        ],
-        ["Governance", "Token", "Oracle", "Bounty"]
-      );
+      const { controller, deployer } = await loadFixture(deployAllModulesFixture);
 
       await expect(controller.connect(deployer).bootstrap())
         .to.emit(controller, "ProtocolBootstrapStarted");
@@ -253,18 +353,7 @@ describe("BootstrapController", function () {
     });
 
     it("should mark modules as initialized after bootstrap", async function () {
-      const { controller, deployer } = await loadFixture(deployFixture);
-
-      await controller.connect(deployer).registerModules(
-        [MODULE_GOVERNANCE, MODULE_TOKEN, MODULE_ORACLE, MODULE_BOUNTY],
-        [
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-        ],
-        ["Governance", "Token", "Oracle", "Bounty"]
-      );
+      const { controller, deployer } = await loadFixture(deployAllModulesFixture);
 
       await controller.connect(deployer).bootstrap();
 
@@ -273,18 +362,7 @@ describe("BootstrapController", function () {
     });
 
     it("should reject duplicate bootstrap", async function () {
-      const { controller, deployer } = await loadFixture(deployFixture);
-
-      await controller.connect(deployer).registerModules(
-        [MODULE_GOVERNANCE, MODULE_TOKEN, MODULE_ORACLE, MODULE_BOUNTY],
-        [
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-        ],
-        ["Governance", "Token", "Oracle", "Bounty"]
-      );
+      const { controller, deployer } = await loadFixture(deployAllModulesFixture);
 
       await controller.connect(deployer).bootstrap();
 
@@ -294,41 +372,7 @@ describe("BootstrapController", function () {
     });
 
     it("should be fully initialized after successful bootstrap", async function () {
-      const { controller, deployer } = await loadFixture(deployFixture);
-
-      await controller.connect(deployer).registerModules(
-        [
-          ethers.id("GOVERNANCE"),
-          ethers.id("TOKEN"),
-          ethers.id("REPUTATION_ORACLE"),
-          ethers.id("STAKING"),
-          ethers.id("REPUTATION_DECAY"),
-          ethers.id("REPUTATION_SNAPSHOT"),
-          ethers.id("WEIGHTED_STAKING"),
-          ethers.id("TRUTH_BOUNTY"),
-          ethers.id("VERIFIER_SLASHING"),
-          ethers.id("CLAIMS"),
-          ethers.id("REPUTATION_RECEIVER"),
-        ],
-        [
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-          ethers.Wallet.createRandom().address,
-        ],
-        [
-          "Governance", "Token", "Oracle", "Staking", "RepDecay",
-          "RepSnapshot", "WeightedStaking", "Bounty", "Slashing",
-          "Claims", "RepReceiver"
-        ]
-      );
+      const { controller, deployer } = await loadFixture(deployAllModulesFixture);
 
       await controller.connect(deployer).bootstrap();
 
