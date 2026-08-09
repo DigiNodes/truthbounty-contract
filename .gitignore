@@ -16,6 +16,11 @@ node_modules
 # Gas reporter files
 .gas-reports.json
 
+# Foundry files
+/out
+/foundry.lock
+lcov.info
+
 # Hide CI workflow and automation scripts from contributors
 .github/workflows/ci.yml
 create_issues_contract.sh

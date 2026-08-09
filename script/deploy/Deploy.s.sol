@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import "forge-std/Script.sol";
 import "forge-std/console2.sol";
 import "./DeployBase.s.sol";
-import "../../contracts/TruthBountyToken.sol";
+import "../../contracts/TruthBounty.sol";
 import "../../contracts/MockReputationOracle.sol";
 import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/staking.sol";
@@ -75,6 +75,6 @@ contract Deploy is DeployBase {
     }
 
     function run() external {
-        run(vm.envOr("DEPLOY_ENV", string("local")));
+        this.run(vm.envOr("DEPLOY_ENV", string("local")));
     }
 }

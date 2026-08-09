@@ -2,16 +2,16 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "../contracts/TruthBountyWeighted.sol";
-import "../contracts/TruthBountyToken.sol";
-import "../contracts/MockReputationOracle.sol";
+import "../../contracts/TruthBountyWeighted.sol";
+import "../../contracts/TruthBounty.sol";
+import "../../contracts/MockReputationOracle.sol";
 
 /**
- * @title ReputationGracePeriodInvariant
- * @notice Invariant tests for reputation grace period mechanism
- * @dev Verifies that grace period prevents last-minute reputation boosts
+ * @title ReputationGracePeriodScenarioTests
+ * @notice Scenario tests for the reputation grace period mechanism
+ * @dev Verifies that the grace period prevents last-minute reputation boosts
  */
-contract ReputationGracePeriodInvariant is Test {
+contract ReputationGracePeriodScenarioTests is Test {
     TruthBountyWeighted public truthBounty;
     TruthBountyToken public bountyToken;
     MockReputationOracle public reputationOracle;
@@ -51,14 +51,14 @@ contract ReputationGracePeriodInvariant is Test {
         bountyToken.transfer(verifier2, 10_000 * 10 ** 18);
 
         // Setup verifiers
-        vm.startPrank(verifier1);
+        vm.startPrank(verifier1, verifier1);
         bountyToken.approve(address(truthBounty), 10_000 * 10 ** 18);
-        truthBounty.deposit(1_000 * 10 ** 18);
+        truthBounty.stake(1_000 * 10 ** 18);
         vm.stopPrank();
 
-        vm.startPrank(verifier2);
+        vm.startPrank(verifier2, verifier2);
         bountyToken.approve(address(truthBounty), 10_000 * 10 ** 18);
-        truthBounty.deposit(1_000 * 10 ** 18);
+        truthBounty.stake(1_000 * 10 ** 18);
         vm.stopPrank();
 
         // Set initial reputation
@@ -69,10 +69,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Votes with updated reputation within grace period should use default score
+     * @notice Votes with updated reputation within grace period should use default score
      * @dev If reputation is updated within grace period, the vote's reputation score must be default
      */
-    function invariant_GracePeriodEnforced() public {
+    function test_GracePeriodEnforced() public {
         // Create claim
         uint256 claimId = _createClaim();
 
@@ -103,10 +103,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Votes outside grace period should use actual reputation
+     * @notice Votes outside grace period should use actual reputation
      * @dev If reputation is updated outside grace period, the vote should use the actual score
      */
-    function invariant_OutsideGracePeriodUsesActualReputation() public {
+    function test_OutsideGracePeriodUsesActualReputation() public {
         // Set old reputation
         vm.prank(owner);
         reputationOracle.setReputationScore(verifier1, 2 * 10 ** 18);
@@ -128,10 +128,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Grace period window is symmetric around claim creation
+     * @notice Grace period window is symmetric around claim creation
      * @dev Updates before and after claim creation within grace period should be restricted
      */
-    function invariant_GracePeriodSymmetry() public {
+    function test_GracePeriodSymmetry() public {
         uint256 gracePeriod = truthBounty.reputationUpdateGracePeriod();
 
         // Scenario 1: Update before claim, within grace period
@@ -165,10 +165,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Grace period prevents weighted stake manipulation
+     * @notice Grace period prevents weighted stake manipulation
      * @dev Effective stake should not be artificially boosted by last-minute reputation updates
      */
-    function invariant_EffectiveStakeNotManipulated() public {
+    function test_EffectiveStakeNotManipulated() public {
         // Create baseline claim with verifier1 at default reputation
         uint256 claimId1 = _createClaim();
         vm.prank(verifier1);
@@ -193,10 +193,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Grace period window bounds are respected
+     * @notice Grace period window bounds are respected
      * @dev Grace period parameter must stay within min/max bounds
      */
-    function invariant_GracePeriodBoundsEnforced() public view {
+    function test_GracePeriodBoundsEnforced() public view {
         uint256 gracePeriod = truthBounty.reputationUpdateGracePeriod();
 
         // Check minimum bound
@@ -209,10 +209,10 @@ contract ReputationGracePeriodInvariant is Test {
     }
 
     /**
-     * @notice Invariant: Multiple voters voting on same claim should have independent grace period calculations
+     * @notice Multiple voters voting on same claim should have independent grace period calculations
      * @dev Each voter's reputation update timing should be evaluated independently
      */
-    function invariant_IndependentVoterGracePeriods() public {
+    function test_IndependentVoterGracePeriods() public {
         uint256 gracePeriod = truthBounty.reputationUpdateGracePeriod();
 
         // Verifier1: Update old reputation

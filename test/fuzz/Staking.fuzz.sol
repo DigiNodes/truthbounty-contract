@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/staking.sol";
+import "../../contracts/staking.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract StakingFuzzTest is Test {
@@ -29,10 +29,14 @@ contract StakingFuzzTest is Test {
         stakingToken = new MockERC20("TruthBounty Token", "TBT", 18);
         
         // Deploy staking contract
-        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION);
+        staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION, owner);
         
         // Set slashing contract
         staking.setSlashingContract(slashingContract);
+        
+        // Advance past the resolver role timelock and apply the grant
+        vm.warp(block.timestamp + staking.RESOLVER_ROLE_CHANGE_DELAY());
+        staking.executeResolverRoleGrant(slashingContract);
         
         // Mint tokens to test users
         stakingToken.mint(user1, 1000000e18);
@@ -267,7 +271,7 @@ contract StakingFuzzTest is Test {
         uint256 finalContractBalance = stakingToken.balanceOf(address(staking));
         
         assertEq(finalStaked, initialStaked - slashAmount, "Staked amount should decrease by slash amount");
-        assertEq(finalContractBalance, initialContractBalance - slashAmount, "Contract balance should decrease");
+        assertEq(finalContractBalance, initialContractBalance, "Slashed tokens remain locked in the contract");
     }
     
     /// @dev Fuzz test for invalid operations
@@ -276,23 +280,22 @@ contract StakingFuzzTest is Test {
         uint256 unstakeAmount
     ) public {
         // Test staking 0 tokens
-        vm.assume(stakeAmount == 0);
         vm.prank(user1);
         vm.expectRevert("Cannot stake 0");
-        staking.stake(stakeAmount);
-        
+        staking.stake(0);
+
         // Test unstaking more than staked
-        vm.assume(stakeAmount > 0 && stakeAmount <= 10000e18);
-        vm.assume(unstakeAmount > stakeAmount);
-        
+        uint256 boundedStake = bound(stakeAmount, 1, 10000e18);
+        uint256 tooMuch = bound(unstakeAmount, boundedStake + 1, boundedStake + 10000e18);
+
         vm.prank(user1);
-        stakingToken.approve(address(staking), stakeAmount);
+        stakingToken.approve(address(staking), boundedStake);
         vm.prank(user1);
-        staking.stake(stakeAmount);
-        
+        staking.stake(boundedStake);
+
         vm.prank(user1);
         vm.expectRevert("Insufficient staked balance");
-        staking.unstake(unstakeAmount);
+        staking.unstake(tooMuch);
     }
     
     /// @dev Fuzz test for lock duration updates
