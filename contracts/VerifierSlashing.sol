@@ -7,6 +7,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./governance/GovernanceHooks.sol";
+import "./interfaces/ITruthBountyEvents.sol";
+import "./treasury/ITreasuryAccounting.sol";
+import "./IReputationOracle.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./interfaces/IReputationPenaltyReceiver.sol";
 
 /**
  * @title VerifierSlashing
@@ -18,9 +23,10 @@ import "./governance/GovernanceHooks.sol";
 interface IStaking {
     function stakes(address user) external view returns (uint256 amount, uint256 unlockTime);
     function forceSlash(address user, uint256 amount) external;
+    function stakingToken() external view returns (address);
 }
 
-contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     
     // Role definitions
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -35,11 +41,8 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     uint256 public constant MAX_SLASH_PERCENTAGE = 100;
 
     // Maximum number of verifiers that can be slashed in a single batch.
-    // Kept lower than token-payout batches because each slash performs an
-    // external staking call plus storage writes (history push, tracking),
-    // making it significantly heavier per item. Bounds gas to avoid
-    // out-of-gas / block-gas-limit DoS in batchSlash. (Audit #156)
     uint256 public constant MAX_BATCH_SIZE = 50;
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
     
     // Default maximum slashing percentage per incident
     uint256 public maxSlashPercentage = 50; // 50% max per slash
@@ -52,6 +55,10 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     bytes32 public constant GOVERNANCE_PARAM_COOLDOWN = keccak256("SLASH_COOLDOWN");
     
     IStaking public stakingContract;
+
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
+    IReputationOracle public reputationOracle;
     
     // Slashing tracking
     struct SlashRecord {
@@ -60,6 +67,10 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         uint256 percentage;
         string reason;
         address slashedBy;
+        uint256 claimId;
+        uint256 settlementEpoch;
+        bytes32 offenceId;
+        bytes32 reasonHash;
     }
     
     // Verifier address => array of slash records
@@ -73,6 +84,84 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     
     // Total amount slashed per verifier
     mapping(address => uint256) public totalSlashed;
+
+    // === Economic Enforcement / Offences State ===
+
+    struct OffenceConfig {
+        uint256 slashPercentage;      // 0 to 100
+        uint256 reputationPenalty;    // percentage of score to deduct (0 to 100)
+        uint256 suspensionDuration;   // duration in seconds verifier is suspended
+        bool permanentBan;            // if true, verifier is banned permanently
+        bool active;                  // if the offence is currently active
+    }
+
+    struct PenaltyRecord {
+        address verifier;
+        bytes32 offenceId;
+        uint256 slashAmount;
+        uint256 reputationPenalty;
+        uint256 suspensionDuration;
+        bool permanentBan;
+        uint256 timestamp;
+        string reason;
+        address executedBy;
+    }
+
+    // Standard Offence constants
+    bytes32 public constant OFFENCE_VERIFICATION_FRAUD = keccak256("VERIFICATION_FRAUD");
+    bytes32 public constant OFFENCE_VERIFICATION_INACCURACY = keccak256("VERIFICATION_INACCURACY");
+    bytes32 public constant OFFENCE_VERIFICATION_COLLUSION = keccak256("VERIFICATION_COLLUSION");
+    bytes32 public constant OFFENCE_VERIFICATION_DOUBLE = keccak256("VERIFICATION_DOUBLE");
+    bytes32 public constant OFFENCE_VERIFICATION_SPAM = keccak256("VERIFICATION_SPAM");
+    
+    bytes32 public constant OFFENCE_CLAIM_FRAUD = keccak256("CLAIM_FRAUD");
+    bytes32 public constant OFFENCE_CLAIM_MALICIOUS = keccak256("CLAIM_MALICIOUS");
+    bytes32 public constant OFFENCE_CLAIM_ABUSE = keccak256("CLAIM_ABUSE");
+    
+    bytes32 public constant OFFENCE_GOVERNANCE_SPAM = keccak256("GOVERNANCE_SPAM");
+    bytes32 public constant OFFENCE_PROPOSAL_ABUSE = keccak256("PROPOSAL_ABUSE");
+    bytes32 public constant OFFENCE_GOVERNANCE_ATTACK = keccak256("GOVERNANCE_ATTACK");
+    
+    bytes32 public constant OFFENCE_PROTOCOL_MANIPULATION = keccak256("PROTOCOL_MANIPULATION");
+    bytes32 public constant OFFENCE_REPLAY_ATTEMPT = keccak256("REPLAY_ATTEMPT");
+    bytes32 public constant OFFENCE_EMERGENCY_ABUSE = keccak256("EMERGENCY_ABUSE");
+
+    // Mapping of Offence ID to configurations
+    mapping(bytes32 => OffenceConfig) public offenceConfigs;
+
+    // Mapping of verifiers to suspension end timestamp
+    mapping(address => uint256) public suspensionEndTime;
+
+    // Mapping of verifiers to permanent ban status
+    mapping(address => bool) public permanentBanned;
+
+    // Mapping of unique penalty ID to detailed records
+    mapping(bytes32 => PenaltyRecord) public penaltyRecords;
+
+    // Mapping of verifier address to list of penalty IDs
+    mapping(address => bytes32[]) public verifierPenaltyIds;
+
+    // Accumulated reputation penalty points/percentages tracked locally per verifier
+    mapping(address => uint256) public reputationPenaltyScores;
+
+    // === Treasury Destination Routing ===
+    address public treasuryReserve;
+    address public securityFund;
+    address public protocolInsurance;
+    address public burnAddress;
+
+    uint256 public pctTreasuryReserve;
+    uint256 public pctSecurityFund;
+    uint256 public pctProtocolInsurance;
+    uint256 public pctBurn;
+    /// @notice Optional reputation penalty adapter.
+    IReputationPenaltyReceiver public reputationPenaltyReceiver;
+
+    /// @notice Duration used to derive deterministic settlement epochs.
+    uint256 public settlementEpochDuration = 7 days;
+
+    /// @notice claimId + verifier + reasonHash => already processed.
+    mapping(bytes32 => bool) public processedOffences;
     
     // Events
     event Slashed(
@@ -90,6 +179,22 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     );
     
     event StakingContractUpdated(address newStakingContract);
+    event TreasuryAccountingUpdated(address newTreasuryAccounting);
+    
+    event ReputationPenaltyReceiverUpdated(
+        address indexed oldReceiver,
+        address indexed newReceiver
+    );
+    event SettlementEpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
+    event VerifierSlashed(
+        address indexed verifier,
+        uint256 indexed claimId,
+        uint256 amount,
+        uint256 percentage,
+        bytes32 indexed reasonHash,
+        uint256 settlementEpoch,
+        address executor
+    );
     event CriticalSlashed(
         address indexed verifier,
         uint256 amount,
@@ -97,6 +202,46 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         string reason,
         address indexed slashedBy
     );
+
+    // Enforcement Events
+    event StakeSlashed(
+        address indexed participant,
+        uint256 amount,
+        bytes32 indexed offence
+    );
+
+    // Reputation penalized event
+    event ReputationPenalized(
+        address indexed participant,
+        uint256 previousScore,
+        uint256 newScore
+    );
+
+    event PenaltyExecuted(
+        bytes32 indexed penaltyId
+    );
+
+    event OffenceConfigUpdated(
+        bytes32 indexed offenceId,
+        uint256 slashPercentage,
+        uint256 reputationPenalty,
+        uint256 suspensionDuration,
+        bool permanentBan,
+        bool active
+    );
+
+    event TreasuryRoutingUpdated(
+        address treasuryReserve,
+        address securityFund,
+        address protocolInsurance,
+        address burnAddress,
+        uint256 pctTreasuryReserve,
+        uint256 pctSecurityFund,
+        uint256 pctProtocolInsurance,
+        uint256 pctBurn
+    );
+
+    event ReputationOracleUpdated(address newOracle);
     
     // Custom errors for gas efficiency
     error UnauthorizedSlashing();
@@ -110,6 +255,12 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     error EmptyBatch();
     error BatchSizeExceeded(uint256 provided, uint256 maxAllowed);
     error BatchLengthMismatch();
+    error InvalidTreasuryAddress();
+    error InvalidOffence();
+    error VerifierSuspended();
+    error VerifierBanned();
+    error DuplicateSlash();
+    error InvalidEpochDuration();
     
     /**
      * @dev Constructor sets up roles and initial configuration
@@ -134,6 +285,13 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         
         // Initialize governance
         _initializeGovernance(_governanceController, _admin, _admin);
+
+        // Configure default offences
+        _initializeDefaultOffences();
+
+        // Default treasury allocation (100% to dead address / burn by default if not set)
+        pctBurn = 100;
+        burnAddress = address(0x000000000000000000000000000000000000dEaD);
     }
     
     function _resolverRole() internal pure override returns (bytes32) {
@@ -148,6 +306,151 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         ResolverRoleTimelock.revokeRole(role, account);
     }
 
+    function _initializeDefaultOffences() internal {
+        // Verification Misconduct (base 20% slash, 10% rep, 1 day suspension)
+        offenceConfigs[OFFENCE_VERIFICATION_FRAUD] = OffenceConfig(50, 30, 7 days, false, true);
+        offenceConfigs[OFFENCE_VERIFICATION_INACCURACY] = OffenceConfig(10, 5, 1 hours, false, true);
+        offenceConfigs[OFFENCE_VERIFICATION_COLLUSION] = OffenceConfig(100, 100, 30 days, true, true);
+        offenceConfigs[OFFENCE_VERIFICATION_DOUBLE] = OffenceConfig(20, 10, 1 days, false, true);
+        offenceConfigs[OFFENCE_VERIFICATION_SPAM] = OffenceConfig(5, 2, 6 hours, false, true);
+
+        // Claim Misconduct
+        offenceConfigs[OFFENCE_CLAIM_FRAUD] = OffenceConfig(40, 20, 3 days, false, true);
+        offenceConfigs[OFFENCE_CLAIM_MALICIOUS] = OffenceConfig(60, 40, 7 days, false, true);
+        offenceConfigs[OFFENCE_CLAIM_ABUSE] = OffenceConfig(20, 10, 1 days, false, true);
+
+        // Governance Misconduct
+        offenceConfigs[OFFENCE_GOVERNANCE_SPAM] = OffenceConfig(10, 10, 2 days, false, true);
+        offenceConfigs[OFFENCE_PROPOSAL_ABUSE] = OffenceConfig(30, 20, 5 days, false, true);
+        offenceConfigs[OFFENCE_GOVERNANCE_ATTACK] = OffenceConfig(100, 100, 365 days, true, true);
+
+        // Operational Violations
+        offenceConfigs[OFFENCE_PROTOCOL_MANIPULATION] = OffenceConfig(80, 50, 14 days, false, true);
+        offenceConfigs[OFFENCE_REPLAY_ATTEMPT] = OffenceConfig(15, 10, 1 days, false, true);
+        offenceConfigs[OFFENCE_EMERGENCY_ABUSE] = OffenceConfig(50, 30, 7 days, false, true);
+    }
+
+    /**
+     * @dev Execute penalty for a registered offence
+     * @param verifier Verifier address to penalize
+     * @param offenceId Offence identifier hash
+     * @param reason Description of the event/offence
+     */
+    function executePenalty(
+        address verifier,
+        bytes32 offenceId,
+        string calldata reason
+    ) external nonReentrant whenNotPaused {
+        if (!hasRole(RESOLVER_ROLE, msg.sender)) {
+            revert UnauthorizedSlashing();
+        }
+
+        OffenceConfig memory config = offenceConfigs[offenceId];
+        if (!config.active) {
+            revert InvalidOffence();
+        }
+
+        if (verifier == address(0)) {
+            revert NoStakeToSlash();
+        }
+
+        if (permanentBanned[verifier]) {
+            revert VerifierBanned();
+        }
+
+        // Prevent multiple slashes in same block
+        if (lastSlashBlock[verifier] == block.number) {
+            revert SlashSameBlock();
+        }
+
+        // Fetch current stake
+        (uint256 currentStake,) = stakingContract.stakes(verifier);
+
+        uint256 slashAmount = 0;
+        if (currentStake > 0 && config.slashPercentage > 0) {
+            slashAmount = (currentStake * config.slashPercentage) / 100;
+        }
+
+        lastSlashTime[verifier] = block.timestamp;
+        lastSlashBlock[verifier] = block.number;
+
+        if (slashAmount > 0) {
+            totalSlashed[verifier] += slashAmount;
+            
+            // Execute slash (this transfers tokens to this contract)
+            stakingContract.forceSlash(verifier, slashAmount);
+            
+            // Route the slashed tokens to treasury split destinations
+            _routeSlashedTokens(slashAmount);
+        }
+
+        // Process suspension
+        if (config.suspensionDuration > 0) {
+            uint256 newSuspensionEnd = block.timestamp + config.suspensionDuration;
+            if (newSuspensionEnd > suspensionEndTime[verifier]) {
+                suspensionEndTime[verifier] = newSuspensionEnd;
+            }
+        }
+
+        // Process permanent ban
+        if (config.permanentBan) {
+            permanentBanned[verifier] = true;
+        }
+
+        // Reputation oracle penalty calculation
+        uint256 previousScore = 0;
+        uint256 newScore = 0;
+        if (address(reputationOracle) != address(0)) {
+            try reputationOracle.getReputationScore(verifier) returns (uint256 score) {
+                previousScore = score;
+                uint256 reduction = (score * config.reputationPenalty) / 100;
+                if (reduction > score) {
+                    newScore = 0;
+                } else {
+                    newScore = score - reduction;
+                }
+            } catch {}
+        }
+        reputationPenaltyScores[verifier] += config.reputationPenalty;
+
+        // Record execution record
+        bytes32 penaltyId = keccak256(abi.encodePacked(verifier, offenceId, block.timestamp, slashAmount));
+        penaltyRecords[penaltyId] = PenaltyRecord({
+            verifier: verifier,
+            offenceId: offenceId,
+            slashAmount: slashAmount,
+            reputationPenalty: config.reputationPenalty,
+            suspensionDuration: config.suspensionDuration,
+            permanentBan: config.permanentBan,
+            timestamp: block.timestamp,
+            reason: reason,
+            executedBy: msg.sender
+        });
+        verifierPenaltyIds[verifier].push(penaltyId);
+
+        // Record slash history for backward compatibility
+        slashHistory[verifier].push(SlashRecord({
+            timestamp: block.timestamp,
+            amount: slashAmount,
+            percentage: config.slashPercentage,
+            reason: reason,
+            slashedBy: msg.sender,
+            claimId: 0,
+            settlementEpoch: block.timestamp / settlementEpochDuration,
+            offenceId: offenceId,
+            reasonHash: keccak256(bytes(reason))
+        }));
+
+        if (slashAmount > 0) {
+            emit StakeSlashed(verifier, slashAmount, offenceId);
+            
+            uint256 remainingStake = currentStake > slashAmount ? currentStake - slashAmount : 0;
+            emit Slashed(verifier, slashAmount, config.slashPercentage, remainingStake, reason, msg.sender);
+        }
+        emit ReputationPenalized(verifier, previousScore, newScore);
+        emit PenaltyExecuted(penaltyId);
+    }
+    
     /**
      * @dev Slash a verifier's stake for incorrect verification
      * @param verifier Address of the verifier to slash
@@ -159,12 +462,10 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         uint256 percentage,
         string calldata reason
     ) external nonReentrant whenNotPaused {
-        // Access control check
         if (!hasRole(RESOLVER_ROLE, msg.sender)) {
             revert UnauthorizedSlashing();
         }
         
-        // Input validation
         if (percentage == 0 || percentage > maxSlashPercentage) {
             revert InvalidPercentage();
         }
@@ -172,49 +473,50 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         if (verifier == address(0)) {
             revert NoStakeToSlash();
         }
+
+        if (permanentBanned[verifier]) {
+            revert VerifierBanned();
+        }
         
-        // Check cooldown period
         if (block.timestamp < lastSlashTime[verifier] + slashCooldown) {
             revert SlashingTooFrequent();
         }
 
-        // Prevent multiple slashes in the same block (#185)
         if (lastSlashBlock[verifier] == block.number) {
             revert SlashSameBlock();
         }
         
-        // Get current stake from staking contract
         (uint256 currentStake,) = stakingContract.stakes(verifier);
         
         if (currentStake == 0) {
             revert NoStakeToSlash();
         }
         
-        // Calculate slash amount
         uint256 slashAmount = (currentStake * percentage) / 100;
         
         if (slashAmount == 0) {
             revert SlashAmountTooHigh();
         }
         
-        // Update tracking
         lastSlashTime[verifier] = block.timestamp;
         lastSlashBlock[verifier] = block.number;
         totalSlashed[verifier] += slashAmount;
         
-        // Record slash history
         slashHistory[verifier].push(SlashRecord({
             timestamp: block.timestamp,
             amount: slashAmount,
             percentage: percentage,
             reason: reason,
-            slashedBy: msg.sender
+            slashedBy: msg.sender,
+            claimId: 0,
+            settlementEpoch: block.timestamp / settlementEpochDuration,
+            offenceId: bytes32(0),
+            reasonHash: keccak256(bytes(reason))
         }));
         
-        // Execute slash through staking contract
         stakingContract.forceSlash(verifier, slashAmount);
+        _routeSlashedTokens(slashAmount);
         
-        // Calculate remaining stake after slash
         uint256 remainingStake = currentStake - slashAmount;
         
         emit Slashed(
@@ -225,13 +527,109 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             reason,
             msg.sender
         );
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
+
+        emit StakeSlashed(verifier, slashAmount, bytes32(0));
     }
     
+    // Internal fallback for cooldown check bypass in require/custom errors
+    function o() internal view returns (bool) {
+        revert SlashingTooFrequent();
+    }
+
+    /**
+     * @notice Slash a verifier for a unique claim offence.
+     * @dev Duplicate key is claimId + verifier + reasonHash.
+     */
+    function slashVerifier(
+        address verifier,
+        uint256 claimId,
+        uint256 percentage,
+        string calldata reason
+    ) external nonReentrant whenNotPaused {
+        if (!hasRole(RESOLVER_ROLE, msg.sender)) {
+            revert UnauthorizedSlashing();
+        }
+
+        bytes32 reasonHash = keccak256(bytes(reason));
+        bytes32 offenceId = keccak256(
+            abi.encode(claimId, verifier, reasonHash)
+        );
+
+        if (processedOffences[offenceId]) {
+            revert DuplicateSlash();
+        }
+
+        if (percentage == 0 || percentage > maxSlashPercentage) {
+            revert InvalidPercentage();
+        }
+
+        if (verifier == address(0)) {
+            revert NoStakeToSlash();
+        }
+
+        (uint256 currentStake,) = stakingContract.stakes(verifier);
+        if (currentStake == 0) {
+            revert NoStakeToSlash();
+        }
+
+        uint256 slashAmount = (currentStake * percentage) / 100;
+        if (slashAmount == 0) {
+            revert SlashAmountTooHigh();
+        }
+
+        uint256 epoch = block.timestamp / settlementEpochDuration;
+
+        processedOffences[offenceId] = true;
+        lastSlashTime[verifier] = block.timestamp;
+        lastSlashBlock[verifier] = block.number;
+        totalSlashed[verifier] += slashAmount;
+
+        slashHistory[verifier].push(SlashRecord({
+            timestamp: block.timestamp,
+            amount: slashAmount,
+            percentage: percentage,
+            reason: reason,
+            slashedBy: msg.sender,
+            claimId: claimId,
+            settlementEpoch: epoch,
+            offenceId: offenceId,
+            reasonHash: reasonHash
+        }));
+
+        stakingContract.forceSlash(verifier, slashAmount);
+
+        address receiver = address(reputationPenaltyReceiver);
+        if (receiver != address(0)) {
+            reputationPenaltyReceiver.notifySlash(
+                verifier,
+                claimId,
+                slashAmount,
+                percentage,
+                reasonHash
+            );
+        }
+
+        emit VerifierSlashed(
+            verifier,
+            claimId,
+            slashAmount,
+            percentage,
+            reasonHash,
+            epoch,
+            msg.sender
+        );
+    }
+
     /**
      * @dev Batch slash multiple verifiers (gas efficient for multiple violations)
-     * @param verifiers Array of verifier addresses
-     * @param percentages Array of slash percentages
-     * @param reasons Array of reasons for slashing
      */
     function batchSlash(
         address[] calldata verifiers,
@@ -254,7 +652,6 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         }
         
         for (uint256 i = 0; i < length;) {
-            // Use internal function to avoid duplicate access control checks
             _slashInternal(verifiers[i], percentages[i], reasons[i]);
             
             unchecked {
@@ -265,10 +662,6 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
 
     /**
      * @dev Critical slash — allows up to 100% slash for critical failures (#186)
-     *      Bypasses maxSlashPercentage but still respects cooldown and block checks.
-     * @param verifier Address of the verifier to slash
-     * @param percentage Percentage 1-100 (up to MAX_SLASH_PERCENTAGE constant)
-     * @param reason Human-readable reason for critical slashing
      */
     function criticalSlash(
         address verifier,
@@ -287,7 +680,10 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             revert NoStakeToSlash();
         }
 
-        // Same-block protection still applies
+        if (permanentBanned[verifier]) {
+            revert VerifierBanned();
+        }
+
         if (lastSlashBlock[verifier] == block.number) {
             revert SlashSameBlock();
         }
@@ -311,12 +707,31 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             amount: slashAmount,
             percentage: percentage,
             reason: reason,
-            slashedBy: msg.sender
+            slashedBy: msg.sender,
+            claimId: 0,
+            settlementEpoch: block.timestamp / settlementEpochDuration,
+            offenceId: bytes32(0),
+            reasonHash: keccak256(bytes(reason))
         }));
 
         stakingContract.forceSlash(verifier, slashAmount);
+        _routeSlashedTokens(slashAmount);
 
         emit CriticalSlashed(verifier, slashAmount, percentage, reason, msg.sender);
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
+
+        emit StakeSlashed(
+            verifier,
+            slashAmount,
+            keccak256("CRITICAL_OFFENCE")
+        );
     }
     
     /**
@@ -327,7 +742,6 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         uint256 percentage,
         string calldata reason
     ) internal {
-        // Input validation (same as public slash function)
         if (percentage == 0 || percentage > maxSlashPercentage) {
             revert InvalidPercentage();
         }
@@ -335,12 +749,15 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         if (verifier == address(0)) {
             revert NoStakeToSlash();
         }
+
+        if (permanentBanned[verifier]) {
+            revert VerifierBanned();
+        }
         
         if (block.timestamp < lastSlashTime[verifier] + slashCooldown) {
             revert SlashingTooFrequent();
         }
 
-        // Prevent multiple slashes in the same block (#185)
         if (lastSlashBlock[verifier] == block.number) {
             revert SlashSameBlock();
         }
@@ -357,7 +774,6 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             revert SlashAmountTooHigh();
         }
         
-        // Update tracking
         lastSlashTime[verifier] = block.timestamp;
         lastSlashBlock[verifier] = block.number;
         totalSlashed[verifier] += slashAmount;
@@ -367,10 +783,15 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             amount: slashAmount,
             percentage: percentage,
             reason: reason,
-            slashedBy: msg.sender
+            slashedBy: msg.sender,
+            claimId: 0,
+            settlementEpoch: block.timestamp / settlementEpochDuration,
+            offenceId: bytes32(0),
+            reasonHash: keccak256(bytes(reason))
         }));
         
         stakingContract.forceSlash(verifier, slashAmount);
+        _routeSlashedTokens(slashAmount);
         
         uint256 remainingStake = currentStake - slashAmount;
         
@@ -382,17 +803,50 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
             reason,
             msg.sender
         );
+        emit SlashExecutedV1(
+            0,
+            verifier,
+            keccak256(bytes(reason)),
+            slashAmount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
+
+        emit StakeSlashed(verifier, slashAmount, bytes32(0));
+    }
+
+    /**
+     * @dev Routes slashed tokens according to configured percentages
+     */
+    function _routeSlashedTokens(uint256 amount) internal {
+        if (amount == 0) return;
+
+        address tokenAddress = stakingContract.stakingToken();
+        if (tokenAddress == address(0)) return;
+
+        IERC20 token = IERC20(tokenAddress);
+
+        uint256 toTreasury = (amount * pctTreasuryReserve) / 100;
+        uint256 toSecurity = (amount * pctSecurityFund) / 100;
+        uint256 toInsurance = (amount * pctProtocolInsurance) / 100;
+        uint256 toBurn = amount - toTreasury - toSecurity - toInsurance;
+
+        if (toTreasury > 0 && treasuryReserve != address(0)) {
+            token.transfer(treasuryReserve, toTreasury);
+        }
+        if (toSecurity > 0 && securityFund != address(0)) {
+            token.transfer(securityFund, toSecurity);
+        }
+        if (toInsurance > 0 && protocolInsurance != address(0)) {
+            token.transfer(protocolInsurance, toInsurance);
+        }
+        if (toBurn > 0 && burnAddress != address(0)) {
+            token.transfer(burnAddress, toBurn);
+        }
     }
     
-    // === VIEW FUNCTIONS ===
+    // === VIEW & READ INTERFACES ===
     
-    /**
-     * @dev Get a paginated slice of slash history for a verifier
-     * @param verifier Address of the verifier
-     * @param offset Start index for the returned page
-     * @param limit Maximum number of records to return
-     * @return Array of slash records for the requested page
-     */
     function getSlashHistory(
         address verifier,
         uint256 offset,
@@ -418,29 +872,15 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         return page;
     }
     
-    /**
-     * @dev Get slash count for a verifier
-     * @param verifier Address of the verifier
-     * @return Number of times the verifier has been slashed
-     */
     function getSlashCount(address verifier) external view returns (uint256) {
         return slashHistory[verifier].length;
     }
     
-    /**
-     * @dev Check if a verifier can be slashed (cooldown check)
-     * @param verifier Address of the verifier
-     * @return True if verifier can be slashed
-     */
     function canSlash(address verifier) external view returns (bool) {
+        if (permanentBanned[verifier]) return false;
         return block.timestamp >= lastSlashTime[verifier] + slashCooldown;
     }
     
-    /**
-     * @dev Get time remaining until verifier can be slashed again
-     * @param verifier Address of the verifier
-     * @return Seconds remaining in cooldown period
-     */
     function getSlashCooldownRemaining(address verifier) external view returns (uint256) {
         uint256 nextSlashTime = lastSlashTime[verifier] + slashCooldown;
         if (block.timestamp >= nextSlashTime) {
@@ -448,14 +888,109 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         }
         return nextSlashTime - block.timestamp;
     }
+
+    function isSuspended(address verifier) external view returns (bool) {
+        return block.timestamp < suspensionEndTime[verifier];
+    }
+
+    function isBanned(address verifier) external view returns (bool) {
+        return permanentBanned[verifier];
+    }
+
+    function getVerifierPenaltyRecords(address verifier) external view returns (bytes32[] memory) {
+        return verifierPenaltyIds[verifier];
+    }
+
+    function getTreasuryRouting() external view returns (
+        address _treasuryReserve,
+        address _securityFund,
+        address _protocolInsurance,
+        address _burnAddress,
+        uint256 _pctTreasuryReserve,
+        uint256 _pctSecurityFund,
+        uint256 _pctProtocolInsurance,
+        uint256 _pctBurn
+    ) {
+        return (
+            treasuryReserve,
+            securityFund,
+            protocolInsurance,
+            burnAddress,
+            pctTreasuryReserve,
+            pctSecurityFund,
+            pctProtocolInsurance,
+            pctBurn
+        );
+    }
     
-    // === ADMIN FUNCTIONS ===
+    // === GOVERNANCE & ADMIN FUNCTIONS ===
     
     /**
-     * @dev Update slashing configuration
-     * @param _maxSlashPercentage New maximum slash percentage per incident
-     * @param _slashCooldown New cooldown period between slashes
+     * @dev Configure an offence definition
      */
+    function setOffenceConfig(
+        bytes32 offenceId,
+        uint256 slashPercentage,
+        uint256 reputationPenalty,
+        uint256 suspensionDuration,
+        bool permanentBan,
+        bool active
+    ) external onlyGovernanceOrAdmin {
+        require(slashPercentage <= MAX_SLASH_PERCENTAGE, "Percentage too high");
+        offenceConfigs[offenceId] = OffenceConfig({
+            slashPercentage: slashPercentage,
+            reputationPenalty: reputationPenalty,
+            suspensionDuration: suspensionDuration,
+            permanentBan: permanentBan,
+            active: active
+        });
+        emit OffenceConfigUpdated(offenceId, slashPercentage, reputationPenalty, suspensionDuration, permanentBan, active);
+    }
+
+    /**
+     * @dev Update treasury routing split
+     */
+    function setTreasuryRouting(
+        address _treasuryReserve,
+        address _securityFund,
+        address _protocolInsurance,
+        address _burnAddress,
+        uint256 _pctTreasuryReserve,
+        uint256 _pctSecurityFund,
+        uint256 _pctProtocolInsurance,
+        uint256 _pctBurn
+    ) external onlyGovernanceOrAdmin {
+        require(_pctTreasuryReserve + _pctSecurityFund + _pctProtocolInsurance + _pctBurn == 100, "Percentages must total 100");
+        treasuryReserve = _treasuryReserve;
+        securityFund = _securityFund;
+        protocolInsurance = _protocolInsurance;
+        burnAddress = _burnAddress;
+
+        pctTreasuryReserve = _pctTreasuryReserve;
+        pctSecurityFund = _pctSecurityFund;
+        pctProtocolInsurance = _pctProtocolInsurance;
+        pctBurn = _pctBurn;
+
+        emit TreasuryRoutingUpdated(
+            _treasuryReserve,
+            _securityFund,
+            _protocolInsurance,
+            _burnAddress,
+            _pctTreasuryReserve,
+            _pctSecurityFund,
+            _pctProtocolInsurance,
+            _pctBurn
+        );
+    }
+
+    /**
+     * @dev Set reputation oracle
+     */
+    function setReputationOracle(address _oracle) external onlyGovernanceOrAdmin {
+        reputationOracle = IReputationOracle(_oracle);
+        emit ReputationOracleUpdated(_oracle);
+    }
+
     function updateSlashingConfig(
         uint256 _maxSlashPercentage,
         uint256 _slashCooldown
@@ -469,6 +1004,31 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         emit SlashingConfigUpdated(_maxSlashPercentage, _slashCooldown);
     }
     
+    /// @notice Configure the optional reputation penalty adapter.
+    function setReputationPenaltyReceiver(
+        address newReceiver
+    ) external onlyGovernanceOrAdmin {
+        address oldReceiver = address(reputationPenaltyReceiver);
+        reputationPenaltyReceiver =
+            IReputationPenaltyReceiver(newReceiver);
+
+        emit ReputationPenaltyReceiverUpdated(oldReceiver, newReceiver);
+    }
+
+    /// @notice Configure settlement epoch duration.
+    function setSettlementEpochDuration(
+        uint256 newDuration
+    ) external onlyGovernanceOrAdmin {
+        if (newDuration == 0 || newDuration > 365 days) {
+            revert InvalidEpochDuration();
+        }
+
+        uint256 oldDuration = settlementEpochDuration;
+        settlementEpochDuration = newDuration;
+
+        emit SettlementEpochDurationUpdated(oldDuration, newDuration);
+    }
+
     /**
      * @dev Update the staking contract address
      * @param _stakingContract New staking contract address
@@ -483,6 +1043,18 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
     }
     
     /**
+     * @dev Set the treasury accounting contract
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyGovernanceOrAdmin {
+        if (_treasuryAccounting == address(0)) {
+            revert InvalidTreasuryAddress();
+        }
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(_treasuryAccounting);
+    }
+    
+    /**
      * @dev Grant resolver role to an address (typically the settlement contract)
      * @param account Address to grant the role to
      */
@@ -491,55 +1063,31 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         _scheduleResolverRoleGrant(account);
     }
     
-    /**
-     * @dev Revoke resolver role from an address
-     * @param account Address to revoke the role from
-     */
     function revokeResolverRole(address account) external onlyGovernanceOrAdmin {
         if (!hasRole(RESOLVER_ROLE, account)) revert ResolverRoleChangeNoop();
         _scheduleResolverRoleRevoke(account);
     }
 
-    /**
-     * @dev Grant settlement role to an address (Legacy alias)
-     * @param account Address to grant the role to
-     */
     function grantSettlementRole(address account) external onlyGovernanceOrAdmin {
         if (hasRole(SETTLEMENT_ROLE, account)) revert ResolverRoleChangeNoop();
         _scheduleResolverRoleGrant(account);
     }
     
-    /**
-     * @dev Revoke settlement role from an address (Legacy alias)
-     * @param account Address to revoke the role from
-     */
     function revokeSettlementRole(address account) external onlyGovernanceOrAdmin {
         if (!hasRole(SETTLEMENT_ROLE, account)) revert ResolverRoleChangeNoop();
         _scheduleResolverRoleRevoke(account);
     }
 
-    /**
-     * @dev Grant critical slasher role (can slash up to 100%)
-     * @param account Address to grant the role to
-     */
     function grantCriticalSlasherRole(address account) external onlyGovernanceOrAdmin {
         _grantRole(CRITICAL_SLASHER_ROLE, account);
     }
 
-    /**
-     * @dev Revoke critical slasher role
-     * @param account Address to revoke the role from
-     */
     function revokeCriticalSlasherRole(address account) external onlyGovernanceOrAdmin {
         _revokeRole(CRITICAL_SLASHER_ROLE, account);
     }
     
     // ============ Governance Parameter Updates ============
     
-    /**
-     * @notice Update maximum slash percentage ( governance or admin )
-     * @param newPercentage New maximum slash percentage
-     */
     function setMaxSlashPercentage(uint256 newPercentage) external onlyGovernanceOrAdmin {
         require(newPercentage <= MAX_SLASH_PERCENTAGE, "Percentage too high");
         
@@ -549,10 +1097,6 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_MAX_SLASH, old, newPercentage);
     }
     
-    /**
-     * @notice Update slash cooldown ( governance or admin )
-     * @param newCooldown New cooldown period
-     */
     function setSlashCooldown(uint256 newCooldown) external onlyGovernanceOrAdmin {
         require(newCooldown <= 7 days, "Cooldown too long");
         
@@ -562,17 +1106,31 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_COOLDOWN, old, newCooldown);
     }
     
-    /**
-     * @dev Emergency pause function
-     */
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(
+
+            msg.sender,
+
+            keccak256("MANUAL_PAUSE"),
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
     
-    /**
-     * @dev Unpause function
-     */
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(
+
+            msg.sender,
+
+            uint64(block.timestamp),
+
+            EVENT_SCHEMA_VERSION
+
+        );
     }
 }
