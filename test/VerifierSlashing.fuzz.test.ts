@@ -16,6 +16,10 @@ describe("VerifierSlashing Fuzz and Invariants", function () {
       owner.address
     );
 
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     const Slashing = await ethers.getContractFactory("VerifierSlashing");
     const slashing = await Slashing.deploy(
       await staking.getAddress(),
@@ -49,6 +53,7 @@ describe("VerifierSlashing Fuzz and Invariants", function () {
       token,
       staking,
       slashing,
+      treasuryAccounting,
       owner,
       admin,
       settlement,

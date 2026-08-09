@@ -31,6 +31,11 @@ describe("Reentrancy Protection Tests", function () {
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address);
 
+    // Wire treasury accounting mock
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     // Mint tokens to users
     const stakeAmount = ethers.parseEther("1000");
     await token.transfer(user1.address, stakeAmount);
@@ -91,6 +96,11 @@ describe("Reentrancy Protection Tests", function () {
     // Deploy staking
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address);
+
+    // Wire treasury accounting mock
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
 
     // Deploy slashing
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
