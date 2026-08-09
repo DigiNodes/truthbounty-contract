@@ -1100,6 +1100,25 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         emit ReputationUpdateGracePeriodUpdated(newGracePeriod);
     }
 
+    // ============ IVerificationSource (SC-005) ============
+
+    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
+        return claimVoters[claimId].length;
+    }
+
+    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
+        return claimVoters[claimId][index];
+    }
+
+    function getVoteData(uint256 claimId, address verifier)
+        external
+        view
+        returns (bool voted, bool support, uint256 effectiveStake)
+    {
+        Vote storage v = votes[claimId][verifier];
+        return (v.voted, v.support, v.effectiveStake);
+    }
+
     // ============ View Functions ============
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
