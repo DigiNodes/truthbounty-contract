@@ -15,6 +15,11 @@ describe("VerifierSlashing", function () {
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address); // 1 day lock
 
+    // Deploy treasury accounting mock and wire it into Staking
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
     const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
@@ -45,6 +50,7 @@ describe("VerifierSlashing", function () {
       token,
       staking,
       slashing,
+      treasuryAccounting,
       owner,
       admin,
       settlement,

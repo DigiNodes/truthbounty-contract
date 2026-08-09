@@ -83,6 +83,14 @@ describe("BootstrapController", function () {
     );
     await slashing.waitForDeployment();
 
+    const InsuranceFund = await ethers.getContractFactory("InsuranceFund");
+    const insurance = await InsuranceFund.deploy(
+      await token.getAddress(),
+      admin.address,
+      await governance.getAddress()
+    );
+    await insurance.waitForDeployment();
+
     await controller.connect(deployer).registerModules(
       [
         MODULE_GOVERNANCE,
@@ -96,6 +104,7 @@ describe("BootstrapController", function () {
         MODULE_VERIFIER_SLASHING,
         MODULE_CLAIMS,
         MODULE_REPUTATION_RECEIVER,
+        MODULE_INSURANCE,
       ],
       [
         await governance.getAddress(),
@@ -109,11 +118,12 @@ describe("BootstrapController", function () {
         await slashing.getAddress(),
         await claims.getAddress(),
         await receiver.getAddress(),
+        await insurance.getAddress(),
       ],
       [
         "Governance", "Token", "Oracle", "Staking", "RepDecay",
         "RepSnapshot", "WeightedStaking", "Bounty", "Slashing",
-        "Claims", "RepReceiver"
+        "Claims", "RepReceiver", "Insurance"
       ]
     );
 
@@ -131,6 +141,7 @@ describe("BootstrapController", function () {
   const MODULE_VERIFIER_SLASHING = ethers.id("VERIFIER_SLASHING");
   const MODULE_CLAIMS = ethers.id("CLAIMS");
   const MODULE_REPUTATION_RECEIVER = ethers.id("REPUTATION_RECEIVER");
+  const MODULE_INSURANCE = ethers.id("INSURANCE");
 
   describe("Deployment", function () {
     it("should set correct admin roles", async function () {

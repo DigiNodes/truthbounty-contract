@@ -136,7 +136,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.updateReputationScore(verifier, score);
         
         uint256 multiplier = reputationEngine.calculateReputationMultiplier(verifier);
-        uint256 expectedMultiplier = score / BASE_MULTIPLIER;
+        uint256 expectedMultiplier = score;
         
         // Cap at 10x
         if (expectedMultiplier > 10e18) {
@@ -371,7 +371,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.updateReputationScore(verifier, MIN_REPUTATION_SCORE);
         
         uint256 multiplier = reputationEngine.calculateReputationMultiplier(verifier);
-        assertEq(multiplier, MIN_REPUTATION_SCORE / BASE_MULTIPLIER);
+        assertEq(multiplier, MIN_REPUTATION_SCORE);
     }
 
     function testFuzz_LargeStakeAmount(address verifier, uint256 stakeAmount) public {

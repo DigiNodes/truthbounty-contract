@@ -407,9 +407,7 @@ describe("InsuranceFund", function () {
       const { fund, token, admin } = await loadFixture(deployFixture);
 
       const amount = ethers.parseEther("100");
-      for (let i = 0; i < 3; i++) {
-        await token.connect(admin).approve(await fund.getAddress(), amount);
-      }
+      await token.connect(admin).approve(await fund.getAddress(), amount * 3n);
       for (let i = 0; i < 3; i++) {
         await fund.connect(admin).fundReserve(i, amount);
       }
