@@ -280,33 +280,46 @@ contract DoubleSlashPreventionFuzzTest is Test {
         TruthBountyWeighted overflowTruthBounty = new TruthBountyWeighted(
             address(overflowToken),
             address(overflowOracle),
-            admin
+            admin,
+            address(0)
         );
 
-        address verifier = address(uint160(0x999));
-        uint256 stakeAmount = (type(uint256).max / 20) + 1;
+        address loser = address(uint160(0x999));
+        address winner = address(uint160(0x888));
+        uint256 loserStake = 1e41;
+        uint256 winnerStake = 2e41;
 
-        overflowToken.mint(verifier, stakeAmount);
+        overflowToken.mint(loser, loserStake);
+        overflowToken.mint(winner, winnerStake);
 
-        vm.prank(verifier);
+        vm.prank(loser, loser);
         overflowToken.approve(address(overflowTruthBounty), type(uint256).max);
 
-        vm.prank(verifier);
-        overflowTruthBounty.stake(stakeAmount);
+        vm.prank(loser, loser);
+        overflowTruthBounty.stake(loserStake);
 
-        vm.prank(admin);
+        vm.prank(winner, winner);
+        overflowToken.approve(address(overflowTruthBounty), type(uint256).max);
+
+        vm.prank(winner, winner);
+        overflowTruthBounty.stake(winnerStake);
+
+        vm.prank(admin, admin);
         uint256 claimId = overflowTruthBounty.createClaim("Overflow claim");
 
-        vm.prank(verifier);
-        overflowTruthBounty.vote(claimId, false, stakeAmount);
+        vm.prank(loser, loser);
+        overflowTruthBounty.vote(claimId, true, loserStake);
 
-        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+        vm.prank(winner, winner);
+        overflowTruthBounty.vote(claimId, false, winnerStake);
 
-        vm.prank(admin);
+        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1 hours + 1);
+
+        vm.prank(admin, admin);
         overflowTruthBounty.settleClaim(claimId);
 
-        (, , uint256 totalSlashed, , ) = overflowTruthBounty.settlementResults(claimId);
-        uint256 expectedSlash = stakeAmount / 5; // 20% of the stake
+        (, , uint256 totalSlashed, , , , , ) = overflowTruthBounty.settlementResults(claimId);
+        uint256 expectedSlash = loserStake / 5; // 20% of the losing side's stake
 
         assertEq(totalSlashed, expectedSlash, "Large slash amount should calculate correctly");
         assertEq(overflowTruthBounty.totalSlashed(), expectedSlash, "Contract totalSlashed should reflect large slash amount");

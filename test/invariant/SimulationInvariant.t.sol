@@ -26,7 +26,9 @@ contract SimulationInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         sim = new EconomicSimulation(admin);
-        sim.grantRole(sim.SIMULATOR_ROLE(), simulator);
+        bytes32 simulatorRole = sim.SIMULATOR_ROLE();
+        vm.prank(admin);
+        sim.grantRole(simulatorRole, simulator);
 
         defaultGovParams = IEconomicSimulation.GovernanceParams({
             slashPercent: 20,

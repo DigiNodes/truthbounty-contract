@@ -227,13 +227,9 @@ contract WeightedStakingFuzzTest is Test {
     }
     
     /// @dev Fuzz test for zero stake amount rejection
-    function testFuzz_ZeroStakeAmount_Reverts(
-        uint256 stakeAmount
-    ) public {
-        vm.assume(stakeAmount == 0);
-        
+    function testFuzz_ZeroStakeAmount_Reverts() public {
         vm.expectRevert(WeightedStaking.ZeroStakeAmount.selector);
-        weightedStaking.calculateWeightedStake(user1, stakeAmount);
+        weightedStaking.calculateWeightedStake(user1, 0);
     }
     
     /// @dev Fuzz test for preview weight function

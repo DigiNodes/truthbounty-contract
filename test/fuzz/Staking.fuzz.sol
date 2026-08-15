@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../../contracts/staking.sol";
+import "../../contracts/mocks/MockTreasuryAccounting.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract StakingFuzzTest is Test {
@@ -30,6 +31,9 @@ contract StakingFuzzTest is Test {
         
         // Deploy staking contract
         staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION, owner);
+        
+        // Configure treasury accounting
+        staking.setTreasuryAccounting(address(new MockTreasuryAccounting()));
         
         // Set slashing contract
         staking.setSlashingContract(slashingContract);
@@ -271,7 +275,8 @@ contract StakingFuzzTest is Test {
         uint256 finalContractBalance = stakingToken.balanceOf(address(staking));
         
         assertEq(finalStaked, initialStaked - slashAmount, "Staked amount should decrease by slash amount");
-        assertEq(finalContractBalance, initialContractBalance, "Slashed tokens remain locked in the contract");
+        assertEq(finalContractBalance, initialContractBalance - slashAmount, "Slashed tokens transferred to slashing contract");
+        assertEq(stakingToken.balanceOf(slashingContract), slashAmount, "Slashing contract received slashed tokens");
     }
     
     /// @dev Fuzz test for invalid operations

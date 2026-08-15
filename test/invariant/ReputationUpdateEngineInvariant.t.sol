@@ -27,6 +27,7 @@ contract ReputationUpdateEngineInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         engine = new ReputationUpdateEngine(admin, address(0));
+        vm.prank(admin);
         engine.grantUpdateRole(updater);
 
         // Add some verifiers
