@@ -48,6 +48,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -79,6 +81,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -97,7 +101,7 @@ jobs:
         with:
           version: latest
       - name: Run Foundry fuzz tests
-        run: forge test --match-path test/fuzz
+        run: forge test --match-path "fuzz"
 
   invariant-tests:
     name: Invariant Tests
@@ -106,6 +110,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -124,7 +130,7 @@ jobs:
         with:
           version: latest
       - name: Run Foundry invariant tests
-        run: forge test --match-path test/invariant
+        run: forge test --match-path "Invariant"
 
   gas-check:
     name: Gas Check
@@ -133,6 +139,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

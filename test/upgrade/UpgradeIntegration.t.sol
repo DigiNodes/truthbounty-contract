@@ -23,7 +23,11 @@ contract UpgradeIntegrationTest is Test {
         validator = new StorageCompatibilityValidator();
         controller = new UpgradeController(admin, address(registry), address(validator));
 
+        vm.startPrank(admin);
+        controller.grantRole(controller.DEFAULT_ADMIN_ROLE(), address(this));
+        registry.grantRole(registry.REGISTRY_ROLE(), address(this));
         controller.setCurrentImplementation(target, impl1);
+        vm.stopPrank();
     }
 
     function test_FullUpgradeLifecycle() public {
@@ -42,7 +46,7 @@ contract UpgradeIntegrationTest is Test {
         assertEq(controller.currentImplementation(target), impl2);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.EXECUTED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.EXECUTED));
         assertEq(proposal.newImplementation, impl2);
     }
 
@@ -94,7 +98,7 @@ contract UpgradeIntegrationTest is Test {
         controller.cancelUpgrade(proposalId);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.CANCELLED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.CANCELLED));
     }
 
     function test_MultipleUpgrades_SameContract() public {
@@ -118,7 +122,7 @@ contract UpgradeIntegrationTest is Test {
             bytes32(0)
         );
         controller.scheduleUpgrade(p2);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         controller.executeUpgrade(p2);
 
         assertEq(controller.currentImplementation(target), impl3);
@@ -210,7 +214,7 @@ contract UpgradeIntegrationTest is Test {
             bytes32(0)
         );
         controller.scheduleUpgrade(rollbackProposal);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         controller.executeUpgrade(rollbackProposal);
 
         assertEq(controller.currentImplementation(target), impl1);

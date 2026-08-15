@@ -6,6 +6,7 @@ import "./Staking.fuzz.sol";
 import "../../contracts/WeightedStaking.sol";
 import "../../contracts/staking.sol";
 import "../../contracts/MockReputationOracle.sol";
+import "../../contracts/mocks/MockTreasuryAccounting.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
@@ -37,6 +38,7 @@ contract IntegrationFuzzTest is Test {
         // Deploy contracts
         weightedStaking = new WeightedStaking(address(mockOracle), owner, address(0));
         staking = new Staking(address(stakingToken), INITIAL_LOCK_DURATION, owner);
+        staking.setTreasuryAccounting(address(new MockTreasuryAccounting()));
         staking.setSlashingContract(slashingContract);
 
         // Advance past the resolver role timelock and apply the grant

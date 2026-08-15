@@ -1222,7 +1222,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /// @notice Get the verification window end timestamp for a claim
     /// @dev Compatibility method for VerificationAggregation.sol interface
     function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
-        return claims[claimId].createdAt + verificationWindow;
+        return claims[claimId].createdAt + verificationWindowDuration;
     }
 
     /// @notice Get the claim submitter address

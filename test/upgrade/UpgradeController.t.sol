@@ -56,10 +56,12 @@ contract UpgradeControllerTest is Test {
         controller = new UpgradeController(admin, address(registry), address(validator));
 
         vm.startPrank(admin);
+        controller.grantRole(controller.DEFAULT_ADMIN_ROLE(), address(this));
         controller.grantRole(controller.UPGRADE_ROLE(), upgradeRole);
         controller.grantRole(controller.EMERGENCY_UPGRADE_ROLE(), emergencyRole);
         vm.stopPrank();
 
+        vm.prank(admin);
         controller.setCurrentImplementation(target, currentImpl);
     }
 
@@ -76,8 +78,8 @@ contract UpgradeControllerTest is Test {
         assertEq(proposal.targetContract, target);
         assertEq(proposal.newImplementation, newImpl);
         assertEq(proposal.version, "1.0.0");
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.PROPOSED);
-        assertEq(proposal.upgradeType, IUpgradeController.UpgradeType.STANDARD);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.PROPOSED));
+        assertEq(uint256(proposal.upgradeType), uint256(IUpgradeController.UpgradeType.STANDARD));
     }
 
     function test_ProposeUpgrade_Emergency() public {
@@ -91,12 +93,12 @@ contract UpgradeControllerTest is Test {
         );
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.upgradeType, IUpgradeController.UpgradeType.EMERGENCY);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.PROPOSED);
+        assertEq(uint256(proposal.upgradeType), uint256(IUpgradeController.UpgradeType.EMERGENCY));
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.PROPOSED));
     }
 
     function test_ProposeUpgrade_RevertsWithZeroTarget() public {
-        vm.expectRevert(IUpgradeController.InvalidTarget.selector);
+        vm.expectRevert(abi.encodeWithSelector(UpgradeController.InvalidTarget.selector, address(0)));
         controller.proposeUpgrade(
             address(0),
             newImpl,
@@ -107,7 +109,7 @@ contract UpgradeControllerTest is Test {
     }
 
     function test_ProposeUpgrade_RevertsWithZeroImpl() public {
-        vm.expectRevert(IUpgradeController.InvalidImplementation.selector);
+        vm.expectRevert(abi.encodeWithSelector(UpgradeController.InvalidImplementation.selector, address(0)));
         controller.proposeUpgrade(
             target,
             address(0),
@@ -118,7 +120,7 @@ contract UpgradeControllerTest is Test {
     }
 
     function test_ProposeUpgrade_RevertsWithEmptyVersion() public {
-        vm.expectRevert(IUpgradeController.InvalidVersion.selector);
+        vm.expectRevert(abi.encodeWithSelector(UpgradeController.InvalidVersion.selector, ""));
         controller.proposeUpgrade(
             target,
             newImpl,
@@ -140,7 +142,7 @@ contract UpgradeControllerTest is Test {
         controller.scheduleUpgrade(proposalId);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.SCHEDULED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.SCHEDULED));
         assertGt(proposal.executeAfter, 0);
         assertGt(proposal.scheduledAt, 0);
     }
@@ -155,7 +157,7 @@ contract UpgradeControllerTest is Test {
         );
 
         vm.prank(address(0x999));
-        vm.expectRevert(IUpgradeController.UnauthorizedEmergency.selector);
+        vm.expectRevert(UpgradeController.UnauthorizedEmergency.selector);
         controller.scheduleUpgrade(proposalId);
     }
 
@@ -175,7 +177,7 @@ contract UpgradeControllerTest is Test {
         controller.executeUpgrade(proposalId);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.EXECUTED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.EXECUTED));
         assertEq(controller.currentImplementation(target), newImpl);
     }
 
@@ -224,7 +226,7 @@ contract UpgradeControllerTest is Test {
         controller.cancelUpgrade(proposalId);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(proposalId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.CANCELLED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.CANCELLED));
     }
 
     function test_CancelUpgrade_ByGovernance() public {
@@ -265,13 +267,13 @@ contract UpgradeControllerTest is Test {
         );
 
         controller.scheduleUpgrade(rollbackId);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(vm.getBlockTimestamp() + 1 days);
         controller.executeUpgrade(rollbackId);
 
         assertEq(controller.currentImplementation(target), currentImpl);
 
         IUpgradeController.UpgradeProposal memory proposal = controller.getProposal(rollbackId);
-        assertEq(proposal.status, IUpgradeController.UpgradeStatus.EXECUTED);
+        assertEq(uint256(proposal.status), uint256(IUpgradeController.UpgradeStatus.EXECUTED));
     }
 
     function test_EmergencyUpgrade_HasShorterDelay() public {
