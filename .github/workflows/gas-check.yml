@@ -36,7 +36,9 @@ jobs:
       
       - name: Compare gas snapshots
         run: |
-          if git diff --quiet .gas-snapshots.json; then
+          if [ ! -f .gas-snapshots.json ]; then
+            echo "No gas snapshot file found. Skipping."
+          elif git diff --quiet .gas-snapshots.json; then
             echo "✓ No gas regression detected"
           else
             echo "⚠ Gas changes detected:"
