@@ -269,7 +269,8 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
 
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
-        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE,   ADMIN_ROLE);
+    }
 
         _initializeGovernance(
             _governanceController,
@@ -424,6 +425,8 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         // Calculate slashed portion
         uint256 slashedAmount = _percentOf(v.stakeAmount, slashPercent);
         uint256 returnAmount = v.stakeAmount - slashedAmount;
+
+        v.stakeReturned = true;
 
         v.stakeReturned = true;
         verifierStakes[msg.sender].activeStakes -= v.stakeAmount;
