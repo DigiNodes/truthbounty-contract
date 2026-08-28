@@ -74,7 +74,7 @@ contract StorageCompatibilityValidator {
         address targetContract,
         address currentImpl,
         address newImpl
-    ) external view {
+    ) external {
         if (targetContract == address(0)) revert ZeroAddress();
         if (currentImpl == address(0)) revert ZeroAddress();
         if (newImpl == address(0)) revert ZeroAddress();
