@@ -38,6 +38,7 @@ outcome override calls.
 ## Guardian Separation
 
 - Guardian receives `CANCELLER_ROLE` on timelock and may veto via `GovernanceGuardian`
+- `GovernanceGuardian` calls `TruthBountyGovernor.cancel(proposalId)`; the governor must be wired once via `setGovernanceGuardianModule`
 - Guardian cannot propose, execute, or bypass timelock delays
 - Governance cannot invoke guardian emergency pause paths
 

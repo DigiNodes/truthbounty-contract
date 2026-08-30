@@ -60,6 +60,12 @@ contract DeployGovernanceV2 is Script {
 
         GovernanceGuardian guardianContract = new GovernanceGuardian(cfg.admin, cfg.guardian, governor);
 
+        vm.stopBroadcast();
+        vm.startBroadcast(cfg.guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+        vm.stopBroadcast();
+        vm.startBroadcast(cfg.admin);
+
         GovernanceRoleTopology.configure(timelock, governor, cfg.guardian, cfg.timelockMinDelay);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, cfg.admin);
 
