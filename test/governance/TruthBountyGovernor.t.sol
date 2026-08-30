@@ -55,6 +55,8 @@ contract TruthBountyGovernorTest is Test {
         );
 
         guardianContract = new GovernanceGuardian(admin, guardian, governor);
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         timelock.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));

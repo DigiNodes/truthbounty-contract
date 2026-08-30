@@ -32,8 +32,10 @@ contract TruthBountyGovernor is
 
     IGovernedModuleRegistry public immutable moduleRegistry;
     address public guardian;
+    address public governanceGuardianModule;
 
     event GuardianUpdated(address indexed oldGuardian, address indexed newGuardian);
+    event GovernanceGuardianModuleUpdated(address indexed oldModule, address indexed newModule);
     event GovernanceManifestPublished(
         address indexed governor,
         address indexed timelock,
@@ -48,6 +50,8 @@ contract TruthBountyGovernor is
 
     error ZeroGuardianAddress();
     error TargetNotGovernedModule(address target);
+    error GovernanceGuardianModuleAlreadySet(address existingModule);
+    error UnauthorizedGuardianModuleSetter(address caller);
 
     constructor(
         IVotes token,
@@ -97,6 +101,20 @@ contract TruthBountyGovernor is
         emit GuardianUpdated(oldGuardian, newGuardian);
     }
 
+    /**
+     * @notice Wire the external guardian module once after deployment.
+     * @dev Callable once by the guardian EOA during bootstrap.
+     */
+    function setGovernanceGuardianModule(address module) external {
+        if (module == address(0)) revert ZeroGuardianAddress();
+        if (governanceGuardianModule != address(0)) {
+            revert GovernanceGuardianModuleAlreadySet(governanceGuardianModule);
+        }
+        if (msg.sender != guardian) revert UnauthorizedGuardianModuleSetter(msg.sender);
+        governanceGuardianModule = module;
+        emit GovernanceGuardianModuleUpdated(address(0), module);
+    }
+
     /// @inheritdoc Governor
     function propose(
         address[] memory targets,
@@ -122,7 +140,15 @@ contract TruthBountyGovernor is
 
     /// @inheritdoc Governor
     function _validateCancel(uint256 proposalId, address caller) internal view override returns (bool) {
-        return super._validateCancel(proposalId, caller) || caller == guardian;
+        return super._validateCancel(proposalId, caller) || caller == guardian || caller == governanceGuardianModule;
+    }
+
+    function proposalThreshold() public view override(Governor, GovernorSettings) returns (uint256) {
+        return super.proposalThreshold();
+    }
+
+    function quorum(uint256 timepoint) public view override(Governor, GovernorVotesQuorumFraction) returns (uint256) {
+        return super.quorum(timepoint);
     }
 
     function state(uint256 proposalId)
