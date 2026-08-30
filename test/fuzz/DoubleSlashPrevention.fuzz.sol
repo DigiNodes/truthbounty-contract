@@ -59,7 +59,8 @@ contract DoubleSlashPreventionFuzzTest is Test {
         truthBounty = new TruthBountyWeighted(
             address(mockToken),
             address(mockOracle),
-            admin
+            admin,
+            address(0)
         );
 
         // Set up verifiers
@@ -73,8 +74,8 @@ contract DoubleSlashPreventionFuzzTest is Test {
             // Have verifier stake
             vm.prank(verifier);
             mockToken.approve(address(truthBounty), type(uint256).max);
-            vm.prank(verifier);
-            truthBounty.stake(MIN_STAKE * 10);
+            vm.prank(verifier, verifier);
+            truthBounty.stake(INITIAL_MINT);
         }
     }
 
@@ -115,20 +116,20 @@ contract DoubleSlashPreventionFuzzTest is Test {
         require(passVotes > 0 && passVotes < 5, "Need both winners and losers");
 
         // Move past verification window
-        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1 hours + 1);
 
         // Settle claim
         vm.prank(admin);
         truthBounty.settleClaim(claimId);
 
         // Get settlement results
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, , ) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed, , , , , ) = truthBounty.settlementResults(claimId);
 
         // Calculate sum of per-vote slashes by tracking before/after balances
         uint256 expectedTotalSlashed = 0;
         for (uint256 i = 0; i < 5; i++) {
             address verifier = verifiers[i];
-            (bool voted, bool support, , , , , , uint256 slashAmount) = truthBounty.votes(claimId, verifier);
+            (bool voted, bool support, , , , , , uint256 slashAmount, , , ) = truthBounty.votes(claimId, verifier);
 
             if (voted) {
                 bool isLoser = support != passed;
@@ -184,15 +185,15 @@ contract DoubleSlashPreventionFuzzTest is Test {
         }
 
         // Move and settle
-        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1 hours + 1);
         vm.prank(admin);
         truthBounty.settleClaim(claimId);
 
         // Each loser withdraws and verify single slash is applied
         for (uint256 i = 0; i < 5; i++) {
             address verifier = verifiers[i];
-            (, bool support, , , , , , uint256 slashAmount) = truthBounty.votes(claimId, verifier);
-            (, bool passed, , , ) = truthBounty.settlementResults(claimId);
+            (, bool support, , , , , , uint256 slashAmount, , , ) = truthBounty.votes(claimId, verifier);
+            (bool passed, , , , , , , ) = truthBounty.settlementResults(claimId);
 
             if (support != passed) {
                 // This is a loser
@@ -233,6 +234,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
         }
 
         uint256 totalExpectedSlash = 0;
+        uint256 settleTime = block.timestamp;
 
         // Process multiple claims
         for (uint256 c = 0; c < claimCount; c++) {
@@ -250,12 +252,13 @@ contract DoubleSlashPreventionFuzzTest is Test {
             }
 
             // Settle
-            vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+            settleTime += VERIFICATION_WINDOW + 1 hours + 1;
+            vm.warp(settleTime);
             vm.prank(admin);
             truthBounty.settleClaim(claimId);
 
             // Add claim's slashed amount to total
-            (, , uint256 totalSlashed, , ) = truthBounty.settlementResults(claimId);
+            (, , uint256 totalSlashed, , , , , ) = truthBounty.settlementResults(claimId);
             totalExpectedSlash += totalSlashed;
         }
 
@@ -277,33 +280,46 @@ contract DoubleSlashPreventionFuzzTest is Test {
         TruthBountyWeighted overflowTruthBounty = new TruthBountyWeighted(
             address(overflowToken),
             address(overflowOracle),
-            admin
+            admin,
+            address(0)
         );
 
-        address verifier = address(uint160(0x999));
-        uint256 stakeAmount = (type(uint256).max / 20) + 1;
+        address loser = address(uint160(0x999));
+        address winner = address(uint160(0x888));
+        uint256 loserStake = 1e41;
+        uint256 winnerStake = 2e41;
 
-        overflowToken.mint(verifier, stakeAmount);
+        overflowToken.mint(loser, loserStake);
+        overflowToken.mint(winner, winnerStake);
 
-        vm.prank(verifier);
+        vm.prank(loser, loser);
         overflowToken.approve(address(overflowTruthBounty), type(uint256).max);
 
-        vm.prank(verifier);
-        overflowTruthBounty.stake(stakeAmount);
+        vm.prank(loser, loser);
+        overflowTruthBounty.stake(loserStake);
 
-        vm.prank(admin);
+        vm.prank(winner, winner);
+        overflowToken.approve(address(overflowTruthBounty), type(uint256).max);
+
+        vm.prank(winner, winner);
+        overflowTruthBounty.stake(winnerStake);
+
+        vm.prank(admin, admin);
         uint256 claimId = overflowTruthBounty.createClaim("Overflow claim");
 
-        vm.prank(verifier);
-        overflowTruthBounty.vote(claimId, false, stakeAmount);
+        vm.prank(loser, loser);
+        overflowTruthBounty.vote(claimId, true, loserStake);
 
-        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1);
+        vm.prank(winner, winner);
+        overflowTruthBounty.vote(claimId, false, winnerStake);
 
-        vm.prank(admin);
+        vm.warp(block.timestamp + VERIFICATION_WINDOW + 1 hours + 1);
+
+        vm.prank(admin, admin);
         overflowTruthBounty.settleClaim(claimId);
 
-        (, , uint256 totalSlashed, , ) = overflowTruthBounty.settlementResults(claimId);
-        uint256 expectedSlash = stakeAmount / 5; // 20% of the stake
+        (, , uint256 totalSlashed, , , , , ) = overflowTruthBounty.settlementResults(claimId);
+        uint256 expectedSlash = loserStake / 5; // 20% of the losing side's stake
 
         assertEq(totalSlashed, expectedSlash, "Large slash amount should calculate correctly");
         assertEq(overflowTruthBounty.totalSlashed(), expectedSlash, "Contract totalSlashed should reflect large slash amount");

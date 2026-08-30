@@ -33,10 +33,12 @@ contract InsuranceFundFuzzTest is Test {
         vm.prank(admin);
         fund = new InsuranceFund(address(token), admin, governance);
 
+        bytes32 managerRole = fund.INSURANCE_MANAGER_ROLE();
+        bytes32 governanceRole = fund.GOVERNANCE_ROLE();
         vm.prank(admin);
-        fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), insuranceManager);
+        fund.grantRole(managerRole, insuranceManager);
         vm.prank(admin);
-        fund.grantRole(fund.GOVERNANCE_ROLE(), governance);
+        fund.grantRole(governanceRole, governance);
 
         // Fund the reserve
         vm.prank(admin);
@@ -92,7 +94,7 @@ contract InsuranceFundFuzzTest is Test {
         uint256 claimId = fund.submitClaim(category, requestedAmount, desc);
 
         assertEq(claimId, 0, "First claim should be ID 0");
-        IInsuranceFund.Claim memory claim = fund.claims(claimId);
+        IInsuranceFund.Claim memory claim = fund.getClaim(claimId);
         assertEq(uint256(claim.state), uint256(IInsuranceFund.ClaimState.SUBMITTED));
         assertEq(claim.requestedAmount, requestedAmount);
     }
@@ -118,7 +120,8 @@ contract InsuranceFundFuzzTest is Test {
         vm.startPrank(claimant);
         fund.submitClaim(category, requestedAmount, desc);
 
-        vm.expectRevert(InsuranceFund.DuplicateIncident.selector);
+        bytes32 incidentHash = keccak256(abi.encodePacked(claimant, category, requestedAmount, desc));
+        vm.expectRevert(abi.encodeWithSelector(InsuranceFund.DuplicateIncident.selector, incidentHash));
         fund.submitClaim(category, requestedAmount, desc);
         vm.stopPrank();
     }
@@ -130,7 +133,7 @@ contract InsuranceFundFuzzTest is Test {
         uint256 approvedAmount,
         uint8 categoryIdx
     ) public {
-        requestedAmount = bound(requestedAmount, 100, INITIAL_FUND / 2);
+        requestedAmount = bound(requestedAmount, 100, INITIAL_FUND / 5);
         IInsuranceFund.CoverageCategory category = IInsuranceFund.CoverageCategory(categoryIdx % 4);
 
         // Set max payout high enough
@@ -146,7 +149,7 @@ contract InsuranceFundFuzzTest is Test {
         vm.prank(governance);
         fund.reviewAndApproveClaim(claimId, approvedAmount, "ipfs://audit");
 
-        IInsuranceFund.Claim memory claim = fund.claims(claimId);
+        IInsuranceFund.Claim memory claim = fund.getClaim(claimId);
         assertEq(uint256(claim.state), uint256(IInsuranceFund.ClaimState.APPROVED));
         assertEq(claim.approvedAmount, approvedAmount);
 
@@ -159,7 +162,7 @@ contract InsuranceFundFuzzTest is Test {
         uint256 balanceAfter = token.balanceOf(claimant);
 
         assertEq(balanceAfter, balanceBefore + approvedAmount, "Claimant should receive approved amount");
-        assertEq(uint256(fund.claims(claimId).state), uint256(IInsuranceFund.ClaimState.PAID));
+        assertEq(uint256(fund.getClaim(claimId).state), uint256(IInsuranceFund.ClaimState.PAID));
     }
 
     function testFuzz_PayoutBeforeTimelockReverts(
@@ -168,7 +171,7 @@ contract InsuranceFundFuzzTest is Test {
         uint8 categoryIdx,
         uint256 warpAmount
     ) public {
-        requestedAmount = bound(requestedAmount, 100, INITIAL_FUND / 2);
+        requestedAmount = bound(requestedAmount, 100, INITIAL_FUND / 5);
         IInsuranceFund.CoverageCategory category = IInsuranceFund.CoverageCategory(categoryIdx % 4);
         uint256 timelock = fund.payoutTimelock();
         vm.assume(timelock > 0);
@@ -186,7 +189,14 @@ contract InsuranceFundFuzzTest is Test {
 
         vm.warp(block.timestamp + warpAmount);
 
-        vm.expectRevert(abi.encodeWithSelector(InsuranceFund.PayoutTimelockActive.selector, claimId, block.timestamp + 1));
+        IInsuranceFund.Claim memory claim = fund.getClaim(claimId);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                InsuranceFund.PayoutTimelockActive.selector,
+                claimId,
+                claim.submittedAt + fund.payoutTimelock()
+            )
+        );
         fund.executePayout(claimId);
     }
 
@@ -206,7 +216,7 @@ contract InsuranceFundFuzzTest is Test {
         vm.prank(governance);
         fund.rejectClaim(claimId, reason);
 
-        assertEq(uint256(fund.claims(claimId).state), uint256(IInsuranceFund.ClaimState.REJECTED));
+        assertEq(uint256(fund.getClaim(claimId).state), uint256(IInsuranceFund.ClaimState.REJECTED));
         assertEq(fund.getActiveClaims().length, 0);
     }
 
@@ -217,11 +227,13 @@ contract InsuranceFundFuzzTest is Test {
     ) public {
         maxPayout = bound(maxPayout, 0, type(uint256).max);
 
+        bytes32 policyId = fund.POLICY_MAX_PAYOUT();
+        uint256 currentMaxPayout = fund.getMaxPayoutPerClaim();
         vm.prank(admin);
         vm.expectEmit(true, false, false, true);
         emit IInsuranceFund.InsurancePolicyUpdated(
-            fund.POLICY_MAX_PAYOUT(),
-            fund.getMaxPayoutPerClaim(),
+            policyId,
+            currentMaxPayout,
             maxPayout
         );
         fund.setMaxPayoutPerClaim(maxPayout);

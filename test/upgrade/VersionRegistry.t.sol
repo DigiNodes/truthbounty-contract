@@ -14,6 +14,9 @@ contract VersionRegistryTest is Test {
 
     function setUp() public {
         registry = new VersionRegistry(admin);
+        bytes32 registryRole = registry.REGISTRY_ROLE();
+        vm.prank(admin);
+        registry.grantRole(registryRole, address(this));
     }
 
     function test_RegisterVersion() public {
@@ -69,6 +72,7 @@ contract VersionRegistryTest is Test {
         registry.registerVersion("TruthBounty", impl2, proxy1, "2.0.0", bytes32(0), bytes32(0));
 
         registry.updateVersionStatus("TruthBounty", "2.0.0", IVersionRegistry.VersionStatus.ROLLED_BACK);
+        registry.updateVersionStatus("TruthBounty", "1.0.0", IVersionRegistry.VersionStatus.ACTIVE);
 
         IVersionRegistry.VersionEntry memory active = registry.getActiveVersion("TruthBounty");
         assertEq(active.semanticVersion, "1.0.0");

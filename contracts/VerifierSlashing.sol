@@ -24,6 +24,7 @@ interface IStaking {
     function stakes(address user) external view returns (uint256 amount, uint256 unlockTime);
     function forceSlash(address user, uint256 amount) external;
     function stakingToken() external view returns (address);
+    function treasury() external view returns (address);
 }
 
 contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
@@ -605,6 +606,11 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         }));
 
         stakingContract.forceSlash(verifier, slashAmount);
+
+        address treasury = stakingContract.treasury();
+        if (treasury != address(0)) {
+            IERC20(stakingContract.stakingToken()).transfer(treasury, slashAmount);
+        }
 
         address receiver = address(reputationPenaltyReceiver);
         if (receiver != address(0)) {

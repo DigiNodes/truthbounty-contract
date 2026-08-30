@@ -211,10 +211,6 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         treasuryAccounting.recordSlash(user, amount);
         // Transfer the slashed tokens to the slashing contract for routing
         stakingToken.transfer(msg.sender, amount);
-        
-        // Settle confiscated collateral directly into Treasury.
-        require(treasury != address(0), "Treasury not configured");
-        stakingToken.safeTransfer(treasury, amount);
 
         emit StakeSlashed(user, amount, info.amount);
     }

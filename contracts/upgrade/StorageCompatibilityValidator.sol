@@ -89,8 +89,6 @@ contract StorageCompatibilityValidator {
                 );
             }
         }
-
-        emit ValidationPerformed(targetContract, currentImpl, newImpl, true);
     }
 
     function validateStorageCompatibility(

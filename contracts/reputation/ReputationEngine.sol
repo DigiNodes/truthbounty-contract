@@ -210,7 +210,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
      * @dev Creates a new reputation record with default values
      *      Reverts if verifier already has a reputation record
      */
-    function initializeReputation(address verifier) external nonReentrant {
+    function initializeReputation(address verifier) external nonReentrant whenNotPaused {
         if (restrictedInitialization && !hasRole(UPDATE_ROLE, msg.sender)) {
             revert UnauthorizedUpdate();
         }
@@ -252,7 +252,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function initializeReputationWithScore(
         address verifier,
         uint256 initialScore
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (verifier == address(0)) revert InvalidZeroAddress();
         if (reputations[verifier].exists) revert VerifierAlreadyExists(verifier);
         if (initialScore < minReputationScore || initialScore > maxReputationScore) {
@@ -320,14 +320,14 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
      * @notice Calculate reputation multiplier for verification weight
      * @param verifier The address of the verifier
      * @return multiplier The reputation multiplier (scaled by 1e18)
-     * @dev Multiplier = reputationScore / BASE_MULTIPLIER
+     * @dev Multiplier = reputationScore, capped at 10e18 (10x)
      *      Capped at 10x to prevent excessive dominance
      */
     function calculateReputationMultiplier(address verifier) external view returns (uint256 multiplier) {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
         
         uint256 score = reputations[verifier].score;
-        multiplier = score / BASE_MULTIPLIER;
+        multiplier = score;
         
         // Cap at 10x to prevent excessive dominance
         uint256 maxMultiplier = 10e18;
@@ -469,7 +469,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function updateReputationScore(
         address verifier,
         uint256 newScore
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
         if (newScore < minReputationScore || newScore > maxReputationScore) {
             revert InvalidReputationScore(newScore);
@@ -491,7 +491,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function recordSuccessfulVerification(
         address verifier,
         uint256 stakeAmount
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
 
         reputations[verifier].successfulVerifications += 1;
@@ -528,7 +528,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function recordFailedVerification(
         address verifier,
         uint256 stakeAmount
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
 
         reputations[verifier].failedVerifications += 1;
@@ -565,7 +565,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function recordDisputedClaim(
         address verifier,
         uint256 stakeAmount
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
 
         reputations[verifier].disputedVerifications += 1;
@@ -602,7 +602,7 @@ contract ReputationEngine is AccessControl, ReentrancyGuard, GovernanceOwnable {
     function recordRewardEarned(
         address verifier,
         uint256 rewardAmount
-    ) external onlyRole(UPDATE_ROLE) nonReentrant {
+    ) external onlyRole(UPDATE_ROLE) nonReentrant whenNotPaused {
         if (!reputations[verifier].exists) revert VerifierNotFound(verifier);
 
         protocolStats.totalRewardsEarned += rewardAmount;

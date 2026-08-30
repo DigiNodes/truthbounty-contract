@@ -15,9 +15,9 @@ describe("ReputationEngine Integration Tests", function () {
   let verifier2: SignerWithAddress;
   let submitter: SignerWithAddress;
 
-  const BASE_MULTIPLIER = 1e18;
-  const DEFAULT_INITIAL_SCORE = 1e18;
-  const MIN_STAKE_AMOUNT = 100 * 1e18;
+  const BASE_MULTIPLIER = 1000000000000000000n;
+  const DEFAULT_INITIAL_SCORE = 1000000000000000000n;
+  const MIN_STAKE_AMOUNT = 100n * 1000000000000000000n;
 
   beforeEach(async function () {
     [admin, updateRole, verifier1, verifier2, submitter] = await ethers.getSigners();
@@ -31,8 +31,8 @@ describe("ReputationEngine Integration Tests", function () {
     bountyToken = await MockERC20Factory.deploy("TruthBounty", "BOUNTY");
 
     // Mint tokens to verifiers
-    await bountyToken.mint(verifier1.address, 10000e18);
-    await bountyToken.mint(verifier2.address, 10000e18);
+    await bountyToken.mint(verifier1.address, 10000000000000000000000n);
+    await bountyToken.mint(verifier2.address, 10000000000000000000000n);
 
     // Deploy ReputationEngine
     const ReputationEngineFactory = await ethers.getContractFactory("ReputationEngine");
@@ -63,7 +63,7 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should record stake participation when verification occurs", async function () {
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
       
       await reputationEngine.connect(updateRole).recordSuccessfulVerification(
         verifier1.address,
@@ -75,8 +75,8 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should update protocol statistics on verification", async function () {
-      const stakeAmount1 = 1000e18;
-      const stakeAmount2 = 500e18;
+      const stakeAmount1 = 1000000000000000000000n;
+      const stakeAmount2 = 500000000000000000000n;
 
       await reputationEngine.connect(updateRole).recordSuccessfulVerification(
         verifier1.address,
@@ -95,8 +95,8 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should track cumulative stake across multiple verifications", async function () {
-      const stakeAmount1 = 1000e18;
-      const stakeAmount2 = 500e18;
+      const stakeAmount1 = 1000000000000000000000n;
+      const stakeAmount2 = 500000000000000000000n;
 
       await reputationEngine.connect(updateRole).recordSuccessfulVerification(
         verifier1.address,
@@ -116,8 +116,8 @@ describe("ReputationEngine Integration Tests", function () {
 
   describe("Reputation Engine + Governance Integration", function () {
     it("Should allow governance to update reputation bounds", async function () {
-      const newMin = 5e17;
-      const newMax = 5e18;
+      const newMin = 500000000000000000n;
+      const newMax = 5000000000000000000n;
 
       await reputationEngine.connect(admin).setReputationBounds(newMin, newMax);
 
@@ -126,7 +126,7 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should allow governance to update default initial score", async function () {
-      const newDefault = 2e18;
+      const newDefault = 2000000000000000000n;
 
       await reputationEngine.connect(admin).setDefaultInitialScore(newDefault);
 
@@ -134,14 +134,14 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should emit governance parameter update events", async function () {
-      const newMin = 5e17;
-      const newMax = 5e18;
+      const newMin = 500000000000000000n;
+      const newMax = 5000000000000000000n;
 
       await expect(reputationEngine.connect(admin).setReputationBounds(newMin, newMax))
         .to.emit(reputationEngine, "ParameterUpdatedByGovernance")
         .withArgs(
           ethers.keccak256(ethers.toUtf8Bytes("REPUTATION_MIN_SCORE")),
-          1e17,
+          100000000000000000n,
           newMin
         );
     });
@@ -151,7 +151,7 @@ describe("ReputationEngine Integration Tests", function () {
 
       // Non-UPDATE_ROLE should fail
       await expect(
-        reputationEngine.connect(admin).initializeReputation(admin.address)
+        reputationEngine.connect(submitter).initializeReputation(submitter.address)
       ).to.be.revertedWithCustomError(reputationEngine, "UnauthorizedUpdate");
 
       // UPDATE_ROLE should succeed
@@ -162,7 +162,7 @@ describe("ReputationEngine Integration Tests", function () {
 
   describe("Reputation Engine + Reward Integration", function () {
     it("Should record rewards earned by verifiers", async function () {
-      const rewardAmount = 500e18;
+      const rewardAmount = 500000000000000000000n;
 
       await reputationEngine.connect(updateRole).recordRewardEarned(
         verifier1.address,
@@ -174,8 +174,8 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should accumulate rewards across multiple distributions", async function () {
-      const reward1 = 300e18;
-      const reward2 = 200e18;
+      const reward1 = 300000000000000000000n;
+      const reward2 = 200000000000000000000n;
 
       await reputationEngine.connect(updateRole).recordRewardEarned(
         verifier1.address,
@@ -194,7 +194,7 @@ describe("ReputationEngine Integration Tests", function () {
 
   describe("Reputation Engine + Dispute Integration", function () {
     it("Should record disputed claims", async function () {
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
 
       await reputationEngine.connect(updateRole).recordDisputedClaim(
         verifier1.address,
@@ -209,12 +209,12 @@ describe("ReputationEngine Integration Tests", function () {
     it("Should update protocol dispute statistics", async function () {
       await reputationEngine.connect(updateRole).recordDisputedClaim(
         verifier1.address,
-        1000e18
+        1000000000000000000000n
       );
 
       await reputationEngine.connect(updateRole).recordDisputedClaim(
         verifier2.address,
-        500e18
+        500000000000000000000n
       );
 
       const stats = await reputationEngine.getStatistics();
@@ -269,33 +269,33 @@ describe("ReputationEngine Integration Tests", function () {
 
   describe("Reputation Engine + Weight Calculation Integration", function () {
     it("Should calculate weight based on reputation score", async function () {
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
       
       // Update reputation to 2x
       await reputationEngine.connect(updateRole).updateReputationScore(
         verifier1.address,
-        2e18
+        2000000000000000000n
       );
 
       const weight = await reputationEngine.calculateWeight(stakeAmount, verifier1.address);
-      expect(weight).to.equal(stakeAmount * 2);
+      expect(weight).to.equal(stakeAmount * 2n);
     });
 
     it("Should cap weight at 10x maximum", async function () {
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
       
-      // Set reputation to 20x (should be capped at 10x)
+      // Set reputation to max (10e18), yielding the 10x cap
       await reputationEngine.connect(updateRole).updateReputationScore(
         verifier1.address,
-        20e18
+        10000000000000000000n
       );
 
       const weight = await reputationEngine.calculateWeight(stakeAmount, verifier1.address);
-      expect(weight).to.equal(stakeAmount * 10);
+      expect(weight).to.equal(stakeAmount * 10n);
     });
 
     it("Should provide deterministic weight calculations", async function () {
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
       
       const weight1 = await reputationEngine.calculateWeight(stakeAmount, verifier1.address);
       const weight2 = await reputationEngine.calculateWeight(stakeAmount, verifier1.address);
@@ -309,7 +309,7 @@ describe("ReputationEngine Integration Tests", function () {
       await expect(
         reputationEngine.connect(verifier1).updateReputationScore(
           verifier1.address,
-          2e18
+          2000000000000000000n
         )
       ).to.be.reverted;
     });
@@ -318,7 +318,7 @@ describe("ReputationEngine Integration Tests", function () {
       await expect(
         reputationEngine.connect(verifier1).recordSuccessfulVerification(
           verifier1.address,
-          1000e18
+          1000000000000000000000n
         )
       ).to.be.reverted;
     });
@@ -334,7 +334,7 @@ describe("ReputationEngine Integration Tests", function () {
       await expect(
         reputationEngine.connect(updateRole).updateReputationScore(
           verifier1.address,
-          100e18
+          100000000000000000000n
         )
       ).to.be.revertedWithCustomError(reputationEngine, "InvalidReputationScore");
     });
@@ -354,17 +354,17 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should emit events for reputation score updates", async function () {
-      await expect(reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2e18))
+      await expect(reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2000000000000000000n))
         .to.emit(reputationEngine, "ReputationScoreUpdated");
     });
 
     it("Should emit events for verification statistics updates", async function () {
-      await expect(reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000e18))
+      await expect(reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000000000000000000000n))
         .to.emit(reputationEngine, "VerificationStatsUpdated");
     });
 
     it("Should emit events for protocol statistics updates", async function () {
-      await expect(reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000e18))
+      await expect(reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000000000000000000000n))
         .to.emit(reputationEngine, "ProtocolStatisticsUpdated");
     });
   });
@@ -376,7 +376,7 @@ describe("ReputationEngine Integration Tests", function () {
       await reputationEngine.connect(pauser).pause();
 
       await expect(
-        reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2e18)
+        reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2000000000000000000n)
       ).to.be.revertedWithCustomError(reputationEngine, "EnforcedPause");
     });
 
@@ -386,29 +386,29 @@ describe("ReputationEngine Integration Tests", function () {
       await reputationEngine.connect(pauser).pause();
       await reputationEngine.connect(pauser).unpause();
 
-      await reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2e18);
-      expect(await reputationEngine.getReputationScore(verifier1.address)).to.equal(2e18);
+      await reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2000000000000000000n);
+      expect(await reputationEngine.getReputationScore(verifier1.address)).to.equal(2000000000000000000n);
     });
   });
 
   describe("Reputation Engine + Multi-Verifier Scenarios", function () {
     it("Should handle multiple verifiers with different reputations", async function () {
       // Set different reputation scores
-      await reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2e18);
-      await reputationEngine.connect(updateRole).updateReputationScore(verifier2.address, 1.5e18);
+      await reputationEngine.connect(updateRole).updateReputationScore(verifier1.address, 2000000000000000000n);
+      await reputationEngine.connect(updateRole).updateReputationScore(verifier2.address, 1500000000000000000n);
 
-      const stakeAmount = 1000e18;
+      const stakeAmount = 1000000000000000000000n;
 
       const weight1 = await reputationEngine.calculateWeight(stakeAmount, verifier1.address);
       const weight2 = await reputationEngine.calculateWeight(stakeAmount, verifier2.address);
 
-      expect(weight1).to.equal(stakeAmount * 2);
-      expect(weight2).to.equal(stakeAmount * 1.5);
+      expect(weight1).to.equal(stakeAmount * 2n);
+      expect(weight2).to.equal((stakeAmount * 3n) / 2n); // 1.5x multiplier
     });
 
     it("Should track statistics for all verifiers independently", async function () {
-      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000e18);
-      await reputationEngine.connect(updateRole).recordFailedVerification(verifier2.address, 500e18);
+      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000000000000000000000n);
+      await reputationEngine.connect(updateRole).recordFailedVerification(verifier2.address, 500000000000000000000n);
 
       const stats1 = await reputationEngine.getVerifierStatistics(verifier1.address);
       const stats2 = await reputationEngine.getVerifierStatistics(verifier2.address);
@@ -420,14 +420,14 @@ describe("ReputationEngine Integration Tests", function () {
     });
 
     it("Should aggregate protocol statistics correctly", async function () {
-      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000e18);
-      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier2.address, 500e18);
-      await reputationEngine.connect(updateRole).recordFailedVerification(verifier1.address, 200e18);
+      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier1.address, 1000000000000000000000n);
+      await reputationEngine.connect(updateRole).recordSuccessfulVerification(verifier2.address, 500000000000000000000n);
+      await reputationEngine.connect(updateRole).recordFailedVerification(verifier1.address, 200000000000000000000n);
 
       const stats = await reputationEngine.getStatistics();
       expect(stats.totalSuccessfulVerifications).to.equal(2);
       expect(stats.totalFailedVerifications).to.equal(1);
-      expect(stats.totalStakeParticipated).to.equal(1700e18);
+      expect(stats.totalStakeParticipated).to.equal(1700000000000000000000n);
     });
   });
 });

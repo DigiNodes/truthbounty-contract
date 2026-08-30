@@ -20,6 +20,9 @@ solidity: {
     },
   },
   networks: {
+    hardhat: {
+      allowUnlimitedContractSize: true,
+    },
     optimismSepolia: {
       url:
         process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",

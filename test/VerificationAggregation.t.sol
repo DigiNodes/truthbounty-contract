@@ -26,7 +26,7 @@ contract VerificationAggregationTest is Test {
     uint256 constant CONFIRMATION_DELAY = 1 hours;
 
     function setUp() public {
-        token = new MockERC20("Test", "TST", 18);
+        token = new MockERC20("Test", "TST");
         oracle = new MockReputationOracle();
 
         // Mint tokens to everyone
@@ -53,12 +53,16 @@ contract VerificationAggregationTest is Test {
 
         // Deploy aggregator
         aggregator = new VerificationAggregation(address(truthBounty));
+
+        // Allow small votes (10 ether) in the stress/gas tests
+        vm.prank(admin);
+        truthBounty.setMinStakeAmount(1);
     }
 
     function _approveAndStake(address verifier, uint256 amount) internal {
-        vm.prank(verifier);
+        vm.prank(verifier, verifier);
         token.approve(address(truthBounty), type(uint256).max);
-        vm.prank(verifier);
+        vm.prank(verifier, verifier);
         truthBounty.stake(amount);
     }
 
@@ -139,8 +143,6 @@ contract VerificationAggregationTest is Test {
     }
 
     function testWeightedTrueMajority() public {
-        uint256 claimId = _createClaim();
-
         _approveAndStake(verifier1, 1000 ether);
         _approveAndStake(verifier2, 1000 ether);
         _approveAndStake(verifier3, 1000 ether);
@@ -148,6 +150,10 @@ contract VerificationAggregationTest is Test {
         oracle.setReputationScore(verifier1, 2 ether);
         oracle.setReputationScore(verifier2, 0.5 ether);
         oracle.setReputationScore(verifier3, 0.5 ether);
+
+        // Reputation updates must fall outside the grace period around claim creation
+        vm.warp(block.timestamp + 3 days);
+        uint256 claimId = _createClaim();
 
         _vote(claimId, verifier1, true, 100 ether);
         _vote(claimId, verifier2, false, 100 ether);
@@ -164,8 +170,6 @@ contract VerificationAggregationTest is Test {
     }
 
     function testWeightedFalseMajority() public {
-        uint256 claimId = _createClaim();
-
         _approveAndStake(verifier1, 1000 ether);
         _approveAndStake(verifier2, 1000 ether);
         _approveAndStake(verifier3, 1000 ether);
@@ -173,6 +177,10 @@ contract VerificationAggregationTest is Test {
         oracle.setReputationScore(verifier1, 0.5 ether);
         oracle.setReputationScore(verifier2, 2 ether);
         oracle.setReputationScore(verifier3, 2 ether);
+
+        // Reputation updates must fall outside the grace period around claim creation
+        vm.warp(block.timestamp + 3 days);
+        uint256 claimId = _createClaim();
 
         _vote(claimId, verifier1, true, 100 ether);
         _vote(claimId, verifier2, false, 100 ether);
@@ -500,8 +508,6 @@ contract VerificationAggregationTest is Test {
     }
 
     function testHighConfidenceThreshold() public {
-        uint256 claimId = _createClaim();
-
         _approveAndStake(verifier1, 1000 ether);
         _approveAndStake(verifier2, 1000 ether);
         _approveAndStake(verifier3, 1000 ether);
@@ -509,6 +515,10 @@ contract VerificationAggregationTest is Test {
         oracle.setReputationScore(verifier1, 10 ether);
         oracle.setReputationScore(verifier2, 10 ether);
         oracle.setReputationScore(verifier3, 1 ether);
+
+        // Reputation updates must fall outside the grace period around claim creation
+        vm.warp(block.timestamp + 3 days);
+        uint256 claimId = _createClaim();
 
         _vote(claimId, verifier1, true, 100 ether);
         _vote(claimId, verifier2, true, 100 ether);
@@ -535,13 +545,13 @@ contract VerificationAggregationTest is Test {
         _fastForwardWindow();
 
         vm.expectEmit(true, true, true, true);
-        emit ClaimAggregated(claimId, ClaimOutcome.VERIFIED_TRUE, 10000);
+        emit VerificationAggregation.ClaimAggregated(claimId, ClaimOutcome.VERIFIED_TRUE, 10000);
         aggregator.aggregateClaim(claimId);
     }
 
     function testThresholdsEvent() public {
         vm.expectEmit(true, true, true, true);
-        emit ThresholdsUpdated(5, 1000 ether, 6000);
+        emit VerificationAggregation.ThresholdsUpdated(5, 1000 ether, 6000);
         aggregator.setThresholds(5, 1000 ether, 6000);
     }
 }
