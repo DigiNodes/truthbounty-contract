@@ -35,10 +35,12 @@ contract InsuranceFundInvariant is StdInvariant, Test {
         vm.prank(admin);
         fund = new InsuranceFund(address(token), admin, governance);
 
+        bytes32 managerRole = fund.INSURANCE_MANAGER_ROLE();
+        bytes32 governanceRole = fund.GOVERNANCE_ROLE();
         vm.prank(admin);
-        fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), insuranceManager);
+        fund.grantRole(managerRole, insuranceManager);
         vm.prank(admin);
-        fund.grantRole(fund.GOVERNANCE_ROLE(), governance);
+        fund.grantRole(governanceRole, governance);
 
         // Fund the reserve
         vm.prank(admin);
@@ -78,7 +80,7 @@ contract InsuranceFundInvariant is StdInvariant, Test {
     function invariant_PaidClaimsNotInActiveSet() public view {
         uint256[] memory active = fund.getActiveClaims();
         for (uint256 i = 0; i < active.length; i++) {
-            IInsuranceFund.Claim memory claim = fund.claims(active[i]);
+            IInsuranceFund.Claim memory claim = fund.getClaim(active[i]);
             assertTrue(
                 uint256(claim.state) != uint256(IInsuranceFund.ClaimState.PAID),
                 "PAID claim in active set"
@@ -93,7 +95,7 @@ contract InsuranceFundInvariant is StdInvariant, Test {
     function invariant_ClaimStateTransitionsAreValid() public view {
         uint256 count = fund.claimCounter();
         for (uint256 i = 0; i < count; i++) {
-            IInsuranceFund.Claim memory claim = fund.claims(i);
+            IInsuranceFund.Claim memory claim = fund.getClaim(i);
             if (claim.submittedAt == 0) continue;
 
             IInsuranceFund.ClaimState state = claim.state;

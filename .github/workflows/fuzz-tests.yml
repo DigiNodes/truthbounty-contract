@@ -15,6 +15,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
@@ -40,7 +42,7 @@ jobs:
         forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv
         
     - name: Generate coverage report
-      run: forge coverage --report lcov
+      run: forge coverage --ir-minimum --report lcov
       
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -54,6 +56,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
     
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
@@ -66,7 +70,7 @@ jobs:
     - name: Run property-based tests
       run: |
         echo "Running property-based tests with model checker..."
-        forge test --match-contract WeightedStakingFuzzTest --no-match-test testFuzz_ -vv
+        forge test --match-contract WeightedStakingFuzzTest -vv
         
     - name: Run invariant tests
       run: |

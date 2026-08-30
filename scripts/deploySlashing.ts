@@ -20,7 +20,7 @@ async function main() {
 
   // Deploy VerifierSlashing
   const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-  const slashing = await VerifierSlashing.deploy(stakingAddress, adminAddress);
+  const slashing = await VerifierSlashing.deploy(stakingAddress, adminAddress, deployer.address);
 
   await slashing.waitForDeployment();
 

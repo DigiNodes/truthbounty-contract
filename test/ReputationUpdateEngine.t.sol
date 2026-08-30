@@ -200,7 +200,7 @@ contract ReputationUpdateEngineTest is Test {
         });
 
         vm.prank(resolver);
-        vm.expectRevert(ReputationUpdateEngine.ZeroAddress.selector);
+        vm.expectRevert(ReputationUpdateEngine.InvalidAddress.selector);
         engine.updateReputation(update);
     }
 
@@ -310,10 +310,11 @@ contract ReputationUpdateEngineTest is Test {
     // ============ Reputation Cap Enforcement ============
 
     function test_ReputationCapEnforced() public {
-        vm.prank(admin);
+        vm.startPrank(admin);
         engine.setRewardIncrement(1000);
         engine.setMaximumReputationCap(500);
         engine.grantUpdateRole(admin);
+        vm.stopPrank();
 
         for (uint256 i = 1; i <= 3; i++) {
             IReputationUpdateEngine.ReputationUpdate memory update = IReputationUpdateEngine.ReputationUpdate({
