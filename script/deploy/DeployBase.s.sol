@@ -97,6 +97,38 @@ contract DeployBase is Script {
         address slashing,
         address claims
     ) internal view returns (string memory) {
+        return generateManifestWithGovernance(
+            version,
+            migrationManager,
+            token,
+            oracle,
+            bounty,
+            staking,
+            slashing,
+            claims,
+            address(0),
+            address(0),
+            address(0),
+            address(0),
+            address(0)
+        );
+    }
+
+    function generateManifestWithGovernance(
+        string memory version,
+        address migrationManager,
+        address token,
+        address oracle,
+        address bounty,
+        address staking,
+        address slashing,
+        address claims,
+        address governanceToken,
+        address timelock,
+        address governor,
+        address moduleRegistry,
+        address governanceGuardian
+    ) internal view returns (string memory) {
         return string(abi.encodePacked(
             '{\n',
             '  "protocolVersion": "', version, '",\n',
@@ -111,7 +143,19 @@ contract DeployBase is Script {
             '    "TruthBountyWeighted": "', vm.toString(bounty), '",\n',
             '    "Staking": "', vm.toString(staking), '",\n',
             '    "VerifierSlashing": "', vm.toString(slashing), '",\n',
-            '    "TruthBountyClaims": "', vm.toString(claims), '"\n',
+            '    "TruthBountyClaims": "', vm.toString(claims), '",\n',
+            '    "TruthBountyGovernanceToken": "', vm.toString(governanceToken), '",\n',
+            '    "TimelockController": "', vm.toString(timelock), '",\n',
+            '    "TruthBountyGovernor": "', vm.toString(governor), '",\n',
+            '    "GovernedModuleRegistry": "', vm.toString(moduleRegistry), '",\n',
+            '    "GovernanceGuardian": "', vm.toString(governanceGuardian), '"\n',
+            '  },\n',
+            '  "governance": {\n',
+            '    "votingDelay": ', vm.envOr("GOV_VOTING_DELAY", uint256(86400)), ',\n',
+            '    "votingPeriod": ', vm.envOr("GOV_VOTING_PERIOD", uint256(259200)), ',\n',
+            '    "proposalThreshold": "', vm.toString(vm.envOr("GOV_PROPOSAL_THRESHOLD", uint256(100_000 ether))), '",\n',
+            '    "quorumNumerator": ', vm.envOr("GOV_QUORUM_NUMERATOR", uint256(4)), ',\n',
+            '    "timelockMinDelay": ', vm.envOr("TIMELOCK_MIN_DELAY", uint256(172800)), '\n',
             '  }\n',
             '}'
         ));
