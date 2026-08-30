@@ -50,12 +50,10 @@ contract FeeManagerInvariant is StdInvariant, Test {
 
         feeManager.grantRole(COLLECTOR_ROLE, collector);
 
-        handler = new FeeManagerHandler(feeManager, token);
-
-        // Grant collector role to handler (it prank-calls as collector internally)
-        feeManager.grantRole(COLLECTOR_ROLE, collector);
-
         vm.stopPrank();
+
+        // Deploy handler outside the prank scope so its internal pranks work
+        handler = new FeeManagerHandler(feeManager, token);
 
         // Target only the handler — the fuzzer will call handler functions
         targetContract(address(handler));

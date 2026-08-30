@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 
-import "../staking/WeightedStaking.sol";
+import "../contracts/staking/WeightedStaking.sol";
 
 contract WeightedStakingTimestampTest is Test {
 

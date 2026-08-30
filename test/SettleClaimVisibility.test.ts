@@ -85,17 +85,16 @@ describe("settleClaim visibility (Issue #183)", function () {
                 .to.emit(truthBounty, "ClaimSettled");
         });
 
-        it("should revert if called before confirmation delay has passed", async function () {
+        it("should revert if called before the verification window has closed", async function () {
             await truthBounty.connect(verifier1).stake(MIN_STAKE);
             const claimId = 0;
             await truthBounty.createClaim("ipfs://QmTest2");
             await truthBounty.connect(verifier1).vote(claimId, true, MIN_STAKE);
 
-            // Advance only past window but NOT delay
-            await time.increase(VERIFICATION_WINDOW + 1);
-
+            // Legacy TruthBounty has no confirmation delay - settleClaim reverts
+            // until the verification window has fully closed
             await expect(truthBounty.settleClaim(claimId))
-                .to.be.revertedWith("Confirmation delay pending");
+                .to.be.revertedWith("Verification window not closed");
         });
 
         it("should revert on double-settle", async function () {

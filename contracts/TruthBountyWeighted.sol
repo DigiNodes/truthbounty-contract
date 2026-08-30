@@ -334,13 +334,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         });
 
         emit ClaimCreated(claimId, msg.sender, content, verificationWindowEnd);
-        emit ClaimCreatedV1(
-            claimId,
-            msg.sender,
-            keccak256(bytes(content)),
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
         return claimId;
     }
 
@@ -361,13 +354,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         verifierStakes[msg.sender].totalStaked += amount;
 
         emit StakeDeposited(msg.sender, amount);
-        emit StakeDepositedV1(
-            msg.sender,
-            amount,
-            verifierStakes[msg.sender].totalStaked,
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
     }
 
     /**
@@ -430,7 +416,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Check for last-minute reputation boosts using grace period
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         
         // Validate reputation staleness if expected reputation is provided
         if (expectedReputation > 0) {
@@ -478,14 +465,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         claim.totalStakeAmount += stakeAmount; // Still track raw stake total
 
         emit VoteCast(claimId, msg.sender, support, stakeAmount, effectiveStake, reputationScore);
-        emit VerificationSubmittedV1(
-            claimId,
-            msg.sender,
-            support,
-            stakeAmount,
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
     }
 
     /**
@@ -521,19 +500,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             rewardAmount,
             slashedAmount
         );
-        emit ClaimResolvedV1(
-            claimId,
-            msg.sender,
-            passed,
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
-        emit ClaimFinalizedV1(
-            claimId,
-            msg.sender,
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
     }
 
     /**
@@ -560,13 +526,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
-            emit StakeWithdrawnV1(
-                msg.sender,
-                vote.stakeAmount,
-                verifierStakes[msg.sender].totalStaked,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
             return;
         }
 
@@ -594,13 +553,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         if (reward > 0) {
             require(bountyToken.transfer(msg.sender, reward), "Reward transfer failed");
             emit RewardsDistributed(claimId, msg.sender, reward);
-            emit RewardClaimedV1(
-                claimId,
-                msg.sender,
-                reward,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
         }
 
         // Return stake (winners get full RAW stake back)
@@ -609,13 +561,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
-            emit StakeWithdrawnV1(
-                msg.sender,
-                vote.stakeAmount,
-                verifierStakes[msg.sender].totalStaked,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
         }
     }
 
@@ -641,13 +586,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             verifierStakes[msg.sender].activeStakes -= vote.stakeAmount;
             require(bountyToken.transfer(msg.sender, vote.stakeAmount), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, vote.stakeAmount);
-            emit StakeWithdrawnV1(
-                msg.sender,
-                vote.stakeAmount,
-                verifierStakes[msg.sender].totalStaked,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
             return;
         }
 
@@ -663,14 +601,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             stakeToReturn = vote.stakeAmount - slashAmount;
 
             emit StakeSlashed(claimId, msg.sender, slashAmount);
-            emit SlashExecutedV1(
-                claimId,
-                msg.sender,
-                keccak256("LOSING_VERIFICATION_POSITION"),
-                slashAmount,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
         }
 
         vote.stakeReturned = true;
@@ -683,13 +613,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         if (stakeToReturn > 0) {
             require(bountyToken.transfer(msg.sender, stakeToReturn), "Stake transfer failed");
             emit StakeWithdrawn(msg.sender, stakeToReturn);
-            emit StakeWithdrawnV1(
-                msg.sender,
-                stakeToReturn,
-                verifierStakes[msg.sender].totalStaked,
-                uint64(block.timestamp),
-                EVENT_SCHEMA_VERSION
-            );
         }
     }
 
@@ -722,13 +645,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(bountyToken.transfer(msg.sender, amount), "Transfer failed");
 
         emit StakeWithdrawn(msg.sender, amount);
-        emit StakeWithdrawnV1(
-            msg.sender,
-            amount,
-            verifierStakes[msg.sender].totalStaked,
-            uint64(block.timestamp),
-            EVENT_SCHEMA_VERSION
-        );
     }
 
 
@@ -843,13 +759,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxDrift
     ) internal {
-        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
-        
-        // If no previous snapshot, this is the first preview - allow it
-        if (lastSnapshot.timestamp == 0) {
-            return;
-        }
-        
         // Check if reputation has changed more than the allowed drift
         if (maxDrift > 0) {
             // Calculate percentage change: (|current - expected| / expected) * 10000
@@ -862,8 +771,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
         
         // Check if reputation is too stale (timestamp-based)
-        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
-        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        uint256 lastSnapshotTime = reputationSnapshots[user].timestamp;
+        if (lastSnapshotTime == 0) {
+            // No prior snapshot - fall back to the oracle's last update time
+            try reputationOracle.getLastReputationUpdate(user) returns (uint256 lastUpdateTime) {
+                lastSnapshotTime = lastUpdateTime;
+            } catch {
+                lastSnapshotTime = 0;
+            }
+        }
+        if (lastSnapshotTime > 0) {
+            require(block.timestamp - lastSnapshotTime <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        }
         
         // Emit validation event
         emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);
@@ -1204,7 +1123,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function setMinStakeAmount(uint256 newAmount) external onlyGovernanceOrAdmin {
         require(newAmount > 0, "Invalid amount");
-        require(newAmount <= bountyToken.totalSupply(), "Min stake exceeds token supply");
+        require(newAmount < bountyToken.totalSupply(), "Min stake exceeds token supply");
         
         uint256 oldAmount = minStakeAmount;
         minStakeAmount = newAmount;
@@ -1269,6 +1188,49 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         emit ReputationUpdateGracePeriodUpdated(newGracePeriod);
     }
 
+    // ============ IVerificationSource (SC-005) ============
+
+    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
+        return claimVoters[claimId].length;
+    }
+
+    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
+        return claimVoters[claimId][index];
+    }
+
+    function getVoteData(uint256 claimId, address verifier)
+        external
+        view
+        returns (bool voted, bool support, uint256 effectiveStake)
+    {
+        Vote storage v = votes[claimId][verifier];
+        return (v.voted, v.support, v.effectiveStake);
+    }
+
+    /// @notice Get the verification weight (effectiveStake) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationWeight(uint256 claimId, address verifier) external view returns (uint256) {
+        return votes[claimId][verifier].effectiveStake;
+    }
+
+    /// @notice Get the verification support (vote direction) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationSupport(uint256 claimId, address verifier) external view returns (bool) {
+        return votes[claimId][verifier].support;
+    }
+
+    /// @notice Get the verification window end timestamp for a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
+        return claims[claimId].createdAt + verificationWindowDuration;
+    }
+
+    /// @notice Get the claim submitter address
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimSubmitter(uint256 claimId) external view returns (address) {
+        return claims[claimId].submitter;
+    }
+
     // ============ View Functions ============
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
@@ -1281,30 +1243,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     function getVerifierStake(address verifier) external view returns (VerifierStake memory) {
         return verifierStakes[verifier];
-    }
-
-    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
-        return claimVoters[claimId].length;
-    }
-
-    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
-        return claimVoters[claimId][index];
-    }
-
-    function getVerificationWeight(uint256 claimId, address verifier) external view returns (uint256) {
-        return votes[claimId][verifier].effectiveStake;
-    }
-
-    function getVerificationSupport(uint256 claimId, address verifier) external view returns (bool) {
-        return votes[claimId][verifier].support;
-    }
-
-    function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
-        return claims[claimId].verificationWindowEnd;
-    }
-
-    function getClaimSubmitter(uint256 claimId) external view returns (address) {
-        return claims[claimId].submitter;
     }
 
     /**
@@ -1438,30 +1376,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
-        emit EmergencyPauseActivatedV1(
-
-            msg.sender,
-
-            keccak256("MANUAL_PAUSE"),
-
-            uint64(block.timestamp),
-
-            EVENT_SCHEMA_VERSION
-
-        );
     }
 
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
-        emit EmergencyPauseRecoveredV1(
-
-            msg.sender,
-
-            uint64(block.timestamp),
-
-            EVENT_SCHEMA_VERSION
-
-        );
     }
 
     /**

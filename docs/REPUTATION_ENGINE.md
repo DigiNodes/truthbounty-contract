@@ -83,7 +83,7 @@ function reputationExists(address verifier) external view returns (bool)
 ```solidity
 function calculateReputationMultiplier(address verifier) external view returns (uint256)
 ```
-- Formula: `multiplier = reputationScore / BASE_MULTIPLIER`
+- Formula: `multiplier = reputationScore` (scaled by 1e18)
 - Capped at 10x to prevent excessive dominance
 
 **Verification Weight**:

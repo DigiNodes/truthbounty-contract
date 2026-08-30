@@ -19,7 +19,6 @@ contract ReputationUpdateEngineAccessTest is Test {
         governance = new GovernanceController(admin);
 
         engine = new ReputationUpdateEngine(admin, address(governance));
-        engine.grantUpdateRole(resolver);
     }
 
     // ============ Role Management ============

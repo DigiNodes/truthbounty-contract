@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
+import "forge-std/Base.sol";
 import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/MockReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -50,7 +51,8 @@ contract SlashingHandler is CommonBase {
         truthBounty = new TruthBountyWeighted(
             address(token),
             address(oracle),
-            msg.sender
+            msg.sender,
+            address(0)
         );
 
         // Setup verifiers
@@ -62,7 +64,7 @@ contract SlashingHandler is CommonBase {
             vm.prank(verifier);
             token.approve(address(truthBounty), type(uint256).max);
 
-            vm.prank(verifier);
+            vm.prank(verifier, verifier);
             truthBounty.stake(50000 * 10**18);
         }
     }
@@ -82,11 +84,11 @@ contract SlashingHandler is CommonBase {
         uint256 claimId = claimIds[claimIdx];
 
         for (uint256 i = 0; i < VERIFIER_COUNT; i++) {
-            if (HEVM_ADDRESS.block_timestamp() >= 7 days) {
+            if (block.timestamp >= 7 days) {
                 return; // Window closed
             }
 
-            bool support = ((seed + i) % 2) == 0;
+            bool support = ((seed % 2) + i) % 2 == 0;
             uint256 stakeAmount = MIN_STAKE * (1 + (seed % 10));
 
             vm.prank(verifiers[i]);
@@ -103,12 +105,12 @@ contract SlashingHandler is CommonBase {
         uint256 claimId = claimIds[claimIdx];
 
         // Skip if already settled
-        (bool settled, , , , , , , ) = truthBounty.claims(claimId);
+        (,,,,, bool settled,,,,,) = truthBounty.claims(claimId);
         if (settled) return;
 
         // Move past window if needed
-        if (HEVM_ADDRESS.block_timestamp() < 7 days) {
-            skip(7 days + 1);
+        if (block.timestamp < 7 days) {
+            vm.warp(block.timestamp + 7 days + truthBounty.confirmationDelay());
         }
 
         vm.prank(address(msg.sender));

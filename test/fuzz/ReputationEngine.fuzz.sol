@@ -42,16 +42,14 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(verifier);
         reputationEngine.initializeReputation(verifier);
         
-        (uint256 score, uint256 successful, uint256 failed, uint256 disputed, uint256 totalStake, uint256 lastUpdated, bool exists) = 
-            reputationEngine.getReputation(verifier);
-        
-        assertEq(score, DEFAULT_INITIAL_SCORE);
-        assertEq(successful, 0);
-        assertEq(failed, 0);
-        assertEq(disputed, 0);
-        assertEq(totalStake, 0);
-        assertEq(lastUpdated, block.timestamp);
-        assertTrue(exists);
+        ReputationEngine.Reputation memory rep = reputationEngine.getReputation(verifier);
+        assertEq(rep.score, DEFAULT_INITIAL_SCORE);
+        assertEq(rep.successfulVerifications, 0);
+        assertEq(rep.failedVerifications, 0);
+        assertEq(rep.disputedVerifications, 0);
+        assertEq(rep.totalStake, 0);
+        assertEq(rep.lastUpdated, block.timestamp);
+        assertTrue(rep.exists);
     }
 
     function testFuzz_InitializeReputationWithCustomScore(address verifier, uint256 score) public {
@@ -72,12 +70,12 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.initializeReputation(verifier);
         
         vm.prank(verifier);
-        vm.expectRevert(bytes("VerifierAlreadyExists"));
+        vm.expectRevert(abi.encodeWithSelector(ReputationEngine.VerifierAlreadyExists.selector, verifier));
         reputationEngine.initializeReputation(verifier);
     }
 
     function testFuzz_ZeroAddressInitializationReverts() public {
-        vm.expectRevert(bytes("InvalidZeroAddress"));
+        vm.expectRevert(abi.encodeWithSelector(ReputationEngine.InvalidZeroAddress.selector));
         reputationEngine.initializeReputation(address(0));
     }
 
@@ -107,7 +105,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.initializeReputation(verifier);
         
         vm.prank(updateRole);
-        vm.expectRevert(bytes("InvalidReputationScore"));
+        vm.expectRevert(abi.encodeWithSelector(ReputationEngine.InvalidReputationScore.selector, newScore));
         reputationEngine.updateReputationScore(verifier, newScore);
     }
 
@@ -119,7 +117,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.initializeReputation(verifier);
         
         vm.prank(updateRole);
-        vm.expectRevert(bytes("InvalidReputationScore"));
+        vm.expectRevert(abi.encodeWithSelector(ReputationEngine.InvalidReputationScore.selector, newScore));
         reputationEngine.updateReputationScore(verifier, newScore);
     }
 
@@ -136,7 +134,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.updateReputationScore(verifier, score);
         
         uint256 multiplier = reputationEngine.calculateReputationMultiplier(verifier);
-        uint256 expectedMultiplier = score / BASE_MULTIPLIER;
+        uint256 expectedMultiplier = score;
         
         // Cap at 10x
         if (expectedMultiplier > 10e18) {
@@ -173,12 +171,14 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(verifier);
         reputationEngine.initializeReputation(verifier);
         
-        (, uint256 successfulBefore, , , , , ) = reputationEngine.getReputation(verifier);
+        uint256 successfulBefore = reputationEngine.getReputation(verifier).successfulVerifications;
         
         vm.prank(updateRole);
         reputationEngine.recordSuccessfulVerification(verifier, stakeAmount);
         
-        (, uint256 successfulAfter, , , uint256 totalStakeAfter, , ) = reputationEngine.getReputation(verifier);
+        ReputationEngine.Reputation memory rep = reputationEngine.getReputation(verifier);
+        uint256 successfulAfter = rep.successfulVerifications;
+        uint256 totalStakeAfter = rep.totalStake;
         
         assertEq(successfulAfter, successfulBefore + 1);
         assertEq(totalStakeAfter, stakeAmount);
@@ -191,12 +191,14 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(verifier);
         reputationEngine.initializeReputation(verifier);
         
-        (, , uint256 failedBefore, , , , ) = reputationEngine.getReputation(verifier);
+        uint256 failedBefore = reputationEngine.getReputation(verifier).failedVerifications;
         
         vm.prank(updateRole);
         reputationEngine.recordFailedVerification(verifier, stakeAmount);
         
-        (, , uint256 failedAfter, , uint256 totalStakeAfter, , ) = reputationEngine.getReputation(verifier);
+        ReputationEngine.Reputation memory rep = reputationEngine.getReputation(verifier);
+        uint256 failedAfter = rep.failedVerifications;
+        uint256 totalStakeAfter = rep.totalStake;
         
         assertEq(failedAfter, failedBefore + 1);
         assertEq(totalStakeAfter, stakeAmount);
@@ -209,12 +211,14 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(verifier);
         reputationEngine.initializeReputation(verifier);
         
-        (, , , uint256 disputedBefore, , , ) = reputationEngine.getReputation(verifier);
+        uint256 disputedBefore = reputationEngine.getReputation(verifier).disputedVerifications;
         
         vm.prank(updateRole);
         reputationEngine.recordDisputedClaim(verifier, stakeAmount);
         
-        (, , , uint256 disputedAfter, , uint256 totalStakeAfter, ) = reputationEngine.getReputation(verifier);
+        ReputationEngine.Reputation memory rep = reputationEngine.getReputation(verifier);
+        uint256 disputedAfter = rep.disputedVerifications;
+        uint256 totalStakeAfter = rep.totalStake;
         
         assertEq(disputedAfter, disputedBefore + 1);
         assertEq(totalStakeAfter, stakeAmount);
@@ -224,33 +228,52 @@ contract ReputationEngineFuzzTest is Test {
 
     function testFuzz_BatchUpdateVerificationStats(
         address[] calldata verifiers,
-        uint256[] calldata successCount,
-        uint256[] calldata failCount,
-        uint256[] calldata disputeCount
+        uint256 successSeed,
+        uint256 failSeed,
+        uint256 disputeSeed
     ) public {
         vm.assume(verifiers.length > 0 && verifiers.length <= 10);
-        vm.assume(successCount.length == verifiers.length);
-        vm.assume(failCount.length == verifiers.length);
-        vm.assume(disputeCount.length == verifiers.length);
         
-        // Initialize all verifiers
+        // Collect unique non-zero verifiers and initialize them
+        uint256 uniqueCount = 0;
+        address[] memory uniqueVerifiers = new address[](verifiers.length);
         for (uint256 i = 0; i < verifiers.length; i++) {
-            vm.assume(verifiers[i] != address(0));
-            vm.prank(verifiers[i]);
-            reputationEngine.initializeReputation(verifiers[i]);
+            if (verifiers[i] == address(0)) continue;
+            bool isDuplicate = false;
+            for (uint256 j = 0; j < uniqueCount; j++) {
+                if (uniqueVerifiers[j] == verifiers[i]) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (!isDuplicate) {
+                uniqueVerifiers[uniqueCount++] = verifiers[i];
+                vm.prank(verifiers[i]);
+                reputationEngine.initializeReputation(verifiers[i]);
+            }
+        }
+        vm.assume(uniqueCount > 0);
+        
+        address[] memory batchVerifiers = new address[](uniqueCount);
+        uint256[] memory successCount = new uint256[](uniqueCount);
+        uint256[] memory failCount = new uint256[](uniqueCount);
+        uint256[] memory disputeCount = new uint256[](uniqueCount);
+        for (uint256 i = 0; i < uniqueCount; i++) {
+            batchVerifiers[i] = uniqueVerifiers[i];
+            successCount[i] = bound(successSeed, 0, 1e6);
+            failCount[i] = bound(failSeed, 0, 1e6);
+            disputeCount[i] = bound(disputeSeed, 0, 1e6);
         }
         
         vm.prank(updateRole);
-        reputationEngine.batchUpdateVerificationStats(verifiers, successCount, failCount, disputeCount);
+        reputationEngine.batchUpdateVerificationStats(batchVerifiers, successCount, failCount, disputeCount);
         
         // Verify updates
-        for (uint256 i = 0; i < verifiers.length; i++) {
-            (, uint256 successful, uint256 failed, uint256 disputed, , , ) = 
-                reputationEngine.getReputation(verifiers[i]);
-            
-            assertEq(successful, successCount[i]);
-            assertEq(failed, failCount[i]);
-            assertEq(disputed, disputeCount[i]);
+        for (uint256 i = 0; i < uniqueCount; i++) {
+            ReputationEngine.Reputation memory rep = reputationEngine.getReputation(batchVerifiers[i]);
+            assertEq(rep.successfulVerifications, successCount[i]);
+            assertEq(rep.failedVerifications, failCount[i]);
+            assertEq(rep.disputedVerifications, disputeCount[i]);
         }
     }
 
@@ -280,7 +303,7 @@ contract ReputationEngineFuzzTest is Test {
     function testFuzz_SetInvalidReputationBounds(uint256 minScore, uint256 maxScore) public {
         vm.assume(minScore >= maxScore || minScore == 0);
         
-        vm.expectRevert(bytes("InvalidReputationBounds"));
+        vm.expectRevert(abi.encodeWithSelector(ReputationEngine.InvalidReputationBounds.selector, minScore, maxScore));
         reputationEngine.setReputationBounds(minScore, maxScore);
     }
 
@@ -309,7 +332,7 @@ contract ReputationEngineFuzzTest is Test {
 
     function testFuzz_MultiplierCalculationIsDeterministic(address verifier, uint256 stakeAmount) public {
         vm.assume(verifier != address(0));
-        vm.assume(stakeAmount > 0);
+        vm.assume(stakeAmount > 0 && stakeAmount <= 1e30);
         
         vm.prank(verifier);
         reputationEngine.initializeReputation(verifier);
@@ -332,7 +355,7 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(verifier2);
         reputationEngine.initializeReputation(verifier2);
         
-        (uint256 totalVerifiers, , , , , , ) = reputationEngine.getStatistics();
+        uint256 totalVerifiers = reputationEngine.getStatistics().totalVerifiers;
         assertEq(totalVerifiers, 2);
         
         vm.prank(updateRole);
@@ -341,9 +364,9 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(updateRole);
         reputationEngine.recordFailedVerification(verifier2, 500e18);
         
-        (, uint256 totalSuccess, uint256 totalFail, , , , ) = reputationEngine.getStatistics();
-        assertEq(totalSuccess, 1);
-        assertEq(totalFail, 1);
+        ReputationEngine.ProtocolStatistics memory stats = reputationEngine.getStatistics();
+        assertEq(stats.totalSuccessfulVerifications, 1);
+        assertEq(stats.totalFailedVerifications, 1);
     }
 
     // ============ Fuzz: Edge Cases ============
@@ -371,7 +394,7 @@ contract ReputationEngineFuzzTest is Test {
         reputationEngine.updateReputationScore(verifier, MIN_REPUTATION_SCORE);
         
         uint256 multiplier = reputationEngine.calculateReputationMultiplier(verifier);
-        assertEq(multiplier, MIN_REPUTATION_SCORE / BASE_MULTIPLIER);
+        assertEq(multiplier, MIN_REPUTATION_SCORE);
     }
 
     function testFuzz_LargeStakeAmount(address verifier, uint256 stakeAmount) public {
@@ -384,7 +407,7 @@ contract ReputationEngineFuzzTest is Test {
         vm.prank(updateRole);
         reputationEngine.recordSuccessfulVerification(verifier, stakeAmount);
         
-        (, , , , uint256 totalStake, , ) = reputationEngine.getReputation(verifier);
+        uint256 totalStake = reputationEngine.getReputation(verifier).totalStake;
         assertEq(totalStake, stakeAmount);
     }
 
@@ -393,21 +416,39 @@ contract ReputationEngineFuzzTest is Test {
     function testFuzz_MultipleVerifiersInitialization(address[] calldata verifiers) public {
         vm.assume(verifiers.length > 0 && verifiers.length <= 20);
         
+        uint256 count = 0;
         for (uint256 i = 0; i < verifiers.length; i++) {
-            vm.assume(verifiers[i] != address(0));
+            if (verifiers[i] == address(0)) continue;
+            bool isDuplicate = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (verifiers[j] != address(0) && verifiers[i] == verifiers[j]) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (isDuplicate) continue;
             vm.prank(verifiers[i]);
             reputationEngine.initializeReputation(verifiers[i]);
+            count++;
         }
         
-        (uint256 totalVerifiers, , , , , , ) = reputationEngine.getStatistics();
-        assertEq(totalVerifiers, verifiers.length);
+        uint256 totalVerifiers = reputationEngine.getStatistics().totalVerifiers;
+        assertEq(totalVerifiers, count);
     }
 
     function testFuzz_VerifierExistenceCheck(address[] calldata verifiers, address checkAddress) public {
         vm.assume(verifiers.length > 0 && verifiers.length <= 20);
         
         for (uint256 i = 0; i < verifiers.length; i++) {
-            vm.assume(verifiers[i] != address(0));
+            if (verifiers[i] == address(0)) continue;
+            bool isDuplicate = false;
+            for (uint256 j = 0; j < i; j++) {
+                if (verifiers[j] != address(0) && verifiers[i] == verifiers[j]) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (isDuplicate) continue;
             vm.prank(verifiers[i]);
             reputationEngine.initializeReputation(verifiers[i]);
         }

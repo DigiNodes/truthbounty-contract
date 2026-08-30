@@ -104,6 +104,10 @@ describe("Batch Size Limit (#156)", function () {
         owner.address
       );
 
+      const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+      const treasuryAccounting = await MockTreasuryAccounting.deploy();
+      await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
       const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
       const slashing = await VerifierSlashing.deploy(
         await staking.getAddress(),

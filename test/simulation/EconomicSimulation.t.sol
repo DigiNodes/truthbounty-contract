@@ -16,7 +16,9 @@ contract EconomicSimulationTest is Test {
 
     function setUp() public {
         sim = new EconomicSimulation(admin);
-        sim.grantRole(sim.SIMULATOR_ROLE(), simulator);
+        bytes32 simulatorRole = sim.SIMULATOR_ROLE();
+        vm.prank(admin);
+        sim.grantRole(simulatorRole, simulator);
     }
 
     // ============ Constructor ============
@@ -54,7 +56,7 @@ contract EconomicSimulationTest is Test {
         vm.prank(simulator);
         IEconomicSimulation.SimulationReport memory report = sim.simulate(config);
 
-        assertEq(report.scenario, IEconomicSimulation.Scenario.NORMAL_GROWTH);
+        assertEq(uint256(report.scenario), uint256(IEconomicSimulation.Scenario.NORMAL_GROWTH));
         assertTrue(report.timestamp > 0);
         assertTrue(report.metrics.treasurySolvency > 0);
         assertTrue(report.metrics.totalRewardEmissions > 0);
@@ -88,7 +90,7 @@ contract EconomicSimulationTest is Test {
         vm.prank(simulator);
         IEconomicSimulation.SimulationReport memory report = sim.simulate(config);
 
-        assertEq(report.scenario, IEconomicSimulation.Scenario.HIGH_GROWTH);
+        assertEq(uint256(report.scenario), uint256(IEconomicSimulation.Scenario.HIGH_GROWTH));
         assertTrue(report.metrics.protocolRevenue > 0);
     }
 

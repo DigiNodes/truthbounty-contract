@@ -54,7 +54,7 @@ contract BootstrapFuzzTest is Test {
         vm.prank(admin);
         controller.registerModule(moduleId, moduleAddress, "test");
 
-        vm.expectRevert(BootstrapController.ModuleAlreadyRegistered.selector);
+        vm.expectRevert(abi.encodeWithSelector(BootstrapController.ModuleAlreadyRegistered.selector, moduleId));
         vm.prank(admin);
         controller.registerModule(moduleId, moduleAddress, "test");
     }
@@ -83,8 +83,9 @@ contract BootstrapFuzzTest is Test {
     ) public {
         vm.assume(deployer != address(0));
 
+        bytes32 deployerRole = controller.DEPLOYER_ROLE();
         vm.prank(admin);
-        controller.grantRole(controller.DEPLOYER_ROLE(), deployer);
+        controller.grantRole(deployerRole, deployer);
 
         bytes32[] memory ids = new bytes32[](1);
         address[] memory addrs = new address[](1);
@@ -96,7 +97,7 @@ contract BootstrapFuzzTest is Test {
         vm.prank(admin);
         controller.registerModules(ids, addrs, names);
 
-        vm.expectRevert(BootstrapController.ModuleNotRegistered.selector);
+        vm.expectRevert(abi.encodeWithSelector(BootstrapController.ModuleNotRegistered.selector, keccak256("TOKEN")));
         vm.prank(deployer);
         controller.bootstrap();
     }
@@ -147,6 +148,7 @@ contract BootstrapFuzzTest is Test {
     ) public {
         vm.assume(index > 0);
 
+        vm.expectRevert("Index out of bounds");
         controller.getModuleAt(0);
     }
 }
