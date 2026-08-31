@@ -43,11 +43,13 @@ contract LifecycleFixture is Test {
         _provision(verifier3, 1000 ether);
         _provision(verifier4, 1000 ether);
         
-        // Setup initial reputation scores
+        // Setup initial reputation scores (must be admin/owner)
+        vm.startPrank(admin);
         reputationOracle.setReputationScore(verifier1, 1 ether); // 1.0x
         reputationOracle.setReputationScore(verifier2, 1 ether); // 1.0x
         reputationOracle.setReputationScore(verifier3, 1 ether); // 1.0x
         reputationOracle.setReputationScore(verifier4, 1 ether); // 1.0x
+        vm.stopPrank();
     }
 
     function _provision(address user, uint256 amount) internal {
