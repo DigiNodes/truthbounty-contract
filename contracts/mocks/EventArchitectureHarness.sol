@@ -466,4 +466,30 @@ contract EventArchitectureHarness is ITruthBountyEvents {
     ) external {
         emit UpgradeRolledBackV1(moduleId, oldImplementation, restoredImplementation, reasonHash, guardian, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
+
+    function emitDisputeOpenedV1(
+        uint256 claimId,
+        uint256 disputeId,
+        address challenger,
+        uint8 challengedOutcome,
+        uint8 challengedStatus,
+        address bondToken,
+        uint256 bondAmount,
+        uint64 appealDeadline,
+        bytes32 appealRationaleHash
+    ) external {
+        emit DisputeOpenedV1(
+            claimId,
+            disputeId,
+            challenger,
+            challengedOutcome,
+            challengedStatus,
+            bondToken,
+            bondAmount,
+            appealDeadline,
+            appealRationaleHash,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
+    }
 }
