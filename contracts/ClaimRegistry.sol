@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: MIT
+// // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./interfaces/IClaimRegistry.sol";
+import "./interfaces/IParameterVersionRegistry.sol;
 
 /**
  * @title ClaimRegistry
@@ -64,6 +65,9 @@ contract ClaimRegistry is AccessControl, IClaimRegistry {
      *      Engine, Settlement Engine). Never granted to EOAs in production.
      */
     bytes32 public constant REGISTRY_UPDATER_ROLE = keccak256("REGISTRY_UPDATER_ROLE");
+
+    /// @notice ParameterVersionRegistry instance that tracks versioned economic parameters
+    IParameterVersionRegistry public parameterVersionRegistry;
 
     // =========================================================================
     // Constants — Input Validation
