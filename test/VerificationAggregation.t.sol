@@ -381,6 +381,115 @@ contract VerificationAggregationTest is Test {
         assertEq(confidence1, confidence2);
     }
 
+    function testPermutationOrderIndependence() public {
+        _approveAndStake(verifier1, 1000 ether);
+        _approveAndStake(verifier2, 1000 ether);
+        _approveAndStake(verifier3, 1000 ether);
+        _approveAndStake(verifier4, 1000 ether);
+
+        oracle.setReputationScore(verifier1, 2 ether);
+        oracle.setReputationScore(verifier2, 1 ether);
+        oracle.setReputationScore(verifier3, 3 ether);
+        oracle.setReputationScore(verifier4, 1 ether);
+
+        vm.warp(block.timestamp + 3 days);
+
+        uint256 claimA = _createClaim();
+        uint256 claimB = _createClaim();
+
+        _vote(claimA, verifier1, true, 10 ether);
+        _vote(claimA, verifier2, false, 20 ether);
+        _vote(claimA, verifier3, true, 30 ether);
+        _vote(claimA, verifier4, false, 40 ether);
+
+        _vote(claimB, verifier4, false, 40 ether);
+        _vote(claimB, verifier3, true, 30 ether);
+        _vote(claimB, verifier2, false, 20 ether);
+        _vote(claimB, verifier1, true, 10 ether);
+
+        _fastForwardWindow();
+
+        AggregationResult memory resultA = aggregator.aggregateClaim(claimA);
+        AggregationResult memory resultB = aggregator.aggregateClaim(claimB);
+
+        assertEq(resultA.trueWeight, resultB.trueWeight);
+        assertEq(resultA.falseWeight, resultB.falseWeight);
+        assertEq(resultA.totalWeight, resultB.totalWeight);
+        assertEq(uint256(resultA.outcome), uint256(resultB.outcome));
+        assertEq(resultA.confidence, resultB.confidence);
+    }
+
+    function testFuzzStakeDistribution(uint256 seed) public {
+        address[4] memory voters = [verifier1, verifier2, verifier3, verifier4];
+        uint256[4] memory st;
+        uint256[4] memory rep;
+        bool[4] memory support;
+
+        for (uint256 i = 0; i < 4; i++) {
+            st[i] = bound(uint256(keccak256(abi.encode(seed, i, 0))), 1 ether, 10_000 ether);
+            rep[i] = bound(uint256(keccak256(abi.encode(seed, i, 1))), 0.1 ether, 5 ether);
+            support[i] = uint256(keccak256(abi.encode(seed, i, 2))) % 2 == 0;
+            oracle.setReputationScore(voters[i], rep[i]);
+        }
+
+        vm.warp(block.timestamp + 3 days);
+        uint256 claimId = _createClaim();
+
+        uint256 expectedTrue;
+        uint256 expectedFalse;
+
+        for (uint256 i = 0; i < 4; i++) {
+            _approveAndStake(voters[i], st[i]);
+            if (support[i]) {
+                _vote(claimId, voters[i], true, st[i]);
+                expectedTrue += st[i] * rep[i] / 1 ether;
+            } else {
+                _vote(claimId, voters[i], false, st[i]);
+                expectedFalse += st[i] * rep[i] / 1 ether;
+            }
+        }
+
+        _fastForwardWindow();
+
+        AggregationResult memory result = aggregator.aggregateClaim(claimId);
+        assertEq(result.trueWeight, expectedTrue);
+        assertEq(result.falseWeight, expectedFalse);
+        assertEq(result.totalWeight, expectedTrue + expectedFalse);
+        assertEq(result.confidence, expectedTrue + expectedFalse == 0 ? 0 : expectedTrue * 10000 / (expectedTrue + expectedFalse));
+
+        if (expectedTrue > expectedFalse) {
+            assertEq(uint256(result.outcome), uint256(ClaimOutcome.VERIFIED_TRUE));
+        } else if (expectedFalse > expectedTrue) {
+            assertEq(uint256(result.outcome), uint256(ClaimOutcome.VERIFIED_FALSE));
+        } else {
+            assertEq(uint256(result.outcome), uint256(ClaimOutcome.INCONCLUSIVE));
+        }
+    }
+
+    function testFuzzConfidenceNumericBounds(uint256 trueWeight, uint256 falseWeight) public {
+        vm.assume(trueWeight > 0 || falseWeight > 0);
+
+        bool shouldRevert;
+        unchecked {
+            uint256 sum = trueWeight + falseWeight;
+            if (sum < trueWeight) {
+                shouldRevert = true;
+            }
+        }
+
+        if (!shouldRevert && trueWeight > type(uint256).max / 10000) {
+            shouldRevert = true;
+        }
+
+        if (shouldRevert) {
+            vm.expectRevert();
+            aggregator.calculateConfidence(trueWeight, falseWeight);
+        } else {
+            uint256 confidence = aggregator.calculateConfidence(trueWeight, falseWeight);
+            assertLe(confidence, 10000);
+        }
+    }
+
     // ============ Stress Tests ============
 
     function testMaxParticipation() public {
