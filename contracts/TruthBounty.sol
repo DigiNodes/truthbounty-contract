@@ -270,7 +270,6 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE,   ADMIN_ROLE);
-    }
 
         _initializeGovernance(
             _governanceController,
