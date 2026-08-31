@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "./IUpgradeController.sol";
 import "./IVersionRegistry.sol";
 import "./StorageCompatibilityValidator.sol";
@@ -201,14 +201,12 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
             revert UnauthorizedEmergency();
         }
 
-        if (storageValidator != StorageCompatibilityValidator(address(0))) {
-            try storageValidator.validateUpgrade(
+        if (address(storageValidator) != address(0)) {
+            storageValidator.validateUpgrade(
                 proposal.targetContract,
                 proposal.currentImplementation,
                 proposal.newImplementation
-            ) {
-            } catch {
-            }
+            );
         }
 
         _currentImplementation[proposal.targetContract] = proposal.newImplementation;
