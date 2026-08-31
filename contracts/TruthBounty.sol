@@ -5,8 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
@@ -270,7 +270,6 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE,   ADMIN_ROLE);
-    }
 
         _initializeGovernance(
             _governanceController,
