@@ -3,7 +3,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
 import type { StakeVault, MockERC20, MockFailingBondERC20 } from "../typechain-types";
 
-describe("StakeVault", function () {
+describe("StakeVault (bond ledger)", function () {
     const AMOUNT = ethers.parseEther("100");
 
     async function deployFixture() {
@@ -148,5 +148,124 @@ describe("StakeVault", function () {
             await vault.connect(operator).releaseBond(5, recipient.address);
             expect(await vault.totalLocked()).to.equal(ethers.parseEther("30"));
         });
+    });
+});
+
+describe("StakeVault V2 custody", function () {
+    async function deployFixture() {
+        const [admin, verifier, verifier2, settlement, slashing] = await ethers.getSigners();
+
+        const MockModuleRegistry = await ethers.getContractFactory("MockModuleRegistry");
+        const registry = await MockModuleRegistry.deploy();
+
+        const MockERC20 = await ethers.getContractFactory("MockERC20");
+        const token = await MockERC20.deploy("Stake", "STK");
+        const tokenB = await MockERC20.deploy("Alt", "ALT");
+
+        const StakeVault = await ethers.getContractFactory("contracts/v2/StakeVault.sol:StakeVault");
+        const vault = await StakeVault.deploy(await registry.getAddress(), await token.getAddress(), admin.address);
+
+        await vault.setSupportedAsset(await tokenB.getAddress(), true);
+
+        const MODULE_SETTLEMENT = await vault.MODULE_SETTLEMENT();
+        const MODULE_SLASHING = await vault.MODULE_SLASHING();
+        await registry.registerModule(MODULE_SETTLEMENT, settlement.address);
+        await registry.registerModule(MODULE_SLASHING, slashing.address);
+
+        const amount = ethers.parseEther("100");
+        await token.mint(verifier.address, ethers.parseEther("1000"));
+        await token.mint(verifier2.address, ethers.parseEther("1000"));
+        await tokenB.mint(verifier.address, ethers.parseEther("1000"));
+
+        await token.connect(verifier).approve(await vault.getAddress(), ethers.MaxUint256);
+        await token.connect(verifier2).approve(await vault.getAddress(), ethers.MaxUint256);
+        await tokenB.connect(verifier).approve(await vault.getAddress(), ethers.MaxUint256);
+
+        return { vault, registry, token, tokenB, admin, verifier, verifier2, settlement, slashing, amount };
+    }
+
+    it("implements IStakeCustody with ERC-165", async function () {
+        const { vault } = await deployFixture();
+        const iStakeCustody = await ethers.getContractAt("IStakeCustody", await vault.getAddress());
+        expect(await iStakeCustody.protocolVersion()).to.deep.equal([2n, 0n]);
+        expect(await vault.supportsInterface("0x01ffc9a7")).to.equal(true);
+    });
+
+    it("deposits, releases, and withdraws stake via pull primitive", async function () {
+        const { vault, token, verifier, settlement, amount } = await deployFixture();
+        const claimId = 1n;
+
+        await expect(vault.connect(verifier).depositStake(claimId, amount))
+            .to.emit(vault, "StakeDeposited")
+            .withArgs(verifier.address, claimId, amount);
+
+        expect(await vault.staked(claimId, verifier.address)).to.equal(amount);
+        expect(await vault.totalStaked(claimId)).to.equal(amount);
+
+        await expect(vault.connect(settlement).releaseStake(claimId, verifier.address, amount))
+            .to.emit(vault, "StakeReleased")
+            .withArgs(verifier.address, claimId, amount);
+
+        expect(await vault.claimableBalance(await token.getAddress(), verifier.address)).to.equal(amount);
+
+        const before = await token.balanceOf(verifier.address);
+        await expect(vault.connect(verifier).withdraw(await token.getAddress(), amount))
+            .to.emit(vault, "VaultWithdrawn")
+            .withArgs(await token.getAddress(), verifier.address, amount);
+        expect(await token.balanceOf(verifier.address)).to.equal(before + amount);
+    });
+
+    it("slashes stake into protocol allocation", async function () {
+        const { vault, token, verifier, slashing, amount } = await deployFixture();
+        const claimId = 7n;
+        const reason = ethers.id("slash");
+
+        await vault.connect(verifier).depositStake(claimId, amount);
+        await expect(vault.connect(slashing).slashStake(claimId, verifier.address, amount, reason))
+            .to.emit(vault, "StakeSlashed")
+            .withArgs(verifier.address, claimId, amount, reason);
+
+        expect(await vault.protocolAllocation(await token.getAddress())).to.equal(amount);
+        expect(await vault.staked(claimId, verifier.address)).to.equal(0n);
+    });
+
+    it("isolates claims and assets", async function () {
+        const { vault, token, tokenB, verifier, settlement, amount } = await deployFixture();
+
+        await vault.connect(verifier).depositStake(1n, amount);
+        await vault.connect(verifier).depositStake(2n, amount * 2n);
+        await vault.connect(verifier).deposit(await tokenB.getAddress(), amount);
+
+        await vault.connect(settlement).lock(
+            await tokenB.getAddress(),
+            verifier.address,
+            1n,
+            0n,
+            3, // BOUNTY_ESCROW
+            amount
+        );
+
+        expect(await vault.staked(2n, verifier.address)).to.equal(amount * 2n);
+        expect(await vault.totalCustody(await token.getAddress())).to.equal(amount * 3n);
+        expect(await vault.totalCustody(await tokenB.getAddress())).to.equal(amount);
+    });
+
+    it("rejects unauthorized lock mutations", async function () {
+        const { vault, token, verifier, verifier2, amount } = await deployFixture();
+        await vault.connect(verifier).deposit(await token.getAddress(), amount);
+
+        await expect(
+            vault.connect(verifier2).lock(await token.getAddress(), verifier.address, 1n, 0n, 2, amount)
+        ).to.be.revertedWithCustomError(vault, "UnauthorizedModule");
+    });
+
+    it("reconciles custody with bucket totals", async function () {
+        const { vault, token, verifier, amount } = await deployFixture();
+        await vault.connect(verifier).depositStake(1n, amount);
+
+        const [custody, obligations] = await vault.reconcile(await token.getAddress());
+        expect(custody).to.equal(amount);
+        expect(obligations).to.equal(amount);
+        expect(custody).to.equal(obligations);
     });
 });
