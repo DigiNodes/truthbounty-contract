@@ -240,7 +240,7 @@ contract TokenomicsEngine is
 
         protocolToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        AllocationShares memory shares = config.calculateProportionalAllocation(amount);
+        AllocationShares memory shares = AllocationPolicies.calculateProportionalAllocation(amount, config);
 
         if (rewardMultiplier != 1e18) {
             shares.verifierRewards = (shares.verifierRewards * rewardMultiplier) / 1e18;
@@ -382,14 +382,17 @@ contract TokenomicsEngine is
 
     // ============ Governance Controls ==========
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setSourceAllocation(RevenueSource source, SourceAllocation calldata config)
         external
         override
         onlyGovernanceOrAdmin
     {
-        uint256 sourceUint = uint256(source);
-
-        SourceAllocation storage old = sourceAllocations[sourceUint];
+        SourceAllocation storage old = sourceAllocations[source];
         uint256 oldVerifier = old.verifierRewardsBPS;
         uint256 oldTreasury = old.treasuryReserveBPS;
         uint256 oldEcosystem = old.ecosystemIncentivesBPS;
@@ -400,7 +403,7 @@ contract TokenomicsEngine is
         (bool valid, string memory reason) = AllocationPolicies.validateAllocationConfig(config);
         if (!valid) revert AllocationConfigInvalid(reason);
 
-        sourceAllocations[sourceUint] = config;
+        sourceAllocations[source] = config;
 
         emit AllocationUpdated(
             source,
@@ -414,12 +417,22 @@ contract TokenomicsEngine is
         );
     }
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setEmissionLimit(uint256 _emissionLimit) external override onlyGovernanceOrAdmin {
         uint256 old = emissionLimit;
         emissionLimit = _emissionLimit;
         emit EmissionLimitUpdated(old, _emissionLimit);
     }
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setRewardMultiplier(uint256 _multiplier) external override onlyGovernanceOrAdmin {
         if (_multiplier == 0) revert InvalidRewardMultiplier();
         uint256 old = rewardMultiplier;
@@ -442,7 +455,7 @@ contract TokenomicsEngine is
         view
         returns (SourceAllocation memory)
     {
-        return sourceAllocations[uint256(source)];
+        return sourceAllocations[source];
     }
 
     function getDistributionRecord(bytes32 distributionId)
@@ -479,7 +492,7 @@ contract TokenomicsEngine is
         view
         returns (uint256)
     {
-        return totalBySource[uint256(source)];
+        return totalBySource[source];
     }
 
     function getDistributionHistory(uint256 offset, uint256 limit)
@@ -500,7 +513,11 @@ contract TokenomicsEngine is
         }
     }
 
-    function getDistributionHistoryLength() external view override returns (uint256) {
+    function getProcessedDistribution(bytes32 distributionId) external view override returns (bool) {
+        return processedDistributions[distributionId];
+    }
+
+    function getDistributionHistoryLength() external view returns (uint256) {
         return distributionHistory.length;
     }
 
@@ -516,11 +533,11 @@ contract TokenomicsEngine is
 
     // ============ Pause ==========
 
-    function pause() external override onlyRole(PAUSER_ROLE) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external override onlyRole(PAUSER_ROLE) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 

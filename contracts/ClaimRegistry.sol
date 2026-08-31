@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IClaimRegistry.sol";
+import "./interfaces/IParameterVersionRegistry.sol;
 
 /**
  * @title ClaimRegistry
@@ -19,6 +20,14 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant REGISTRY_UPDATER_ROLE = keccak256("REGISTRY_UPDATER_ROLE");
 
+    /// @notice ParameterVersionRegistry instance that tracks versioned economic parameters
+    IParameterVersionRegistry public parameterVersionRegistry;
+
+    // =========================================================================
+    // Constants — Input Validation
+    // =========================================================================
+
+    /// @notice Minimum byte length for a valid claim statement.
     uint256 public constant STATEMENT_MIN_LENGTH = 10;
     uint256 public constant STATEMENT_MAX_LENGTH = 2000;
     uint256 public constant CID_MIN_LENGTH = 46;
@@ -37,10 +46,19 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     mapping(bytes32 => bool) private _canonicalClaimExists;
 
     constructor(address initialAdmin) {
+    /**
+     * @param initialAdmin Address that receives DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
+     *                     Must be non-zero.
+     * @param parameterVersionRegistry_ Address of the deployed ParameterVersionRegistry
+     * @dev Sets _nextClaimId = 1 so the first created claim has ID = 1.
+     */
+    constructor(address initialAdmin, address parameterVersionRegistry_) {
         require(initialAdmin != address(0), "ClaimRegistry: zero admin address");
+        require(parameterVersionRegistry_ != address(0), "ClaimRegistry: zero registry address");
 
         _nextClaimId = 1;
         _configVersion = 1;
+        parameterVersionRegistry = IParameterVersionRegistry(parameterVersionRegistry_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
@@ -83,6 +101,31 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         emit ClaimCreated(claimId, msg.sender, evidenceCID);
     }
 
+        // --- Link claim to current parameter version for non-retroactivity ----
+        parameterVersionRegistry.recordClaimCreation(claimId);
+
+        // --- Event emission --------------------------------------------------
+
+        emit ClaimCreated(claimId, msg.sender, evidenceCID);
+    }
+
+    /**
+     * @notice Update the ParameterVersionRegistry address (only callable by admin)
+     * @param newRegistry The new ParameterVersionRegistry address
+     */
+    function setParameterVersionRegistry(address newRegistry) external onlyRole(ADMIN_ROLE) {
+        if (newRegistry == address(0)) revert("ClaimRegistry: zero address");
+        parameterVersionRegistry = IParameterVersionRegistry(newRegistry);
+    }
+
+    /**
+     * @inheritdoc IClaimRegistry
+     *
+     * @dev Only accounts holding REGISTRY_UPDATER_ROLE may call this function.
+     *      This role is intended for authorised downstream protocol modules only.
+     *
+     * @custom:emits ClaimStatusUpdated(claimId, oldStatus, newStatus)
+     */
     function updateClaimStatus(
         uint256 claimId,
         ClaimStatus newStatus
@@ -277,4 +320,5 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             custodyRef
         );
     }
+}
 }

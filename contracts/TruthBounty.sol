@@ -52,6 +52,7 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
         _;
     }
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(address initialAdmin) ERC20("TruthBounty", "BOUNTY") {
         require(initialAdmin != address(0), "Invalid admin address");
         _mint(initialAdmin, 10_000_000 * 10 ** decimals());
@@ -60,6 +61,7 @@ contract TruthBountyToken is ERC20, ResolverRoleTimelock, Initializable, UUPSUpg
         _grantRole(ADMIN_ROLE, initialAdmin);
         
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+        _disableInitializers();
     }
 
     function setSettlementContract(address _settlement) external onlyRole(ADMIN_ROLE) {
