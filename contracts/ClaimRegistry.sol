@@ -120,12 +120,15 @@ contract ClaimRegistry is AccessControl, IClaimRegistry {
     /**
      * @param initialAdmin Address that receives DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
      *                     Must be non-zero.
+     * @param parameterVersionRegistry_ Address of the deployed ParameterVersionRegistry
      * @dev Sets _nextClaimId = 1 so the first created claim has ID = 1.
      */
-    constructor(address initialAdmin) {
+    constructor(address initialAdmin, address parameterVersionRegistry_) {
         require(initialAdmin != address(0), "ClaimRegistry: zero admin address");
+        require(parameterVersionRegistry_ != address(0), "ClaimRegistry: zero registry address");
 
         _nextClaimId = 1;
+        parameterVersionRegistry = IParameterVersionRegistry(parameterVersionRegistry_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
@@ -194,9 +197,21 @@ contract ClaimRegistry is AccessControl, IClaimRegistry {
         c.createdAt = now_;
         c.verificationDeadline = verificationDeadline;
 
+        // --- Link claim to current parameter version for non-retroactivity ----
+        parameterVersionRegistry.recordClaimCreation(claimId);
+
         // --- Event emission --------------------------------------------------
 
         emit ClaimCreated(claimId, msg.sender, evidenceCID);
+    }
+
+    /**
+     * @notice Update the ParameterVersionRegistry address (only callable by admin)
+     * @param newRegistry The new ParameterVersionRegistry address
+     */
+    function setParameterVersionRegistry(address newRegistry) external onlyRole(ADMIN_ROLE) {
+        if (newRegistry == address(0)) revert("ClaimRegistry: zero address");
+        parameterVersionRegistry = IParameterVersionRegistry(newRegistry);
     }
 
     /**
