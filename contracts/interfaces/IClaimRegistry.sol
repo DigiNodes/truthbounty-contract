@@ -89,7 +89,7 @@ interface IClaimRegistry {
     error InvalidCID();
     error InvalidDeadline();
     error ClaimNotFound(uint256 claimId);
-    error ClaimNotFound(bytes32 claimId);
+    error CanonicalClaimNotFound(bytes32 claimId);
     error UnauthorisedStatusTransition();
     error InvalidStatusTransition(ClaimStatus current, ClaimStatus requested);
     error ZeroAddress();

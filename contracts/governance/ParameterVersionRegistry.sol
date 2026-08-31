@@ -231,7 +231,7 @@ contract ParameterVersionRegistry is
      * @notice Update the parameter timelock (can only increase, never decrease below minimum)
      * @param newTimelock The new timelock duration
      */
-    function updateParameterTimelock(uint256 newTimelock) external nonReentrant onlyGovernance {
+    function updateParameterTimelock(uint256 newTimelock) external nonReentrant onlyGovernanceOrAdmin {
         if (newTimelock < MIN_ECONOMIC_PARAMETER_TIMELOCK) revert TimelockTooShort(newTimelock, MIN_ECONOMIC_PARAMETER_TIMELOCK);
         if (newTimelock > MAX_ECONOMIC_PARAMETER_TIMELOCK) revert TimelockTooLong(newTimelock, MAX_ECONOMIC_PARAMETER_TIMELOCK);
         
@@ -356,7 +356,6 @@ contract ParameterVersionRegistry is
 
     // ============ Errors ============
     
-    error ZeroAddress();
     error VersionNotFound(uint256 versionId);
     error VersionNotQueued(uint256 versionId);
     error NotScheduledVersion(uint256 versionId);

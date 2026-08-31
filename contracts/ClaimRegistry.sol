@@ -4,9 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IClaimRegistry.sol";
-import "./interfaces/IParameterVersionRegistry.sol;
+import "./interfaces/IParameterVersionRegistry.sol";
 
 /**
  * @title ClaimRegistry
@@ -45,7 +45,6 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     mapping(bytes32 => CanonicalClaim) private _canonicalClaims;
     mapping(bytes32 => bool) private _canonicalClaimExists;
 
-    constructor(address initialAdmin) {
     /**
      * @param initialAdmin Address that receives DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
      *                     Must be non-zero.
@@ -97,14 +96,6 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         c.evidenceCID = evidenceCID;
         c.createdAt = now_;
         c.verificationDeadline = verificationDeadline;
-
-        emit ClaimCreated(claimId, msg.sender, evidenceCID);
-    }
-
-        // --- Link claim to current parameter version for non-retroactivity ----
-        parameterVersionRegistry.recordClaimCreation(claimId);
-
-        // --- Event emission --------------------------------------------------
 
         emit ClaimCreated(claimId, msg.sender, evidenceCID);
     }
@@ -320,5 +311,4 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             custodyRef
         );
     }
-}
 }
