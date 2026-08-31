@@ -49,7 +49,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
 
     // ============ Constants ============
 
-    uint256 public constant MIN_UPGRADE_DELAY = 1 hours;
+    /// @dev Minimum upgrade delay is enforced to 7 days as per security requirements
+    uint256 public constant MIN_UPGRADE_DELAY = 7 days;
     uint256 public constant MAX_UPGRADE_DELAY = 30 days;
 
     // ============ Data Structures ============
@@ -104,7 +105,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     // ============ State Variables ============
 
     /// @notice Configurable execution timelock applied at approval time.
-    uint256 public upgradeTimelock = 2 days;
+    /// @dev Enforced 7-day upgrade delay as required by security specifications
+    uint256 public upgradeTimelock = 7 days;
 
     /// @notice Per-module registry state.
     mapping(bytes32 => ModuleState) public modules;
