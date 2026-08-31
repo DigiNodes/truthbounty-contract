@@ -95,7 +95,7 @@ contract EIP712VerifierInvariant is Test {
             assertGe(
                 verifier.getNonce(addr),
                 handler.snapshotNonce(addr),
-                "I1: nonce decreased — violation of monotonicity"
+                "I1: nonce decreased - violation of monotonicity"
             );
         }
     }

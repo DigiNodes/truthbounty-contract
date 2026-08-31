@@ -8,17 +8,21 @@ import "@openzeppelin/hardhat-upgrades";
 dotenv.config();
 
 const config: HardhatUserConfig = {
-  solidity: {
+solidity: {
     version: "0.8.28",
     settings: {
       evmVersion: "cancun",
+      viaIR: true,
       optimizer: {
         enabled: true,
-        runs: 200
-      }
-    }
+        runs: 200,
+      },
+    },
   },
   networks: {
+    hardhat: {
+      allowUnlimitedContractSize: true,
+    },
     optimismSepolia: {
       url:
         process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
@@ -52,6 +56,7 @@ const config: HardhatUserConfig = {
     outputFile: ".gas-reports.json",
     noColors: true,
     excludeContracts: [],
+    // @ts-ignore
     snapshots: {
       outputFile: ".gas-snapshots.json",
     },

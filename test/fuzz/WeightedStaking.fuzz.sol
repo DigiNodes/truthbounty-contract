@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/WeightedStaking.sol";
-import "../contracts/MockReputationOracle.sol";
+import "../../contracts/WeightedStaking.sol";
+import "../../contracts/MockReputationOracle.sol";
 
 contract WeightedStakingFuzzTest is Test {
     WeightedStaking public weightedStaking;
@@ -33,7 +33,7 @@ contract WeightedStakingFuzzTest is Test {
         mockOracle = new MockReputationOracle();
         
         // Deploy weighted staking contract
-        weightedStaking = new WeightedStaking(address(mockOracle));
+        weightedStaking = new WeightedStaking(address(mockOracle), owner, address(0));
         
         vm.stopPrank();
     }
@@ -61,11 +61,11 @@ contract WeightedStakingFuzzTest is Test {
         assertGe(result.reputationScore, MIN_REPUTATION, "Reputation should be at least minimum");
         assertLe(result.reputationScore, MAX_REPUTATION, "Reputation should be at most maximum");
         
-        // Weight should equal bounded reputation
-        assertEq(result.weight, result.reputationScore, "Weight should equal bounded reputation");
+        // Weight should equal sqrt-scaled reputation
+        assertEq(result.weight, _expectedWeight(result.reputationScore), "Weight should equal sqrt-scaled reputation");
         
         // Effective stake should be calculated correctly
-        uint256 expectedEffectiveStake = (stakeAmount * result.reputationScore) / BASE_MULTIPLIER;
+        uint256 expectedEffectiveStake = (stakeAmount * result.weight) / BASE_MULTIPLIER;
         assertEq(result.effectiveStake, expectedEffectiveStake, "Effective stake calculation incorrect");
         
         // Effective stake should not exceed maximum possible
@@ -99,35 +99,37 @@ contract WeightedStakingFuzzTest is Test {
         uint256[] calldata stakeAmounts,
         uint256[] calldata reputationScores
     ) public {
-        // Ensure arrays have same length and reasonable size
-        vm.assume(stakeAmounts.length == reputationScores.length);
+        // Ensure reasonable sizes and a non-empty reputation pool
         vm.assume(stakeAmounts.length > 0 && stakeAmounts.length <= 10);
+        vm.assume(reputationScores.length > 0);
         
         address[] memory users = new address[](stakeAmounts.length);
+        uint256[] memory boundedStakes = new uint256[](stakeAmounts.length);
+        uint256[] memory boundedScores = new uint256[](stakeAmounts.length);
         
         // Set up users and reputation scores
         for (uint256 i = 0; i < stakeAmounts.length; i++) {
             users[i] = address(uint160(0x100 + i)); // Generate unique addresses
             
-            // Bound values
-            stakeAmounts[i] = bound(stakeAmounts[i], 1, 1000e18);
-            reputationScores[i] = bound(reputationScores[i], 1, 100e18);
+            // Bound values (reuse reputation entries cyclically)
+            boundedStakes[i] = bound(stakeAmounts[i], 1, 1000e18);
+            boundedScores[i] = bound(reputationScores[i % reputationScores.length], 1, 100e18);
             
             vm.prank(owner);
-            mockOracle.setReputationScore(users[i], reputationScores[i]);
+            mockOracle.setReputationScore(users[i], boundedScores[i]);
         }
         
         // Test batch calculation
         WeightedStaking.WeightedStakeResult[] memory results = 
-            weightedStaking.batchCalculateWeightedStake(users, stakeAmounts);
+            weightedStaking.batchCalculateWeightedStake(users, boundedStakes);
         
         // Verify each result
         for (uint256 i = 0; i < results.length; i++) {
-            assertEq(results[i].rawStake, stakeAmounts[i], "Raw stake should match");
+            assertEq(results[i].rawStake, boundedStakes[i], "Raw stake should match");
             assertGe(results[i].reputationScore, MIN_REPUTATION, "Reputation should respect minimum");
             assertLe(results[i].reputationScore, MAX_REPUTATION, "Reputation should respect maximum");
             
-            uint256 expectedEffective = (stakeAmounts[i] * results[i].reputationScore) / BASE_MULTIPLIER;
+            uint256 expectedEffective = (boundedStakes[i] * results[i].weight) / BASE_MULTIPLIER;
             assertEq(results[i].effectiveStake, expectedEffective, "Effective stake should be correct");
         }
     }
@@ -180,17 +182,17 @@ contract WeightedStakingFuzzTest is Test {
         uint256 minScore,
         uint256 maxScore
     ) public {
-        // Ensure valid bounds
-        vm.assume(minScore > 0 && minScore < maxScore);
+        // Ensure valid bounds with a minimum above 1 so a positive below-min score exists
+        vm.assume(minScore > 1);
+        vm.assume(minScore < maxScore);
         vm.assume(maxScore <= 100e18);
         
         vm.prank(owner);
         weightedStaking.setReputationBounds(minScore, maxScore);
         
-        // Test with reputation score outside new bounds
-        uint256 testReputation = minScore / 2; // Below new minimum
+        // Test with a positive reputation score below the new minimum
         vm.prank(owner);
-        mockOracle.setReputationScore(user1, testReputation);
+        mockOracle.setReputationScore(user1, 1);
         
         WeightedStaking.WeightedStakeResult memory result = weightedStaking.calculateWeightedStake(user1, 1e18);
         
@@ -209,26 +211,25 @@ contract WeightedStakingFuzzTest is Test {
         vm.prank(owner);
         mockOracle.setReputationScore(user1, reputationScore);
         
+        uint256 expectedScore = _applyBounds(reputationScore);
+        uint256 expectedWeight = _expectedWeight(expectedScore);
+
         vm.expectEmit(true, true, true, true);
         emit WeightedStakeCalculated(
             user1,
             stakeAmount,
-            _applyBounds(reputationScore),
-            (stakeAmount * _applyBounds(reputationScore)) / BASE_MULTIPLIER,
-            _applyBounds(reputationScore)
+            expectedScore,
+            (stakeAmount * expectedWeight) / BASE_MULTIPLIER,
+            expectedWeight
         );
         
         weightedStaking.calculateAndRecordWeightedStake(user1, stakeAmount);
     }
     
     /// @dev Fuzz test for zero stake amount rejection
-    function testFuzz_ZeroStakeAmount_Reverts(
-        uint256 stakeAmount
-    ) public {
-        vm.assume(stakeAmount == 0);
-        
+    function testFuzz_ZeroStakeAmount_Reverts() public {
         vm.expectRevert(WeightedStaking.ZeroStakeAmount.selector);
-        weightedStaking.calculateWeightedStake(user1, stakeAmount);
+        weightedStaking.calculateWeightedStake(user1, 0);
     }
     
     /// @dev Fuzz test for preview weight function
@@ -244,7 +245,7 @@ contract WeightedStakingFuzzTest is Test {
         WeightedStaking.WeightedStakeResult memory result = weightedStaking.calculateWeightedStake(user1, 1e18);
         
         assertEq(previewWeight, result.weight, "Preview weight should match calculation weight");
-        assertEq(previewWeight, result.reputationScore, "Preview weight should equal reputation score");
+        assertEq(result.weight, _expectedWeight(result.reputationScore), "Weight should equal sqrt-scaled reputation");
     }
     
     /// @dev Helper function to apply reputation bounds
@@ -252,5 +253,21 @@ contract WeightedStakingFuzzTest is Test {
         if (score < MIN_REPUTATION) return MIN_REPUTATION;
         if (score > MAX_REPUTATION) return MAX_REPUTATION;
         return score;
+    }
+    
+    /// @dev Helper to replicate the contract's sqrt-scaled weight
+    function _expectedWeight(uint256 reputationScore) internal pure returns (uint256) {
+        return _sqrt(reputationScore * BASE_MULTIPLIER);
+    }
+    
+    /// @dev Babylonian sqrt for 18-decimal fixed-point numbers (mirrors WeightedStaking._sqrt)
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        y = x;
+        uint256 z = (x + 1) / 2;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
     }
 }
