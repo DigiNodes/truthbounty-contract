@@ -382,6 +382,11 @@ contract TokenomicsEngine is
 
     // ============ Governance Controls ==========
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setSourceAllocation(RevenueSource source, SourceAllocation calldata config)
         external
         override
@@ -414,12 +419,22 @@ contract TokenomicsEngine is
         );
     }
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setEmissionLimit(uint256 _emissionLimit) external override onlyGovernanceOrAdmin {
         uint256 old = emissionLimit;
         emissionLimit = _emissionLimit;
         emit EmissionLimitUpdated(old, _emissionLimit);
     }
 
+    /**
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setRewardMultiplier(uint256 _multiplier) external override onlyGovernanceOrAdmin {
         if (_multiplier == 0) revert InvalidRewardMultiplier();
         uint256 old = rewardMultiplier;
