@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
-import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "./StorageCompatibilityValidator.sol";
 
 /**
  * @title TimelockOwnedProxyAdmin
@@ -28,6 +28,10 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
     
     mapping(bytes32 => PendingUpgrade) public pendingUpgrades;
     TimelockController public immutable timelock;
+    StorageCompatibilityValidator public storageValidator;
+    
+    // Track all implementations that have ever been used to prevent reuse
+    mapping(address => bool) public usedImplementations;
     
     event UpgradeScheduled(
         bytes32 indexed upgradeId,
