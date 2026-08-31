@@ -79,8 +79,10 @@ contract StorageCompatibilityValidator {
         if (currentImpl == address(0)) revert ZeroAddress();
         if (newImpl == address(0)) revert ZeroAddress();
 
-        if (_registeredLayouts[targetContract].slotCount > 0) {
-            StorageLayout memory currentLayout = _registeredLayouts[currentImpl];
+        if (_registeredLayouts[currentImpl].slotCount > 0 || _registeredLayouts[targetContract].slotCount > 0) {
+            StorageLayout memory currentLayout = _registeredLayouts[currentImpl].slotCount > 0 
+                ? _registeredLayouts[currentImpl] 
+                : _registeredLayouts[targetContract];
             StorageLayout memory newLayout = _registeredLayouts[newImpl];
 
             if (newLayout.slotCount < currentLayout.slotCount) {
