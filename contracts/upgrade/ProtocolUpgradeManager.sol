@@ -49,7 +49,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
 
     // ============ Constants ============
 
-    uint256 public constant MIN_UPGRADE_DELAY = 1 hours;
+    /// @dev Minimum upgrade delay is enforced to 7 days as per security requirements
+    uint256 public constant MIN_UPGRADE_DELAY = 7 days;
     uint256 public constant MAX_UPGRADE_DELAY = 30 days;
 
     // ============ Data Structures ============
