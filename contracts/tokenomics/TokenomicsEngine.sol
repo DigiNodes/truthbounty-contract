@@ -240,7 +240,7 @@ contract TokenomicsEngine is
 
         protocolToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        AllocationShares memory shares = config.calculateProportionalAllocation(amount);
+        AllocationShares memory shares = AllocationPolicies.calculateProportionalAllocation(amount, config);
 
         if (rewardMultiplier != 1e18) {
             shares.verifierRewards = (shares.verifierRewards * rewardMultiplier) / 1e18;
@@ -387,9 +387,7 @@ contract TokenomicsEngine is
         override
         onlyGovernanceOrAdmin
     {
-        uint256 sourceUint = uint256(source);
-
-        SourceAllocation storage old = sourceAllocations[sourceUint];
+        SourceAllocation storage old = sourceAllocations[source];
         uint256 oldVerifier = old.verifierRewardsBPS;
         uint256 oldTreasury = old.treasuryReserveBPS;
         uint256 oldEcosystem = old.ecosystemIncentivesBPS;
@@ -400,7 +398,7 @@ contract TokenomicsEngine is
         (bool valid, string memory reason) = AllocationPolicies.validateAllocationConfig(config);
         if (!valid) revert AllocationConfigInvalid(reason);
 
-        sourceAllocations[sourceUint] = config;
+        sourceAllocations[source] = config;
 
         emit AllocationUpdated(
             source,
@@ -442,7 +440,7 @@ contract TokenomicsEngine is
         view
         returns (SourceAllocation memory)
     {
-        return sourceAllocations[uint256(source)];
+        return sourceAllocations[source];
     }
 
     function getDistributionRecord(bytes32 distributionId)
@@ -479,7 +477,7 @@ contract TokenomicsEngine is
         view
         returns (uint256)
     {
-        return totalBySource[uint256(source)];
+        return totalBySource[source];
     }
 
     function getDistributionHistory(uint256 offset, uint256 limit)
@@ -500,8 +498,12 @@ contract TokenomicsEngine is
         }
     }
 
-    function getDistributionHistoryLength() external view override returns (uint256) {
+    function getDistributionHistoryLength() external view returns (uint256) {
         return distributionHistory.length;
+    }
+
+    function getProcessedDistribution(bytes32 distributionId) external view override returns (bool) {
+        return processedDistributions[distributionId];
     }
 
     // ============ Internal Helpers ==========
@@ -516,11 +518,11 @@ contract TokenomicsEngine is
 
     // ============ Pause ==========
 
-    function pause() external override onlyRole(PAUSER_ROLE) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external override onlyRole(PAUSER_ROLE) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 
