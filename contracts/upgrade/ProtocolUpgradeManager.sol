@@ -104,7 +104,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     // ============ State Variables ============
 
     /// @notice Configurable execution timelock applied at approval time.
-    uint256 public upgradeTimelock = 2 days;
+    /// @dev Enforced 7-day upgrade delay as required by security specifications
+    uint256 public upgradeTimelock = 7 days;
 
     /// @notice Per-module registry state.
     mapping(bytes32 => ModuleState) public modules;
