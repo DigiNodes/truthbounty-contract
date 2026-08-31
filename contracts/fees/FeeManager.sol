@@ -390,6 +390,9 @@ contract FeeManager is IFeeManager, ReentrancyGuard, Pausable, GovernanceOwnable
 
     /**
      * @inheritdoc IFeeManager
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
      */
     function updateFeeSchedule(
         bytes32 feeType,
