@@ -133,4 +133,33 @@ interface ITruthBountyEvents {
         uint64 timestamp,
         uint16 version
     );
+
+    // Disputes
+    /**
+     * @notice Emitted when a dispute is opened against a provisional outcome.
+     * @param claimId            Claim under dispute.
+     * @param disputeId          Monotonic dispute identifier.
+     * @param challenger         Address that opened the dispute.
+     * @param challengedOutcome  Provisional outcome contended (encoded: 0 = TRUE, 1 = FALSE).
+     * @param challengedStatus   Registry status that was contested (VerifiedTrue/VerifiedFalse).
+     * @param bondToken          Bond token locked through the vault.
+     * @param bondAmount         Bond amount locked.
+     * @param appealDeadline     Frozen deadline before which the appeal round must close.
+     * @param appealRationaleHash Hash of the challenger's rationale/evidence.
+     * @param timestamp          Opening block timestamp.
+     * @param version            Event schema version (1).
+     */
+    event DisputeOpenedV1(
+        uint256 indexed claimId,
+        uint256 indexed disputeId,
+        address indexed challenger,
+        uint8 challengedOutcome,
+        uint8 challengedStatus,
+        address bondToken,
+        uint256 bondAmount,
+        uint64 appealDeadline,
+        bytes32 appealRationaleHash,
+        uint64 timestamp,
+        uint16 version
+    );
 }
