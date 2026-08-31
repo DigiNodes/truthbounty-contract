@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 
 describe("ExampleSettlement", function () {
   async function deployFixture() {
@@ -14,9 +14,14 @@ describe("ExampleSettlement", function () {
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address);
 
+    // Wire treasury accounting mock
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     // Deploy VerifierSlashing
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
-    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), owner.address);
+    const slashing = await VerifierSlashing.deploy(await staking.getAddress(), owner.address, owner.address);
 
     // Deploy ExampleSettlement
     const ExampleSettlement = await ethers.getContractFactory("ExampleSettlement");
@@ -25,16 +30,18 @@ describe("ExampleSettlement", function () {
       await token.getAddress()
     );
 
-    // Grant settlement role to the ExampleSettlement contract on the slashing contract
-    const SETTLEMENT_ROLE = await slashing.SETTLEMENT_ROLE();
-    await slashing.grantRole(SETTLEMENT_ROLE, await settlement.getAddress());
-
     // Setup stakes for verifier to allow slashing tests
     const stakeAmount = ethers.parseEther("1000");
     await token.transfer(verifier.address, stakeAmount);
     await token.connect(verifier).approve(await staking.getAddress(), stakeAmount);
     await staking.connect(verifier).stake(stakeAmount);
+
+    // Wire staking -> slashing and grant the resolver role to the settlement contract
     await staking.setSlashingContract(await slashing.getAddress());
+    await slashing.scheduleResolverRoleGrant(await settlement.getAddress());
+    await time.increase(2 * 24 * 60 * 60);
+    await staking.executeResolverRoleGrant(await slashing.getAddress());
+    await slashing.executeResolverRoleGrant(await settlement.getAddress());
 
     return {
       token,
@@ -82,8 +89,7 @@ describe("ExampleSettlement", function () {
         .to.emit(settlement, "ClaimSubmitted")
         .withArgs(0, claimant.address, verifier.address);
 
-      const claim = await settlement.getClaims(0); // claims mapping is public, but let's check view helper if available
-      // wait, the mapping is claims(uint256) -> claimant, verifier, data, status, timestamp, verificationCorrect
+      const claim = await settlement.getClaim(0);
       const claimDetails = await settlement.claims(0);
       expect(claimDetails.claimant).to.equal(claimant.address);
       expect(claimDetails.verifier).to.equal(verifier.address);

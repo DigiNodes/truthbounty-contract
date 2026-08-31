@@ -2,11 +2,14 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
+import "./treasury/ITreasuryAccounting.sol";
 
 contract Staking is ReentrancyGuard, ResolverRoleTimelock {
+    using SafeERC20 for IERC20;
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -20,6 +23,11 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
     
     // Address authorized to slash stakes (VerifierSlashing contract)
     address public slashingContract;
+
+    // Treasury accounting contract for protocol-wide financial tracking
+    ITreasuryAccounting public treasuryAccounting;
+    /// @notice Destination for all confiscated verifier collateral.
+    address public treasury;
 
     struct StakeInfo {
         uint256 amount;      // Total amount currently staked
@@ -35,10 +43,13 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
     event LockDurationUpdated(uint256 newDuration);
     event StakeSlashed(address indexed user, uint256 amount, uint256 remainingStake);
     event SlashingContractUpdated(address newSlashingContract);
+    event TreasuryAccountingUpdated(address newTreasuryAccounting);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
 
     /**
      * @param _stakingToken Address of the TruthBountyToken
      * @param _initialLockDuration Initial lock time in seconds (e.g., 86400 for 1 day)
+     * @param initialAdmin Initial admin address
      */
     constructor(address _stakingToken, uint256 _initialLockDuration, address initialAdmin) {
         require(_stakingToken != address(0), "Invalid token address");
@@ -46,11 +57,22 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         
         stakingToken = IERC20(_stakingToken);
         lockDuration = _initialLockDuration;
+        treasury = initialAdmin;
         
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(ADMIN_ROLE, initialAdmin);
         
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
+    }
+
+    /**
+     * @dev Set the treasury accounting contract (admin only)
+     * @param _treasuryAccounting Address of the deployed TreasuryAccounting contract
+     */
+    function setTreasuryAccounting(address _treasuryAccounting) external onlyRole(ADMIN_ROLE) {
+        require(_treasuryAccounting != address(0), "Invalid treasury address");
+        treasuryAccounting = ITreasuryAccounting(_treasuryAccounting);
+        emit TreasuryAccountingUpdated(_treasuryAccounting);
     }
 
     function _resolverRole() internal pure override returns (bytes32) {
@@ -64,9 +86,13 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
      */
     function stake(uint256 amount) external nonReentrant {
         require(amount > 0, "Cannot stake 0");
+        require(address(treasuryAccounting) != address(0), "Treasury not configured");
 
         // Transfer tokens from user to contract (requires approve())
-        stakingToken.transferFrom(msg.sender, address(this), amount);
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        // Record the stake in treasury accounting
+        treasuryAccounting.recordStake(msg.sender, amount);
 
         StakeInfo storage info = stakes[msg.sender];
         
@@ -89,12 +115,16 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         require(info.amount >= amount, "Insufficient staked balance");
         require(block.timestamp >= info.unlockTime, "Stake is still locked");
         require(amount > 0, "Cannot unstake 0");
+        require(address(treasuryAccounting) != address(0), "Treasury not configured");
 
         // Update balance
         info.amount -= amount;
 
+        // Record the unstake in treasury accounting before transferring
+        treasuryAccounting.recordUnstake(msg.sender, amount);
+
         // Transfer tokens back to user
-        stakingToken.transfer(msg.sender, amount);
+        stakingToken.safeTransfer(msg.sender, amount);
 
         emit Unstaked(msg.sender, amount, info.amount);
     }
@@ -121,6 +151,14 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         emit LockDurationUpdated(_duration);
     }
     
+    /// @notice Update the Treasury destination for confiscated collateral.
+    function setTreasury(address newTreasury) external onlyRole(ADMIN_ROLE) {
+        require(newTreasury != address(0), "Invalid treasury");
+        address oldTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryUpdated(oldTreasury, newTreasury);
+    }
+
     /**
      * @dev Set the authorized slashing contract
      * @param _slashingContract Address of the VerifierSlashing contract
@@ -161,6 +199,7 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         // Slashing contract check as secondary safeguard
         require(slashingContract != address(0), "Slashing contract not set");
         require(msg.sender == slashingContract, "Only active slashing contract");
+        require(address(treasuryAccounting) != address(0), "Treasury not configured");
         
         StakeInfo storage info = stakes[user];
         require(info.amount >= amount, "Insufficient stake to slash");
@@ -168,9 +207,11 @@ contract Staking is ReentrancyGuard, ResolverRoleTimelock {
         // Reduce the staked amount
         info.amount -= amount;
         
-        // Keep the slashed tokens in the contract (effectively burning them from circulation)
-        // Alternative: Transfer to a burn address or treasury
-        
+        // Record the slash in treasury accounting - moves from staking reserve to slashed treasury
+        treasuryAccounting.recordSlash(user, amount);
+        // Transfer the slashed tokens to the slashing contract for routing
+        stakingToken.transfer(msg.sender, amount);
+
         emit StakeSlashed(user, amount, info.amount);
     }
 }
