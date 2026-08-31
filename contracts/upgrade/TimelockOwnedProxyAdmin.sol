@@ -58,12 +58,18 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         _;
     }
     
-    constructor(address _timelock) {
+    constructor(address _timelock, address _storageValidator) {
         if (_timelock == address(0)) revert ZeroAddress();
-        // Check that timelock is a contract, not an EOA
+        if (_storageValidator == address(0)) revert ZeroAddress();
+        
+        // Check that both are contracts, not EOAs
         if (_timelock.code.length == 0) revert EOANotAllowed(_timelock);
+        if (_storageValidator.code.length == 0) revert EOANotAllowed(_storageValidator);
+        
         timelock = TimelockController(payable(_timelock));
-        // Transfer ownership to the timelock immediately
+        storageValidator = StorageCompatibilityValidator(_storageValidator);
+        
+        // Transfer ownership to the timelock immediately - this ensures only timelock can call owner-only functions
         _transferOwnership(_timelock);
     }
     
@@ -133,7 +139,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
      * Checks:
      * 1. Implementation is not zero address
      * 2. Implementation is a contract (not EOA)
-     * 3. Implementation hasn't been used before
+     * 3. Implementation hasn't been used before (prevents reuse)
      * 4. Storage layout is compatible (delegates to StorageCompatibilityValidator)
      * 5. Interfaces are supported
      */
@@ -146,14 +152,30 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
             revert InvalidImplementation("Implementation is EOA");
         }
         
-        // Check we're not reusing an implementation that's already been used
+        // Check we're not reusing an implementation that's already been used anywhere
+        if (usedImplementations[newImplementation]) {
+            emit InvalidImplementationRejected(newImplementation, "Implementation already used");
+            revert ImplementationAlreadyUsed(newImplementation);
+        }
+        
+        // Check it's not the same as current implementation
         address currentImpl = getProxyImplementation(proxy);
         if (newImplementation == currentImpl) {
             emit InvalidImplementationRejected(newImplementation, "Implementation already active");
             revert ImplementationAlreadyUsed(newImplementation);
         }
         
-        // Additional checks would call into StorageCompatibilityValidator here
+        // Validate storage compatibility using the storage validator
+        try storageValidator.validateUpgrade(proxy, currentImpl, newImplementation) {
+            // Storage layout is compatible
+        } catch (bytes memory reason) {
+            emit InvalidImplementationRejected(newImplementation, string(reason));
+            revert InvalidImplementation(string(reason));
+        }
+        
+        // Mark implementation as used to prevent future reuse
+        usedImplementations[newImplementation] = true;
+        
         emit ImplementationValidated(newImplementation, keccak256(bytes("1.0.0")));
     }
     
