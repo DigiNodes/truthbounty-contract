@@ -37,7 +37,6 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
     function recordSlash(address verifier, uint256 amount) external {
         stakingReserve -= amount;
         slashedTreasury += amount;
-        totalSlashRecorded += amount;
     }
 
     function recordRewardDistribution(address recipient, uint256 amount) external {}

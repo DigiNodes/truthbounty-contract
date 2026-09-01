@@ -82,7 +82,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         return (2, 0);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(ERC165, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControl, ERC165, IERC165) returns (bool) {
         return interfaceId == type(IStakeCustody).interfaceId || interfaceId == type(IV2Module).interfaceId
             || super.supportsInterface(interfaceId);
     }

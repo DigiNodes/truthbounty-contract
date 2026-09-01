@@ -383,7 +383,7 @@ contract TokenomicsEngine is
     // ============ Governance Controls ==========
 
     /**
-     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -418,7 +418,7 @@ contract TokenomicsEngine is
     }
 
     /**
-     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -429,7 +429,7 @@ contract TokenomicsEngine is
     }
 
     /**
-     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -513,12 +513,12 @@ contract TokenomicsEngine is
         }
     }
 
-    function getProcessedDistribution(bytes32 distributionId) external view override returns (bool) {
-        return processedDistributions[distributionId];
-    }
-
     function getDistributionHistoryLength() external view returns (uint256) {
         return distributionHistory.length;
+    }
+
+    function getProcessedDistribution(bytes32 distributionId) external view override returns (bool) {
+        return processedDistributions[distributionId];
     }
 
     // ============ Internal Helpers ==========

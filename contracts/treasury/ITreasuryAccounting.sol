@@ -42,18 +42,18 @@ interface ITreasuryAccounting {
     // ============ EXTERNAL FUNCTIONS USED BY PROTOCOL CONTRACTS ============
 
     /**
+     * @dev Deposit tokens from external sources into a specific treasury account
+     * @param targetAccount The treasury account to credit
+     * @param amount Amount of tokens to deposit
+     */
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external;
+
+    /**
      * @dev Record a user staking tokens into the staking reserve
      * @param user The user address that staked
      * @param amount The amount staked
      */
     function recordStake(address user, uint256 amount) external;
-
-    /**
-     * @dev Deposit tokens into a specific treasury account
-     * @param targetAccount Target account to credit
-     * @param amount Amount of tokens
-     */
-    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external;
 
     /**
      * @dev Record a user unstaking tokens from the staking reserve

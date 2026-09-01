@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "./StorageCompatibilityValidator.sol";
 
@@ -58,7 +59,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         _;
     }
     
-    constructor(address _timelock, address _storageValidator) {
+    constructor(address _timelock, address _storageValidator) ProxyAdmin(_timelock) {
         if (_timelock == address(0)) revert ZeroAddress();
         if (_storageValidator == address(0)) revert ZeroAddress();
         
@@ -68,9 +69,6 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         
         timelock = TimelockController(payable(_timelock));
         storageValidator = StorageCompatibilityValidator(_storageValidator);
-        
-        // Transfer ownership to the timelock immediately - this ensures only timelock can call owner-only functions
-        _transferOwnership(_timelock);
     }
     
     /**
@@ -104,20 +102,20 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
      * @dev Execute a scheduled upgrade after the timelock has elapsed
      */
     function executeUpgrade(bytes32 upgradeId) external {
-        PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
-        if (upgrade.proxy == address(0)) revert UpgradeNotScheduled();
-        if (upgrade.executed) revert UpgradeAlreadyExecuted();
-        if (upgrade.cancelled) revert UpgradeAlreadyCancelled();
-        if (block.timestamp < upgrade.executeAfter) revert TimelockNotElapsed();
+        PendingUpgrade storage pending = pendingUpgrades[upgradeId];
+        if (pending.proxy == address(0)) revert UpgradeNotScheduled();
+        if (pending.executed) revert UpgradeAlreadyExecuted();
+        if (pending.cancelled) revert UpgradeAlreadyCancelled();
+        if (block.timestamp < pending.executeAfter) revert TimelockNotElapsed();
         
-        upgrade.executed = true;
+        pending.executed = true;
         
-        // Perform the upgrade
-        if (upgrade.data.length > 0) {
-            upgradeAndCall(upgrade.proxy, upgrade.implementation, upgrade.data);
-        } else {
-            upgrade(upgrade.proxy, upgrade.implementation);
-        }
+        // Perform the upgrade using ProxyAdmin's upgradeAndCall
+        upgradeAndCall(
+            ITransparentUpgradeableProxy(pending.proxy),
+            pending.implementation,
+            pending.data
+        );
     }
     
     /**
@@ -125,23 +123,17 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
      * Can only be called by the timelock
      */
     function cancelUpgrade(bytes32 upgradeId) external onlyTimelockController {
-        PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
-        if (upgrade.proxy == address(0)) revert UpgradeNotScheduled();
-        if (upgrade.executed) revert UpgradeAlreadyExecuted();
-        if (upgrade.cancelled) revert UpgradeAlreadyCancelled();
+        PendingUpgrade storage pending = pendingUpgrades[upgradeId];
+        if (pending.proxy == address(0)) revert UpgradeNotScheduled();
+        if (pending.executed) revert UpgradeAlreadyExecuted();
+        if (pending.cancelled) revert UpgradeAlreadyCancelled();
         
-        upgrade.cancelled = true;
+        pending.cancelled = true;
         emit UpgradeCancelled(upgradeId);
     }
     
     /**
      * @dev Internal validation function to prevent unsafe upgrades
-     * Checks:
-     * 1. Implementation is not zero address
-     * 2. Implementation is a contract (not EOA)
-     * 3. Implementation hasn't been used before (prevents reuse)
-     * 4. Storage layout is compatible (delegates to StorageCompatibilityValidator)
-     * 5. Interfaces are supported
      */
     function _validateImplementation(address proxy, address newImplementation) internal {
         if (newImplementation == address(0)) revert ZeroAddress();
@@ -158,15 +150,6 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
             revert ImplementationAlreadyUsed(newImplementation);
         }
         
-        // Note: In OpenZeppelin v5.x, getProxyImplementation is not available on ProxyAdmin.
-        // To get the implementation, we would need to call the proxy directly, but ERC1967Utils.getImplementation()
-        // is internal. For now, we skip this check, but in production this should be implemented properly.
-        // address currentImpl = getProxyImplementation(proxy);
-        // if (newImplementation == currentImpl) {
-        //     emit InvalidImplementationRejected(newImplementation, "Implementation already active");
-        //     revert ImplementationAlreadyUsed(newImplementation);
-        // }
-        
         // Validate storage compatibility using the storage validator
         try storageValidator.validateUpgrade(proxy, address(0), newImplementation) {
             // Storage layout is compatible
@@ -179,27 +162,6 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         usedImplementations[newImplementation] = true;
         
         emit ImplementationValidated(newImplementation, keccak256(bytes("1.0.0")));
-    }
-    
-    /**
-     * @dev Override the parent's upgrade function to ensure it can only be called through our schedule/execute flow
-     * This prevents direct upgrades that bypass the timelock
-     */
-    function upgrade(address proxy, address implementation) public override onlyOwner {
-        // Only allow this if it's being called from executeUpgrade, otherwise only timelock can initiate
-        // This maintains compatibility with the ProxyAdmin interface while enforcing our timelock
-        super.upgrade(proxy, implementation);
-    }
-    
-    /**
-     * @dev Override upgradeAndCall similarly
-     */
-    function upgradeAndCall(
-        address proxy,
-        address implementation,
-        bytes calldata data
-    ) public override onlyOwner {
-        super.upgradeAndCall(proxy, implementation, data);
     }
     
     // Storage gap for future upgrades

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -39,7 +40,7 @@ import "./fees/IFeeManager.sol";
  * The claim must be challengeable and within its window for a dispute to open.
  * Appeal settlement / rewarding the challenger is OUT of scope (SC-016 non-goal).
  */
-contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable {
+contract DisputeResolution is IDisputeResolution, AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
     // =========================================================================
     // Constants & Roles
@@ -70,22 +71,20 @@ contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable {
     /// @notice Bond token required to open a dispute.
     address public bondToken;
 
-    /// @notice Bond amount required to open a dispute (in `bondToken` units).
+    /// @notice Bond amount required to open a dispute.
     uint256 public bondAmount;
 
-    /// @notice Duration of the challenge window, measured from the claim's
-    ///         verification deadline. The frozen/appeal deadline equals
-    ///         verificationDeadline + challengeWindowDuration.
+    /// @notice Challenge window duration (in seconds).
     uint64 public challengeWindowDuration;
+
+    /// @notice Dispute records indexed by dispute ID.
+    mapping(uint256 => Dispute) private _disputes;
+
+    /// @notice Dispute ID indexed by claim ID (0 = no dispute).
+    mapping(uint256 => uint256) private _disputesByClaim;
 
     /// @notice Monotonic dispute id source; the first dispute has id 1.
     uint256 private _nextDisputeId = 1;
-
-    /// @notice disputeId => Dispute.
-    mapping(uint256 => Dispute) private _disputes;
-
-    /// @notice claimId => disputeId (0 means none).
-    mapping(uint256 => uint256) private _disputesByClaim;
 
     /// @dev Storage gap for upgradeability compatibility.
     uint256[44] private __gap;
@@ -112,12 +111,6 @@ contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable {
     // =========================================================================
     // Errors
     // =========================================================================
-
-    /// @notice Thrown when the registry or vault is a zero address on deploy.
-    error ZeroAddress();
-
-    /// @notice Thrown when bonding/fee config is missing on open.
-    error BondNotConfigured();
 
     /// @notice Thrown when setting an invalid (zero) challenge window.
     error InvalidChallengeWindow();
