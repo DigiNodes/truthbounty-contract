@@ -48,6 +48,30 @@ describe("Event Architecture", function () {
       .to.emit(harness, "SlashExecutedV1")
       .withArgs(9, verifier.address, reason, 250, anyUint64, VERSION);
   });
+
+  it("emits a versioned DisputeOpenedV1 event carrying challenge-bond inputs", async function () {
+    const { harness, actor } = await deployFixture();
+    const rationaleHash = ethers.keccak256(ethers.toUtf8Bytes("appeal-rationale"));
+    const bondToken = ethers.Wallet.createRandom().address;
+    const bondAmount = 500n * 10n ** 18n;
+    const appealDeadline = 1900000000n;
+
+    const tx = await harness.emitDisputeOpenedV1(
+      11,
+      3,
+      actor.address,
+      0, // ChallengedOutcome.TRUE
+      2, // ClaimStatus.VerifiedTrue
+      bondToken,
+      bondAmount,
+      appealDeadline,
+      rationaleHash
+    );
+
+    await expect(tx)
+      .to.emit(harness, "DisputeOpenedV1")
+      .withArgs(11, 3, actor.address, 0, 2, bondToken, bondAmount, appealDeadline, rationaleHash, anyUint64, VERSION);
+  });
 });
 
 function anyUint64(value: unknown): boolean {

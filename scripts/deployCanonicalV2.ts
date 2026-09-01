@@ -61,9 +61,20 @@ export async function deployCanonicalV2(
   const oracle = await OracleFactory.deploy();
   await oracle.waitForDeployment();
 
+  // 3b. Parameter Version Registry
+  const PVRFactory = await ethers.getContractFactory("ParameterVersionRegistry", deployer);
+  const parameterVersionRegistry = await PVRFactory.deploy(
+    deployer.address,
+    await governanceController.getAddress()
+  );
+  await parameterVersionRegistry.waitForDeployment();
+
   // 4. ClaimRegistry
   const RegistryFactory = await ethers.getContractFactory("ClaimRegistry", deployer);
-  const claimRegistry = await RegistryFactory.deploy(deployer.address);
+  const claimRegistry = await RegistryFactory.deploy(
+    deployer.address,
+    await parameterVersionRegistry.getAddress()
+  );
   await claimRegistry.waitForDeployment();
 
   // 5. Verification Source (TruthBountyWeighted)

@@ -31,7 +31,7 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
 
     uint256 public emergencyDelay = DEFAULT_EMERGENCY_DELAY;
     uint256 public executionWindow = DEFAULT_EXECUTION_WINDOW;
-    uint256 public standardDelay = 1 days;
+    uint256 public standardDelay = 7 days; // Enforce required 7-day upgrade delay for standard upgrades
 
     mapping(bytes32 => UpgradeProposal) internal _proposals;
     mapping(address => bytes32[]) internal _upgradeHistory;
@@ -201,14 +201,12 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
             revert UnauthorizedEmergency();
         }
 
-        if (storageValidator != StorageCompatibilityValidator(address(0))) {
-            try storageValidator.validateUpgrade(
+        if (address(storageValidator) != address(0)) {
+            storageValidator.validateUpgrade(
                 proposal.targetContract,
                 proposal.currentImplementation,
                 proposal.newImplementation
-            ) {
-            } catch {
-            }
+            );
         }
 
         _currentImplementation[proposal.targetContract] = proposal.newImplementation;
