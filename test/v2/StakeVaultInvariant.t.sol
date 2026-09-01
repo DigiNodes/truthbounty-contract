@@ -76,6 +76,67 @@ contract StakeVaultInvariantHandler is Test {
             ghostCustody -= amount;
         } catch {}
     }
+
+    function settleConclusive(uint256 claimId, uint256 round, uint256 amount, uint256 actorSeed) public {
+        amount = bound(amount, 1, 1_000 ether);
+        claimId = bound(claimId, 1, 100);
+        round = bound(round, 0, 5);
+        address user = actorSeed % 2 == 0 ? userA : userB;
+
+        vm.prank(settlement);
+        try vault.settleConclusive(address(token), user, claimId, round, amount, 0) {
+            ghostLocked -= amount;
+            ghostClaimable += amount;
+        } catch {}
+    }
+
+    function refundInconclusive(uint256 claimId, uint256 round, uint256 amount, uint256 actorSeed) public {
+        amount = bound(amount, 1, 1_000 ether);
+        claimId = bound(claimId, 1, 100);
+        round = bound(round, 0, 5);
+        address user = actorSeed % 2 == 0 ? userA : userB;
+
+        vm.prank(settlement);
+        try vault.refundInconclusive(address(token), user, claimId, round, amount) {
+            ghostLocked -= amount;
+            ghostClaimable += amount;
+        } catch {}
+    }
+
+    function carryForwardAppeal(uint256 claimId, uint256 fromRound, uint256 toRound, uint256 amount, uint256 actorSeed) public {
+        amount = bound(amount, 1, 1_000 ether);
+        claimId = bound(claimId, 1, 100);
+        fromRound = bound(fromRound, 0, 4);
+        toRound = bound(toRound, fromRound + 1, 5);
+        address user = actorSeed % 2 == 0 ? userA : userB;
+
+        vm.prank(settlement);
+        try vault.carryForwardAppeal(address(token), user, claimId, fromRound, toRound, amount) {} catch {}
+    }
+
+    function rolloverRound(uint256 claimId, uint256 fromRound, uint256 toRound, uint256 amount, uint256 actorSeed) public {
+        amount = bound(amount, 1, 1_000 ether);
+        claimId = bound(claimId, 1, 100);
+        fromRound = bound(fromRound, 0, 4);
+        toRound = bound(toRound, fromRound + 1, 5);
+        address user = actorSeed % 2 == 0 ? userA : userB;
+
+        vm.prank(settlement);
+        try vault.rolloverRound(address(token), user, claimId, fromRound, toRound, amount) {} catch {}
+    }
+
+    function finalUnlock(uint256 claimId, uint256 round, uint256 amount, uint256 actorSeed) public {
+        amount = bound(amount, 1, 1_000 ether);
+        claimId = bound(claimId, 1, 100);
+        round = bound(round, 0, 5);
+        address user = actorSeed % 2 == 0 ? userA : userB;
+
+        vm.prank(settlement);
+        try vault.finalUnlock(address(token), user, claimId, round, amount) {
+            ghostLocked -= amount;
+            ghostClaimable += amount;
+        } catch {}
+    }
 }
 
 contract StakeVaultInvariantTest is StdInvariant, Test {
