@@ -151,6 +151,30 @@ describe("VerificationSubmission", function () {
         });
     });
 
+    describe("Paginated Verifications Query", function () {
+        it("supports paginated retrieval of verifications", async function () {
+            const { registry, submissionEngine, updater, verifier1, verifier2, claimId } = await loadFixture(deployFixture);
+            await registry.connect(updater).updateClaimStatus(claimId, 1);
+
+            await submissionEngine.connect(verifier1).submitVerification(claimId, 0, MIN_STAKE);
+            await submissionEngine.connect(verifier2).submitVerification(claimId, 1, MIN_STAKE);
+
+            const [verificationsPage1, total1] = await submissionEngine.getClaimVerificationsPaginated(claimId, 0, 1);
+            expect(total1).to.equal(2);
+            expect(verificationsPage1.length).to.equal(1);
+            expect(verificationsPage1[0]).to.equal(1n);
+
+            const [verificationsPage2, total2] = await submissionEngine.getClaimVerificationsPaginated(claimId, 1, 5);
+            expect(total2).to.equal(2);
+            expect(verificationsPage2.length).to.equal(1);
+            expect(verificationsPage2[0]).to.equal(2n);
+
+            const [verificationsEmpty, totalEmpty] = await submissionEngine.getClaimVerificationsPaginated(claimId, 10, 5);
+            expect(totalEmpty).to.equal(2);
+            expect(verificationsEmpty.length).to.equal(0);
+        });
+    });
+
     describe("Gas Benchmarks", function () {
         it("measures gas for first verification submission", async function () {
             const { registry, submissionEngine, updater, verifier1, claimId } = await loadFixture(deployFixture);

@@ -150,7 +150,7 @@ contract UpgradeIntegrationTest is Test {
         assertEq(controller.currentImplementation(target), impl2);
     }
 
-    function test_StorageValidator_IncompatibleUpgrade_StillExecutes() public {
+    function test_StorageValidator_IncompatibleUpgrade_Reverts() public {
         validator.registerLayout(impl1, 55, 50, keccak256("v1"));
         validator.registerLayout(impl2, 50, 50, keccak256("v2"));
 
@@ -165,9 +165,8 @@ contract UpgradeIntegrationTest is Test {
         controller.scheduleUpgrade(proposalId);
         vm.warp(block.timestamp + 1 days);
 
+        vm.expectRevert(abi.encodeWithSelector(StorageCompatibilityValidator.IncompatibleStorageLayout.selector, "New implementation has fewer storage slots"));
         controller.executeUpgrade(proposalId);
-
-        assertEq(controller.currentImplementation(target), impl2);
     }
 
     function test_ValidateStorageCompatibility() public {
