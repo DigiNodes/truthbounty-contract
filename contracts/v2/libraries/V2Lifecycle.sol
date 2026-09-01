@@ -13,85 +13,61 @@ library V2Lifecycle {
     // =========================================================================
 
     /// @notice Validates a claim state transition according to the protocol state machine.
-    /// @dev Implements the canonical claim lifecycle:
-    ///      NONE -> OPEN -> [VERIFIED | SETTLED | DISPUTED | REJECTED | CANCELLED]
-    /// @param currentStatus The current claim status.
-    /// @param nextStatus The target claim status.
+    /// @param currentState The current claim status.
+    /// @param nextState The target claim status.
     /// @return true if the transition is valid, false otherwise.
     function isValidClaimTransition(
-        IV2Types.ClaimStatus currentStatus,
-        IV2Types.ClaimStatus nextStatus
+        IV2Types.ClaimState currentState,
+        IV2Types.ClaimState nextState
     ) internal pure returns (bool) {
-        // Transition from NONE (initial state)
-        if (currentStatus == IV2Types.ClaimStatus.NONE) {
-            return nextStatus == IV2Types.ClaimStatus.OPEN;
+        if (currentState == IV2Types.ClaimState.None) {
+            return nextState == IV2Types.ClaimState.VerificationOpen;
         }
-
-        // Transition from OPEN
-        if (currentStatus == IV2Types.ClaimStatus.OPEN) {
-            return nextStatus == IV2Types.ClaimStatus.VERIFIED ||
-                   nextStatus == IV2Types.ClaimStatus.SETTLED ||
-                   nextStatus == IV2Types.ClaimStatus.DISPUTED ||
-                   nextStatus == IV2Types.ClaimStatus.REJECTED ||
-                   nextStatus == IV2Types.ClaimStatus.CANCELLED;
+        if (currentState == IV2Types.ClaimState.VerificationOpen) {
+            return nextState == IV2Types.ClaimState.ChallengeWindow ||
+                   nextState == IV2Types.ClaimState.AwaitingSettlement;
         }
-
-        // Transition from VERIFIED
-        if (currentStatus == IV2Types.ClaimStatus.VERIFIED) {
-            return nextStatus == IV2Types.ClaimStatus.SETTLED ||
-                   nextStatus == IV2Types.ClaimStatus.CANCELLED;
+        if (currentState == IV2Types.ClaimState.ChallengeWindow) {
+            return nextState == IV2Types.ClaimState.Disputed ||
+                   nextState == IV2Types.ClaimState.AwaitingSettlement ||
+                   nextState == IV2Types.ClaimState.Finalized;
         }
-
-        // Transition from SETTLED (terminal state)
-        if (currentStatus == IV2Types.ClaimStatus.SETTLED) {
-            return false; // No transitions from terminal state
+        if (currentState == IV2Types.ClaimState.AwaitingSettlement) {
+            return nextState == IV2Types.ClaimState.Finalized;
         }
-
-        // Transition from DISPUTED
-        if (currentStatus == IV2Types.ClaimStatus.DISPUTED) {
-            return nextStatus == IV2Types.ClaimStatus.VERIFIED ||
-                   nextStatus == IV2Types.ClaimStatus.REJECTED;
+        if (currentState == IV2Types.ClaimState.Disputed) {
+            return nextState == IV2Types.ClaimState.Finalized;
         }
-
-        // Transition from REJECTED (terminal state)
-        if (currentStatus == IV2Types.ClaimStatus.REJECTED) {
-            return false; // No transitions from terminal state
+        if (currentState == IV2Types.ClaimState.Finalized) {
+            return false;
         }
-
-        // Transition from CANCELLED (terminal state)
-        if (currentStatus == IV2Types.ClaimStatus.CANCELLED) {
-            return false; // No transitions from terminal state
-        }
-
         return false;
     }
 
     /// @notice Enforces a claim state transition, reverting if invalid.
-    /// @param currentStatus The current claim status.
-    /// @param nextStatus The target claim status.
+    /// @param currentState The current claim status.
+    /// @param nextState The target claim status.
     function enforceValidClaimTransition(
-        IV2Types.ClaimStatus currentStatus,
-        IV2Types.ClaimStatus nextStatus
+        IV2Types.ClaimState currentState,
+        IV2Types.ClaimState nextState
     ) internal pure {
-        if (!isValidClaimTransition(currentStatus, nextStatus)) {
+        if (!isValidClaimTransition(currentState, nextState)) {
             revert V2Errors.InvalidClaimStateTransition(0); // claimId would be passed by caller
         }
     }
 
     /// @notice Checks if a claim is in a terminal state.
-    /// @param status The claim status to check.
-    /// @return true if the status is terminal (SETTLED, REJECTED, or CANCELLED).
-    function isTerminalClaimStatus(IV2Types.ClaimStatus status) internal pure returns (bool) {
-        return status == IV2Types.ClaimStatus.SETTLED ||
-               status == IV2Types.ClaimStatus.REJECTED ||
-               status == IV2Types.ClaimStatus.CANCELLED;
+    /// @param state The claim status to check.
+    /// @return true if the status is terminal (Finalized).
+    function isTerminalClaimState(IV2Types.ClaimState state) internal pure returns (bool) {
+        return state == IV2Types.ClaimState.Finalized;
     }
 
     /// @notice Checks if a claim is still under active consideration (not terminal).
-    /// @param status The claim status to check.
+    /// @param state The claim status to check.
     /// @return true if the claim can still transition to other states.
-    function isActiveClaimStatus(IV2Types.ClaimStatus status) internal pure returns (bool) {
-        return !isTerminalClaimStatus(status);
+    function isActiveClaimState(IV2Types.ClaimState state) internal pure returns (bool) {
+        return !isTerminalClaimState(state);
     }
 
     // =========================================================================
@@ -220,24 +196,24 @@ library V2Lifecycle {
     // =========================================================================
 
     /// @notice Checks if a claim is open and accepting verifications.
-    /// @param status The claim status.
+    /// @param state The claim status.
     /// @return true if the claim is open.
-    function isClaimOpen(IV2Types.ClaimStatus status) internal pure returns (bool) {
-        return status == IV2Types.ClaimStatus.OPEN;
+    function isClaimOpen(IV2Types.ClaimState state) internal pure returns (bool) {
+        return state == IV2Types.ClaimState.VerificationOpen;
     }
 
     /// @notice Checks if a claim has been verified.
-    /// @param status The claim status.
-    /// @return true if the claim has been verified (VERIFIED status).
-    function isClaimVerified(IV2Types.ClaimStatus status) internal pure returns (bool) {
-        return status == IV2Types.ClaimStatus.VERIFIED;
+    /// @param state The claim status.
+    /// @return true if the claim has been verified (ChallengeWindow or AwaitingSettlement).
+    function isClaimVerified(IV2Types.ClaimState state) internal pure returns (bool) {
+        return state == IV2Types.ClaimState.ChallengeWindow || state == IV2Types.ClaimState.AwaitingSettlement;
     }
 
     /// @notice Checks if a claim is under dispute.
-    /// @param status The claim status.
+    /// @param state The claim status.
     /// @return true if the claim is disputed.
-    function isClaimDisputed(IV2Types.ClaimStatus status) internal pure returns (bool) {
-        return status == IV2Types.ClaimStatus.DISPUTED;
+    function isClaimDisputed(IV2Types.ClaimState state) internal pure returns (bool) {
+        return state == IV2Types.ClaimState.Disputed;
     }
 
     /// @notice Checks if a settlement can be executed.
