@@ -1,0 +1,2283 @@
+{
+  "schemaVersion": 1,
+  "protocol": "TruthBounty",
+  "releaseVersion": "2.0.0",
+  "standard": "TruthBounty Canonical Event Schema Specification §20",
+  "families": [
+    {
+      "id": "claims",
+      "name": "Claims Lifecycle",
+      "description": "Reconstructs claim registration, updates, status transitions, resolution outcomes, and finalization.",
+      "eventNames": [
+        "ClaimCreatedV1",
+        "ClaimFinalizedV1",
+        "ClaimResolvedV1",
+        "ClaimStatusTransitionedV1",
+        "ClaimUpdatedV1"
+      ]
+    },
+    {
+      "id": "evidence",
+      "name": "Evidence Management",
+      "description": "Tracks content-addressed evidence commitments, revocations, and claim evidence window closures.",
+      "eventNames": [
+        "ClaimClosedForEvidenceV1",
+        "EvidenceRevokedV1",
+        "EvidenceSubmittedV1"
+      ]
+    },
+    {
+      "id": "staking",
+      "name": "Staking & Collateral Accounting",
+      "description": "Reconciles verifier collateral deposits, round locking, unlocking, and withdrawals.",
+      "eventNames": [
+        "StakeDepositedV1",
+        "StakeLockedV1",
+        "StakeUnlockedV1",
+        "StakeWithdrawnV1"
+      ]
+    },
+    {
+      "id": "verification",
+      "name": "Verification & Voting",
+      "description": "Records individual verifier submissions, support verdicts, committed stakes, and challenges.",
+      "eventNames": [
+        "VerificationChallengedV1",
+        "VerificationSubmittedV1"
+      ]
+    },
+    {
+      "id": "rounds",
+      "name": "Rounds Management",
+      "description": "Defines round lifecycle windows, participant counts, and weighted vote totals.",
+      "eventNames": [
+        "RoundEndedV1",
+        "RoundStartedV1"
+      ]
+    },
+    {
+      "id": "outcomes",
+      "name": "Outcomes & Consensus Aggregation",
+      "description": "Tracks deterministic aggregation of weighted verifications, consensus verdict, and confidence scores.",
+      "eventNames": [
+        "OutcomeAggregatedV1"
+      ]
+    },
+    {
+      "id": "disputes",
+      "name": "Dispute Resolution",
+      "description": "Reconstructs dispute challenges, escalation bonds, rulings, and resulting outcome overrides.",
+      "eventNames": [
+        "DisputeRaisedV1",
+        "DisputeResolvedV1"
+      ]
+    },
+    {
+      "id": "rewards",
+      "name": "Reward Calculation & Distribution",
+      "description": "Reconciles deterministic reward calculations, escrow reservations, claims, and batch payouts.",
+      "eventNames": [
+        "BatchRewardClaimedV1",
+        "RewardCalculatedV1",
+        "RewardClaimedV1",
+        "RewardEscrowedV1"
+      ]
+    },
+    {
+      "id": "slashing",
+      "name": "Slashing Penalties",
+      "description": "Reconciles collateral slashing for losing votes or Byzantine behaviour across individual and batch flows.",
+      "eventNames": [
+        "BatchSlashExecutedV1",
+        "SlashExecutedV1"
+      ]
+    },
+    {
+      "id": "withdrawals",
+      "name": "Withdrawal Queue & Timelocks",
+      "description": "Tracks queueing, cooldown expiry, cancellations, and execution of large verifier withdrawals.",
+      "eventNames": [
+        "WithdrawalCancelledV1",
+        "WithdrawalExecutedV1",
+        "WithdrawalQueuedV1"
+      ]
+    },
+    {
+      "id": "treasury",
+      "name": "Treasury Accounting & Solvency",
+      "description": "Maintains full double-entry reconciliation of deposits, internal bucket transfers, withdrawals, and snapshots.",
+      "eventNames": [
+        "TreasuryDepositV1",
+        "TreasurySnapshotRecordedV1",
+        "TreasuryTransferV1",
+        "TreasuryWithdrawalV1"
+      ]
+    },
+    {
+      "id": "parameters",
+      "name": "Protocol Parameters & Schedules",
+      "description": "Tracks versioned governance parameter updates, address reconfigurations, and fee schedule updates.",
+      "eventNames": [
+        "AddressParameterUpdatedV1",
+        "FeeScheduleUpdatedV1",
+        "ParameterUpdatedV1"
+      ]
+    },
+    {
+      "id": "reputation",
+      "name": "Reputation Roots & Snapshots",
+      "description": "Publishes cross-chain Merkle roots, individual score adjustments, and decay updates.",
+      "eventNames": [
+        "ReputationDecayedV1",
+        "ReputationRootPublishedV1",
+        "ReputationScoreUpdatedV1"
+      ]
+    },
+    {
+      "id": "roles",
+      "name": "Access Control & Roles",
+      "description": "Tracks role granting, revocation, and admin role hierarchy changes across protocol modules.",
+      "eventNames": [
+        "RoleAdminChangedV1",
+        "RoleGrantedV1",
+        "RoleRevokedV1"
+      ]
+    },
+    {
+      "id": "emergency",
+      "name": "Emergency Controls & Pauses",
+      "description": "Reconstructs protocol emergency pause activation and recovery events.",
+      "eventNames": [
+        "EmergencyPauseActivatedV1",
+        "EmergencyPauseRecoveredV1"
+      ]
+    },
+    {
+      "id": "upgrades",
+      "name": "Upgrades & Version Management",
+      "description": "Reconstructs module registrations, upgrade proposals, approvals, executions, and rollbacks.",
+      "eventNames": [
+        "GovernanceProposalCreatedV1",
+        "GovernanceProposalExecutedV1",
+        "ModuleRegisteredV1",
+        "UpgradeApprovedV1",
+        "UpgradeExecutedV1",
+        "UpgradeProposedV1",
+        "UpgradeRolledBackV1"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AddressParameterUpdatedV1",
+      "family": "parameters",
+      "signature": "event AddressParameterUpdatedV1(bytes32 indexed paramName, uint256 indexed parameterVersion, address oldAddress, address newAddress, uint64 timestamp, uint16 version)",
+      "topic0": "0xa6e8b18443777560b21fc5e941806922ede1f0c5d7c631c96765d69c98b32cd1",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "paramName",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "parameterVersion",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "oldAddress",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "newAddress",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs parameters state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for AddressParameterUpdatedV1."
+    },
+    {
+      "name": "BatchRewardClaimedV1",
+      "family": "rewards",
+      "signature": "event BatchRewardClaimedV1(address indexed recipient, uint256 count, uint256 totalAmount, uint64 timestamp, uint16 version)",
+      "topic0": "0xbad9f500f6c440990cba601f3d7c634f5836cccc0e4bf643e052181d8b6c42b5",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "count",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "totalAmount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rewards state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for BatchRewardClaimedV1."
+    },
+    {
+      "name": "BatchSlashExecutedV1",
+      "family": "slashing",
+      "signature": "event BatchSlashExecutedV1(uint256 indexed claimId, uint256 round, uint256 count, uint256 totalAmount, uint64 timestamp, uint16 version)",
+      "topic0": "0x2b6bd9d132fdf1f1750f6f2612e0ac2af26424778dee5da0730ff3791f7e4d35",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "count",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "totalAmount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs slashing state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for BatchSlashExecutedV1."
+    },
+    {
+      "name": "ClaimClosedForEvidenceV1",
+      "family": "evidence",
+      "signature": "event ClaimClosedForEvidenceV1(uint256 indexed claimId, address indexed actor, uint64 timestamp, uint16 version)",
+      "topic0": "0x1e759a2eb48bd9e3cc28399b59d94378932cc0279f69fad1b9824891eb18b4c8",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs evidence state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimClosedForEvidenceV1."
+    },
+    {
+      "name": "ClaimCreatedV1",
+      "family": "claims",
+      "signature": "event ClaimCreatedV1(uint256 indexed claimId, address indexed actor, bytes32 indexed metadataHash, uint64 timestamp, uint16 version)",
+      "topic0": "0xf73e076ca65a7bc8074a47ddf1c8154b24f1a53e2cb74ab8e167719a6e56244d",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "metadataHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs claims state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimCreatedV1."
+    },
+    {
+      "name": "ClaimFinalizedV1",
+      "family": "claims",
+      "signature": "event ClaimFinalizedV1(uint256 indexed claimId, address indexed actor, uint64 timestamp, uint16 version)",
+      "topic0": "0xc37a001f7d57b4892f9497281a28671c90f2b5269d8315953a2bac665dcf6ec9",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs claims state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimFinalizedV1."
+    },
+    {
+      "name": "ClaimResolvedV1",
+      "family": "claims",
+      "signature": "event ClaimResolvedV1(uint256 indexed claimId, address indexed actor, bool outcome, uint64 timestamp, uint16 version)",
+      "topic0": "0x0554b64a77f2bde6b665b37c39ef42a6a270bb93cc9701780c2074c0579e5a37",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "outcome",
+          "type": "bool",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs claims state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimResolvedV1."
+    },
+    {
+      "name": "ClaimStatusTransitionedV1",
+      "family": "claims",
+      "signature": "event ClaimStatusTransitionedV1(uint256 indexed claimId, address indexed actor, uint8 oldStatus, uint8 newStatus, uint64 timestamp, uint16 version)",
+      "topic0": "0xc45cb65b0a86da41b2bbb5ca24fddb79655a2b7eedc79c72e98b75fa84e44ee1",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "oldStatus",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "newStatus",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs claims state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimStatusTransitionedV1."
+    },
+    {
+      "name": "ClaimUpdatedV1",
+      "family": "claims",
+      "signature": "event ClaimUpdatedV1(uint256 indexed claimId, address indexed actor, bytes32 indexed metadataHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x08439df9801c9f691f53e339b28c2c6aad4178af7b9eba0b5b33282438941535",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "metadataHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs claims state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ClaimUpdatedV1."
+    },
+    {
+      "name": "DisputeRaisedV1",
+      "family": "disputes",
+      "signature": "event DisputeRaisedV1(uint256 indexed claimId, uint256 indexed disputeId, address indexed challenger, uint256 bondAmount, bytes32 reasonHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x3c4662d57ad1d0f7b44f06c77d35c05cd6afe965a5255eb6af8f4613e5b1ac00",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "disputeId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "challenger",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "bondAmount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs disputes state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for DisputeRaisedV1."
+    },
+    {
+      "name": "DisputeResolvedV1",
+      "family": "disputes",
+      "signature": "event DisputeResolvedV1(uint256 indexed claimId, uint256 indexed disputeId, address indexed resolver, uint8 ruling, uint8 resultingOutcome, uint64 timestamp, uint16 version)",
+      "topic0": "0x84ef4c22ce067e8018b219ab6217a46809c912a6cfe68f2d393efc226577c947",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "disputeId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "resolver",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "ruling",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "resultingOutcome",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs disputes state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for DisputeResolvedV1."
+    },
+    {
+      "name": "EmergencyPauseActivatedV1",
+      "family": "emergency",
+      "signature": "event EmergencyPauseActivatedV1(address indexed actor, bytes32 indexed reason, uint64 timestamp, uint16 version)",
+      "topic0": "0xe66d86834ab2968a616239e635289cdddc7287bb54a20762372a96a38f1beefd",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "reason",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs emergency state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for EmergencyPauseActivatedV1."
+    },
+    {
+      "name": "EmergencyPauseRecoveredV1",
+      "family": "emergency",
+      "signature": "event EmergencyPauseRecoveredV1(address indexed actor, uint64 timestamp, uint16 version)",
+      "topic0": "0xf7c68ea49f8cf582a9e21a032219f5430f8ca8fcf81a1ece4d60f97f8aa456ac",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs emergency state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for EmergencyPauseRecoveredV1."
+    },
+    {
+      "name": "EvidenceRevokedV1",
+      "family": "evidence",
+      "signature": "event EvidenceRevokedV1(uint256 indexed claimId, uint256 indexed evidenceId, address indexed actor, bytes32 reasonHash, uint64 timestamp, uint16 version)",
+      "topic0": "0xcea51b038bf2ef4437c0db38b3a85f15aba2075b507ff8583cecf4f42b643798",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "evidenceId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs evidence state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for EvidenceRevokedV1."
+    },
+    {
+      "name": "EvidenceSubmittedV1",
+      "family": "evidence",
+      "signature": "event EvidenceSubmittedV1(uint256 indexed claimId, uint256 indexed evidenceId, address indexed submitter, bytes32 evidenceHash, uint64 timestamp, uint16 version)",
+      "topic0": "0xf544109fc2392e8b72093882ac4313c71727cad06655694b6bb1ea7ddefb1136",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "evidenceId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "submitter",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "evidenceHash",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs evidence state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for EvidenceSubmittedV1."
+    },
+    {
+      "name": "FeeScheduleUpdatedV1",
+      "family": "parameters",
+      "signature": "event FeeScheduleUpdatedV1(bytes32 indexed feeType, uint256 indexed parameterVersion, uint256 fixedAmount, uint256 basisPoints, uint64 timestamp, uint16 version)",
+      "topic0": "0xa8676fe173af512a9506317ef58baaa4393a18c84c87b8e70ea9efb90525333f",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "feeType",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "parameterVersion",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "fixedAmount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "basisPoints",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs parameters state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for FeeScheduleUpdatedV1."
+    },
+    {
+      "name": "GovernanceProposalCreatedV1",
+      "family": "upgrades",
+      "signature": "event GovernanceProposalCreatedV1(bytes32 indexed proposalId, address indexed proposer, bytes32 indexed metadataHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x2073618117327294b80b42bb39cfd3e4598868c944060037ed723e4a5b64d0b8",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "proposalId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "proposer",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "metadataHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for GovernanceProposalCreatedV1."
+    },
+    {
+      "name": "GovernanceProposalExecutedV1",
+      "family": "upgrades",
+      "signature": "event GovernanceProposalExecutedV1(bytes32 indexed proposalId, address indexed executor, uint64 timestamp, uint16 version)",
+      "topic0": "0x0e40a6f8532f9b4316bf51a996b25c6fccc1713cf3b031ffe1bf6dc1174fb93f",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "proposalId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "executor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for GovernanceProposalExecutedV1."
+    },
+    {
+      "name": "ModuleRegisteredV1",
+      "family": "upgrades",
+      "signature": "event ModuleRegisteredV1(bytes32 indexed moduleId, address indexed implementation, uint64 major, uint64 minor, uint64 patch, bytes32 storageLayoutHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x933e1147957de21f0e66d3c60c027216bd818a25890c7196be4b340cadea0be2",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "implementation",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "major",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "minor",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "patch",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "storageLayoutHash",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ModuleRegisteredV1."
+    },
+    {
+      "name": "OutcomeAggregatedV1",
+      "family": "outcomes",
+      "signature": "event OutcomeAggregatedV1(uint256 indexed claimId, uint256 indexed round, uint8 outcome, uint256 trueWeight, uint256 falseWeight, uint256 confidenceBps, uint64 timestamp, uint16 version)",
+      "topic0": "0xa7928bd0f8da22510c41fd2b8cc37e901ad13420d346ae8f6261d1f970a28a3d",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "outcome",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "trueWeight",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "falseWeight",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "confidenceBps",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs outcomes state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for OutcomeAggregatedV1."
+    },
+    {
+      "name": "ParameterUpdatedV1",
+      "family": "parameters",
+      "signature": "event ParameterUpdatedV1(bytes32 indexed paramName, uint256 indexed parameterVersion, uint256 oldValue, uint256 newValue, uint64 effectiveAt, uint64 timestamp, uint16 version)",
+      "topic0": "0x4280cb35cf7572237a483f711e658a708ae400ec2a9c13029086dfab63ebfa28",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "paramName",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "parameterVersion",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "oldValue",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "newValue",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "effectiveAt",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs parameters state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ParameterUpdatedV1."
+    },
+    {
+      "name": "ReputationDecayedV1",
+      "family": "reputation",
+      "signature": "event ReputationDecayedV1(address indexed verifier, uint256 previousScore, uint256 newScore, uint64 timestamp, uint16 version)",
+      "topic0": "0x4d93d3949538b34d9a3b96602e154bd30cfe52adbb6c501dadd3faa2a04d2b67",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "previousScore",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "newScore",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs reputation state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ReputationDecayedV1."
+    },
+    {
+      "name": "ReputationRootPublishedV1",
+      "family": "reputation",
+      "signature": "event ReputationRootPublishedV1(uint256 indexed snapshotId, bytes32 indexed root, uint256 userCount, uint64 expiresAt, uint64 timestamp, uint16 version)",
+      "topic0": "0xd86f3c85fe1114524e8437e69378ff47cd33cf0e58ffecd9cdecce84be979a2f",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "snapshotId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "root",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "userCount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "expiresAt",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs reputation state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ReputationRootPublishedV1."
+    },
+    {
+      "name": "ReputationScoreUpdatedV1",
+      "family": "reputation",
+      "signature": "event ReputationScoreUpdatedV1(address indexed verifier, uint256 oldScore, uint256 newScore, bytes32 indexed reasonHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x851691c968ddeaa98cd33c6caac7f6be5841b29d76c8dafd66c77f5f642216cb",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "oldScore",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "newScore",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs reputation state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for ReputationScoreUpdatedV1."
+    },
+    {
+      "name": "RewardCalculatedV1",
+      "family": "rewards",
+      "signature": "event RewardCalculatedV1(bytes32 indexed calculationId, address indexed recipient, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0xe0e4299e8cdc48637f62b9ed3261831e8767ca9356dd8168e9316376a5fe3d2b",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "calculationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rewards state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for RewardCalculatedV1."
+    },
+    {
+      "name": "RewardClaimedV1",
+      "family": "rewards",
+      "signature": "event RewardClaimedV1(uint256 indexed claimId, address indexed recipient, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0xfc83f10deb8d6d8c8aecb95531248e30b9de5152955fcd8c3826ebad2ce22e01",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rewards state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for RewardClaimedV1."
+    },
+    {
+      "name": "RewardEscrowedV1",
+      "family": "rewards",
+      "signature": "event RewardEscrowedV1(uint256 indexed claimId, address indexed recipient, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0x26e12014c91486dcda60bb99f0112a3ca3b4e2f3c6bbaeaad891b55c3cc0fffa",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rewards state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for RewardEscrowedV1."
+    },
+    {
+      "name": "RoleAdminChangedV1",
+      "family": "roles",
+      "signature": "event RoleAdminChangedV1(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole, uint64 timestamp, uint16 version)",
+      "topic0": "0x6f2411d25493f2b8c3fda03902bf16ae069e21da487cdf0afa3a189a88eba9fb",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "previousAdminRole",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "newAdminRole",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs roles state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for RoleAdminChangedV1."
+    },
+    {
+      "name": "RoleGrantedV1",
+      "family": "roles",
+      "signature": "event RoleGrantedV1(bytes32 indexed role, address indexed account, address indexed sender, uint64 timestamp, uint16 version)",
+      "topic0": "0xa20870181ba1e33c06e97cbd15eac179080534f346aba505a5d5237c38dfa7e0",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "sender",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs roles state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for RoleGrantedV1."
+    },
+    {
+      "name": "RoleRevokedV1",
+      "family": "roles",
+      "signature": "event RoleRevokedV1(bytes32 indexed role, address indexed account, address indexed sender, uint64 timestamp, uint16 version)",
+      "topic0": "0xfb01dd7a4c6cc28ae5eebbe0d7fc260b2ce1f855d65f3a144cfc0f917d506cb5",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "sender",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs roles state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for RoleRevokedV1."
+    },
+    {
+      "name": "RoundEndedV1",
+      "family": "rounds",
+      "signature": "event RoundEndedV1(uint256 indexed claimId, uint256 indexed round, uint256 totalWeightedFor, uint256 totalWeightedAgainst, uint256 participantCount, uint64 timestamp, uint16 version)",
+      "topic0": "0xeab4f410634407f0872a326aee7339798217ca77cf0a0fff98d4dedb2b5399a0",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "totalWeightedFor",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "totalWeightedAgainst",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "participantCount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rounds state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for RoundEndedV1."
+    },
+    {
+      "name": "RoundStartedV1",
+      "family": "rounds",
+      "signature": "event RoundStartedV1(uint256 indexed claimId, uint256 indexed round, uint64 windowStart, uint64 windowEnd, uint256 minStake, uint64 timestamp, uint16 version)",
+      "topic0": "0x83b8e68dd3626cbe0ff4eab8a2a26232615b2c08e8ecd8e9a8d059c9292e5de3",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "windowStart",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "windowEnd",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "minStake",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs rounds state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for RoundStartedV1."
+    },
+    {
+      "name": "SlashExecutedV1",
+      "family": "slashing",
+      "signature": "event SlashExecutedV1(uint256 indexed claimId, address indexed verifier, bytes32 indexed reason, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0xf8f31812e9c5054fe55274d4fb0f9e062ce2c0ea5350dce4ecad587776633182",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "reason",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs slashing state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for SlashExecutedV1."
+    },
+    {
+      "name": "StakeDepositedV1",
+      "family": "staking",
+      "signature": "event StakeDepositedV1(address indexed verifier, uint256 amount, uint256 newBalance, uint64 timestamp, uint16 version)",
+      "topic0": "0x13d8adb231b0c67a22fc3335b76cd6e613b06d349fb4cdc3d76366c519c0af85",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "newBalance",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs staking state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for StakeDepositedV1."
+    },
+    {
+      "name": "StakeLockedV1",
+      "family": "staking",
+      "signature": "event StakeLockedV1(uint256 indexed claimId, address indexed verifier, uint256 round, uint256 amount, uint256 resultingActiveStake, uint64 timestamp, uint16 version)",
+      "topic0": "0xfd268214d5878b33fe5a98aed6855982d50e7535d3512279604ea667cb2d81b9",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "resultingActiveStake",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs staking state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for StakeLockedV1."
+    },
+    {
+      "name": "StakeUnlockedV1",
+      "family": "staking",
+      "signature": "event StakeUnlockedV1(uint256 indexed claimId, address indexed verifier, uint256 round, uint256 amount, uint256 resultingActiveStake, uint64 timestamp, uint16 version)",
+      "topic0": "0x1afe652176726723b98bdb421bca8c4de33b7ce92998d6253ef4e2f81926df4e",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "round",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "resultingActiveStake",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs staking state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for StakeUnlockedV1."
+    },
+    {
+      "name": "StakeWithdrawnV1",
+      "family": "staking",
+      "signature": "event StakeWithdrawnV1(address indexed verifier, uint256 amount, uint256 newBalance, uint64 timestamp, uint16 version)",
+      "topic0": "0x1fda4f59a4a23284959743bed3573f478d77e9aeb9735bce0fc3f9255c72fdee",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "newBalance",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs staking state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for StakeWithdrawnV1."
+    },
+    {
+      "name": "TreasuryDepositV1",
+      "family": "treasury",
+      "signature": "event TreasuryDepositV1(bytes32 indexed operationId, uint8 indexed account, address indexed asset, uint256 amount, address sender, uint64 timestamp, uint16 version)",
+      "topic0": "0x39f0e4d1a6f9b2ee178354d1a41c6e2f572d2d354ea6701b892bd26bb9c4f8d7",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "uint8",
+          "indexed": true
+        },
+        {
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "sender",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs treasury state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for TreasuryDepositV1."
+    },
+    {
+      "name": "TreasurySnapshotRecordedV1",
+      "family": "treasury",
+      "signature": "event TreasurySnapshotRecordedV1(uint256 indexed snapshotId, uint256 totalAssets, uint64 timestamp, uint16 version)",
+      "topic0": "0x13eb82599b03a9b9f0db1ae4d257b756439157cce773707f6bb25fc552486f58",
+      "version": 1,
+      "indexedFieldsCount": 1,
+      "parameters": [
+        {
+          "name": "snapshotId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "totalAssets",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs treasury state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for TreasurySnapshotRecordedV1."
+    },
+    {
+      "name": "TreasuryTransferV1",
+      "family": "treasury",
+      "signature": "event TreasuryTransferV1(bytes32 indexed operationId, address indexed token, address indexed recipient, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0x6fffd10fc6a497653aa0e24afb92467be605e50e4205be351243dc1fbf6d41d3",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "token",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs treasury state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for TreasuryTransferV1."
+    },
+    {
+      "name": "TreasuryWithdrawalV1",
+      "family": "treasury",
+      "signature": "event TreasuryWithdrawalV1(bytes32 indexed operationId, uint8 indexed account, address indexed asset, address recipient, uint256 amount, address operator, uint64 timestamp, uint16 version)",
+      "topic0": "0xbc7808288e4f98cc9a309b930aa140f721158d0d9af49b55ddf210d536475468",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "uint8",
+          "indexed": true
+        },
+        {
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "recipient",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "operator",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs treasury state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for TreasuryWithdrawalV1."
+    },
+    {
+      "name": "UpgradeApprovedV1",
+      "family": "upgrades",
+      "signature": "event UpgradeApprovedV1(uint256 indexed proposalId, bytes32 indexed moduleId, uint64 executeAfter, address indexed approver, uint64 timestamp, uint16 version)",
+      "topic0": "0xb9f93e80a34f2deceb0e09cb73aa78105db4a862b2835cced3c3cc2c6633b63c",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "moduleId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "executeAfter",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "approver",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for UpgradeApprovedV1."
+    },
+    {
+      "name": "UpgradeExecutedV1",
+      "family": "upgrades",
+      "signature": "event UpgradeExecutedV1(uint256 indexed proposalId, bytes32 indexed moduleId, address oldImplementation, address newImplementation, address indexed executor, uint64 timestamp, uint16 version)",
+      "topic0": "0xac109d2716f58791a8b10c7d34187a574d26cced5a4e4f8e4a08fca2a3e9d3a7",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "moduleId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "oldImplementation",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "newImplementation",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "executor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for UpgradeExecutedV1."
+    },
+    {
+      "name": "UpgradeProposedV1",
+      "family": "upgrades",
+      "signature": "event UpgradeProposedV1(uint256 indexed proposalId, bytes32 indexed moduleId, address indexed newImplementation, uint64 toMajor, uint64 toMinor, uint64 toPatch, bytes32 migrationHash, address proposer, uint64 timestamp, uint16 version)",
+      "topic0": "0x4526233d0ec13ff29d5f8d39e35561de8a36511ab8b6354ec75bb2311f56f6a1",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "moduleId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "newImplementation",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "toMajor",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "toMinor",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "toPatch",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "migrationHash",
+          "type": "bytes32",
+          "indexed": false
+        },
+        {
+          "name": "proposer",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for UpgradeProposedV1."
+    },
+    {
+      "name": "UpgradeRolledBackV1",
+      "family": "upgrades",
+      "signature": "event UpgradeRolledBackV1(bytes32 indexed moduleId, address oldImplementation, address restoredImplementation, bytes32 indexed reasonHash, address indexed guardian, uint64 timestamp, uint16 version)",
+      "topic0": "0xd7338ecfd2e49e7050ec43c2cb19711ec6b49e867db8dfb1ea12f3f34eee8490",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "moduleId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "oldImplementation",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "restoredImplementation",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "guardian",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs upgrades state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for UpgradeRolledBackV1."
+    },
+    {
+      "name": "VerificationChallengedV1",
+      "family": "verification",
+      "signature": "event VerificationChallengedV1(uint256 indexed claimId, address indexed challenger, bytes32 indexed reasonHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x987ff38082717fe9e0fbf06f8465252b93b87929b20c5e707ad670d4ec217826",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "challenger",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs verification state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for VerificationChallengedV1."
+    },
+    {
+      "name": "VerificationSubmittedV1",
+      "family": "verification",
+      "signature": "event VerificationSubmittedV1(uint256 indexed claimId, address indexed verifier, bool support, uint256 stakeAmount, uint64 timestamp, uint16 version)",
+      "topic0": "0x864930009baa9a73780b004b97d7615e8e3efbf1c852ce4172aee2f907d8ef72",
+      "version": 1,
+      "indexedFieldsCount": 2,
+      "parameters": [
+        {
+          "name": "claimId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "verifier",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "support",
+          "type": "bool",
+          "indexed": false
+        },
+        {
+          "name": "stakeAmount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs verification state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for VerificationSubmittedV1."
+    },
+    {
+      "name": "WithdrawalCancelledV1",
+      "family": "withdrawals",
+      "signature": "event WithdrawalCancelledV1(bytes32 indexed withdrawalId, address indexed actor, bytes32 indexed reasonHash, uint64 timestamp, uint16 version)",
+      "topic0": "0x70b340c6d2c3b961992369d340825098fd09c696e2c4c9125a989343548eb26c",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "withdrawalId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "reasonHash",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs withdrawals state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for WithdrawalCancelledV1."
+    },
+    {
+      "name": "WithdrawalExecutedV1",
+      "family": "withdrawals",
+      "signature": "event WithdrawalExecutedV1(bytes32 indexed withdrawalId, address indexed actor, address indexed asset, uint256 amount, uint64 timestamp, uint16 version)",
+      "topic0": "0xc0017940deab28029ada5b38b48731fc2eb82c7fab12ba591516fe0820b96d70",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "withdrawalId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs withdrawals state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for WithdrawalExecutedV1."
+    },
+    {
+      "name": "WithdrawalQueuedV1",
+      "family": "withdrawals",
+      "signature": "event WithdrawalQueuedV1(bytes32 indexed withdrawalId, address indexed actor, address indexed asset, uint256 amount, uint64 unlockTimestamp, uint64 timestamp, uint16 version)",
+      "topic0": "0x61b085207a890aa472a63423fae98cefc7f6e81f7ddbe29cd4e4c2829f2624c2",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "withdrawalId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "name": "unlockTimestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs withdrawals state transitions for indexer projection.",
+      "financialImpact": true,
+      "description": "Canonical V1 event for WithdrawalQueuedV1."
+    }
+  ],
+  "checksum": "0x70c52259c0c7fe06527669b7af8469139295bf37ae39c494333ab8f16fbbae7d"
+}
