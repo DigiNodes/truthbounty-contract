@@ -19,6 +19,9 @@ library V2Errors {
     /// @notice Attempted action with zero amount.
     error ZeroAmount();
 
+    /// @notice Attempted action by an unregistered or unauthorized module.
+    error UnauthorizedModule(address caller);
+
     // =========================================================================
     // Claim-Related Errors
     // =========================================================================
@@ -123,6 +126,24 @@ library V2Errors {
 
     /// @notice Invalid custody reference.
     error InvalidCustodyReference();
+
+    /// @notice Asset is not supported by the custody vault.
+    error UnsupportedAsset(address asset);
+
+    /// @notice Insufficient claimable balance for the requested operation.
+    error InsufficientClaimable(address account, uint256 requested, uint256 available);
+
+    /// @notice Insufficient locked balance for the requested operation.
+    error InsufficientLocked(uint256 requested, uint256 available);
+
+    /// @notice Insufficient protocol allocation for the requested operation.
+    error InsufficientProtocolAllocation(uint256 requested, uint256 available);
+
+    /// @notice Token transfer amount does not match the expected value.
+    error TransferAmountMismatch(uint256 expected, uint256 received);
+
+    /// @notice Recorded obligations exceed on-chain custody for an asset.
+    error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
     // =========================================================================
     // Aggregation & Reputation Errors

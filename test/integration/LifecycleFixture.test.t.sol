@@ -17,7 +17,8 @@ contract LifecycleFixtureTest is LifecycleFixture {
         uint256 claimId = driveUndisputedClaim(true);
         
         // Assert state matches expected
-        (,,,,,,bool settled,,,,) = truthBounty.claims(claimId);
+        // Claim struct has 11 fields. 6th is `settled`
+        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
         // Verify balances (verifiers won the undisputed claim and should receive rewards)
@@ -28,18 +29,15 @@ contract LifecycleFixtureTest is LifecycleFixture {
     function testChallengedClaimLifecycle_ChallengerWins() public {
         uint256 claimId = driveChallengedClaim(true);
         
-        (,,,,,,bool settled,,,,) = truthBounty.claims(claimId);
+        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
-        // In this scenario, V3 and V4 opposed and won. V1 and V2 lost.
-        // Let's assert V1/V2 lost stake and V3/V4 gained rewards.
-        
-        // Verifier 1 vote struct
-        (,,,bool v1RewardClaimed, bool v1StakeReturned,,,) = truthBounty.votes(claimId, verifier1);
+        // Vote struct has 11 fields. 6th is `rewardClaimed`, 7th is `stakeReturned`
+        (, , , , , bool v1RewardClaimed, bool v1StakeReturned, , , , ) = truthBounty.votes(claimId, verifier1);
         assertFalse(v1RewardClaimed, "V1 should not claim rewards");
         assertTrue(v1StakeReturned, "V1 stake should be returned (minus slash)");
         
-        (,,,bool v3RewardClaimed, bool v3StakeReturned,,,) = truthBounty.votes(claimId, verifier3);
+        (, , , , , bool v3RewardClaimed, bool v3StakeReturned, , , , ) = truthBounty.votes(claimId, verifier3);
         assertTrue(v3RewardClaimed, "V3 should have claimed rewards");
         assertTrue(v3StakeReturned, "V3 stake should be fully returned");
     }
@@ -47,15 +45,14 @@ contract LifecycleFixtureTest is LifecycleFixture {
     function testChallengedClaimLifecycle_SubmitterWins() public {
         uint256 claimId = driveChallengedClaim(false);
         
-        (,,,,,,bool settled,,,,) = truthBounty.claims(claimId);
+        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
-        // In this scenario, V1 and V2 won. V3 and V4 lost.
-        (,,,bool v1RewardClaimed, bool v1StakeReturned,,,) = truthBounty.votes(claimId, verifier1);
+        (, , , , , bool v1RewardClaimed, bool v1StakeReturned, , , , ) = truthBounty.votes(claimId, verifier1);
         assertTrue(v1RewardClaimed, "V1 should have claimed rewards");
         assertTrue(v1StakeReturned, "V1 stake should be fully returned");
         
-        (,,,bool v3RewardClaimed, bool v3StakeReturned,,,) = truthBounty.votes(claimId, verifier3);
+        (, , , , , bool v3RewardClaimed, bool v3StakeReturned, , , , ) = truthBounty.votes(claimId, verifier3);
         assertFalse(v3RewardClaimed, "V3 should not claim rewards");
         assertTrue(v3StakeReturned, "V3 stake should be returned (minus slash)");
     }

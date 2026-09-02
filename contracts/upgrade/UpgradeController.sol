@@ -201,14 +201,12 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
             revert UnauthorizedEmergency();
         }
 
-        if (storageValidator != StorageCompatibilityValidator(address(0))) {
-            try storageValidator.validateUpgrade(
+        if (address(storageValidator) != address(0)) {
+            storageValidator.validateUpgrade(
                 proposal.targetContract,
                 proposal.currentImplementation,
                 proposal.newImplementation
-            ) {
-            } catch {
-            }
+            );
         }
 
         _currentImplementation[proposal.targetContract] = proposal.newImplementation;
