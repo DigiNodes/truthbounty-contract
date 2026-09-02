@@ -49,6 +49,8 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
         string calldata movementType
     ) external {}
 
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external {}
+
     function getAccountBalance(TreasuryAccount account) external view returns (uint256) {
         if (account == TreasuryAccount.STAKING_RESERVE) return stakingReserve;
         if (account == TreasuryAccount.SLASHED_TREASURY) return slashedTreasury;
