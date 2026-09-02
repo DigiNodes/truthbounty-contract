@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "./StorageCompatibilityValidator.sol";
 
@@ -58,7 +59,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         _;
     }
     
-    constructor(address _timelock, address _storageValidator) {
+    constructor(address _timelock, address _storageValidator) ProxyAdmin(_timelock) {
         if (_timelock == address(0)) revert ZeroAddress();
         if (_storageValidator == address(0)) revert ZeroAddress();
         
@@ -112,12 +113,9 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         
         upgrade.executed = true;
         
-        // Perform the upgrade
-        if (upgrade.data.length > 0) {
-            upgradeAndCall(upgrade.proxy, upgrade.implementation, upgrade.data);
-        } else {
-            upgrade(upgrade.proxy, upgrade.implementation);
-        }
+        // Perform the upgrade (OZ v5 ProxyAdmin exposes upgradeAndCall only).
+        ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(upgrade.proxy);
+        upgradeAndCall(proxy, upgrade.implementation, upgrade.data);
     }
     
     /**
@@ -182,26 +180,16 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
     }
     
     /**
-     * @dev Override the parent's upgrade function to ensure it can only be called through our schedule/execute flow
-     * This prevents direct upgrades that bypass the timelock
-     */
-    function upgrade(address proxy, address implementation) public override onlyOwner {
-        // Only allow this if it's being called from executeUpgrade, otherwise only timelock can initiate
-        // This maintains compatibility with the ProxyAdmin interface while enforcing our timelock
-        super.upgrade(proxy, implementation);
-    }
-    
-    /**
-     * @dev Override upgradeAndCall similarly
+     * @dev Override upgradeAndCall to keep ProxyAdmin owner checks while routing scheduled upgrades.
      */
     function upgradeAndCall(
-        address proxy,
+        ITransparentUpgradeableProxy proxy,
         address implementation,
-        bytes calldata data
-    ) public override onlyOwner {
+        bytes memory data
+    ) public payable override onlyOwner {
         super.upgradeAndCall(proxy, implementation, data);
     }
-    
+
     // Storage gap for future upgrades
     uint256[50] private __gap;
 }
