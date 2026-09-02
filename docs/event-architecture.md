@@ -1,82 +1,64 @@
 # TruthBounty On-Chain Event Architecture
 
 ## Status
-
-Schema version: `1`
+- **Schema version**: `1`
+- **Protocol version**: `2.0.0`
+- **Specification Reference**: Protocol Specification §20
+- **Canonical Interface**: `contracts/interfaces/ITruthBountyEvents.sol`
+- **Event Catalogue**: [`docs/event-catalogue-v1.md`](./event-catalogue-v1.md)
+- **Machine-Readable Schema**: [`schemas/event-schema-v1.json`](../schemas/event-schema-v1.json)
 
 This document defines the canonical event contract between TruthBounty smart contracts and off-chain consumers such as indexers, explorers, APIs, analytics services, notification systems, and frontends.
 
-The Solidity source of truth is `contracts/interfaces/ITruthBountyEvents.sol`.
+---
 
-## Design rules
+## Design Principles & Security Invariants
 
-1. Events are emitted only after the corresponding state transition succeeds.
-2. Event names use past-tense domain actions such as `ClaimCreatedV1` and `RewardClaimedV1`.
-3. Entity identifiers, actors, and stable lookup keys are indexed where practical.
-4. Dynamic metadata is referenced by a deterministic `bytes32` hash rather than duplicated in logs.
-5. Every canonical event includes a block-context timestamp and schema version.
-6. A single state transition emits one canonical event unless the transition intentionally spans multiple protocol domains.
-7. Failed or reverted transactions emit no canonical events.
-8. New schema versions must be additive whenever possible. Existing event signatures are immutable once consumed in production.
+1. **Emission on Success**: Events are emitted only after the corresponding state transition succeeds. Reverted transactions produce no logs.
+2. **Naming Convention**: Event names use past-tense domain actions suffixed with schema version (e.g., `ClaimCreatedV1`, `OutcomeAggregatedV1`, `RewardClaimedV1`).
+3. **Strict Indexing Budget**: Entity identifiers, primary actors, and stable reason hashes are indexed, strictly adhering to the EVM limit of at most 3 indexed fields per event.
+4. **Privacy & Integrity**: Evidence content, raw signatures, and sensitive user data are never emitted directly; deterministic `bytes32` hashes (e.g. `metadataHash`, `evidenceHash`, `reasonHash`) are emitted instead.
+5. **Deterministic Timestamp & Versioning**: Every canonical event carries trailing `uint64 timestamp` (block context timestamp) and `uint16 version` (literal `1`).
+6. **Financial Reconciliation Invariant**: All financial events (`StakeDepositedV1`, `StakeLockedV1`, `StakeUnlockedV1`, `StakeWithdrawnV1`, `SlashExecutedV1`, `RewardEscrowedV1`, `RewardClaimedV1`, `TreasuryDepositV1`, `TreasuryTransferV1`) reconcile with on-chain storage accounting balances without divergence.
 
-## Common fields
+---
 
-- `timestamp`: `uint64(block.timestamp)` at emission time.
-- `version`: `EVENT_SCHEMA_VERSION` from `ITruthBountyEvents`.
-- `actor`: the address responsible for the state transition.
-- `metadataHash`: a deterministic hash of off-chain or dynamic metadata.
-- `reason`: a stable `bytes32` identifier, not free-form text.
+## Event Families (Specification §20)
 
-## Event ordering
+TruthBounty V2 canonical events are grouped into 16 authoritative families:
 
-Within one transaction, consumers may rely on log order. Across transactions, consumers must order by block number, transaction index, and log index.
+1. **Claims**: `ClaimCreatedV1`, `ClaimUpdatedV1`, `ClaimStatusTransitionedV1`, `ClaimResolvedV1`, `ClaimFinalizedV1`
+2. **Evidence**: `EvidenceSubmittedV1`, `EvidenceRevokedV1`, `ClaimClosedForEvidenceV1`
+3. **Staking & Collateral**: `StakeDepositedV1`, `StakeLockedV1`, `StakeUnlockedV1`, `StakeWithdrawnV1`
+4. **Verification & Voting**: `VerificationSubmittedV1`, `VerificationChallengedV1`
+5. **Rounds**: `RoundStartedV1`, `RoundEndedV1`
+6. **Outcomes & Aggregation**: `OutcomeAggregatedV1`
+7. **Disputes**: `DisputeRaisedV1`, `DisputeResolvedV1`
+8. **Rewards**: `RewardCalculatedV1`, `RewardEscrowedV1`, `RewardClaimedV1`, `BatchRewardClaimedV1`
+9. **Slashing**: `SlashExecutedV1`, `BatchSlashExecutedV1`
+10. **Withdrawals**: `WithdrawalQueuedV1`, `WithdrawalExecutedV1`, `WithdrawalCancelledV1`
+11. **Treasury & Accounting**: `TreasuryDepositV1`, `TreasuryTransferV1`, `TreasuryWithdrawalV1`, `TreasurySnapshotRecordedV1`
+12. **Parameters & Schedules**: `ParameterUpdatedV1`, `AddressParameterUpdatedV1`, `FeeScheduleUpdatedV1`
+13. **Reputation Roots & Snapshots**: `ReputationRootPublishedV1`, `ReputationScoreUpdatedV1`, `ReputationDecayedV1`
+14. **Access Control & Roles**: `RoleGrantedV1`, `RoleRevokedV1`, `RoleAdminChangedV1`
+15. **Emergency & Pauses**: `EmergencyPauseActivatedV1`, `EmergencyPauseRecoveredV1`
+16. **Upgrades & Governance**: `GovernanceProposalCreatedV1`, `GovernanceProposalExecutedV1`, `ModuleRegisteredV1`, `UpgradeProposedV1`, `UpgradeApprovedV1`, `UpgradeExecutedV1`, `UpgradeRolledBackV1`
 
-Business logic must not depend on event ordering. Events reflect completed state changes; they do not authorize or trigger on-chain state transitions.
+---
 
-## Event catalogue
+## Event Ordering & Indexing Guidance
 
-### Claims
+### Total Log Ordering
+Consumers must order logs deterministically by:
+1. `blockNumber` (monotonically increasing)
+2. `transactionIndex` (position within block)
+3. `logIndex` (position within transaction receipt)
 
-- `ClaimCreatedV1`: a new claim is persisted.
-- `ClaimUpdatedV1`: claim metadata changes.
-- `ClaimResolvedV1`: the canonical outcome is determined.
-- `ClaimFinalizedV1`: settlement and all required accounting are complete.
+### Idempotency & Reorg Handling
+- Persistent unique event key: `keccak256(chainId, contractAddress, transactionHash, logIndex)`.
+- When a chain reorganization occurs, all events associated with orphaned block hashes must be unapplied before new canonical blocks are processed.
 
-### Verification
-
-- `VerificationSubmittedV1`: a verifier records a position and stake.
-- `VerificationChallengedV1`: a verification or claim is challenged.
-
-### Staking and slashing
-
-- `StakeDepositedV1`: verifier collateral increases.
-- `StakeWithdrawnV1`: verifier collateral decreases through a valid withdrawal.
-- `SlashExecutedV1`: locked collateral is confiscated for a unique offence.
-
-### Rewards and treasury
-
-- `RewardCalculatedV1`: a deterministic reward amount is established.
-- `RewardEscrowedV1`: funds become reserved for a recipient.
-- `RewardClaimedV1`: reserved funds are transferred or marked paid.
-- `TreasuryTransferV1`: treasury-controlled value moves for a uniquely identified operation.
-
-### Governance and emergency controls
-
-- `GovernanceProposalCreatedV1`: a governance proposal is registered.
-- `GovernanceProposalExecutedV1`: an approved proposal is executed.
-- `EmergencyPauseActivatedV1`: protocol emergency controls are activated.
-- `EmergencyPauseRecoveredV1`: normal operation is restored.
-
-## Indexing guidance
-
-Indexers should persist the tuple `(chainId, contractAddress, transactionHash, logIndex)` as the unique event identity. Reorg handling must roll back events from orphaned blocks before replaying the canonical chain.
-
-Consumers should filter by indexed entity IDs and actor addresses, then validate the `version` field before decoding version-specific semantics.
-
-## Versioning policy
-
-Version 1 consumers must ignore unknown event signatures and reject unsupported versions only for events they recognize. A new incompatible payload requires a new event signature and a new schema version; existing signatures must not be silently repurposed.
-
-## Gas guidance
-
-Only fields required for filtering should be indexed. Large strings and byte arrays should not be emitted when a content hash or stable identifier is sufficient. Gas benchmarks should compare state-changing functions before and after canonical event adoption.
+### Versioning & Breaking-Change Policy
+- **Additive Evolution**: New features must introduce new event definitions or versioned schemas (e.g. `V2`).
+- **Signature Immutability**: Existing event signatures are immutable once published to mainnet.
+- **Consumer Quarantine**: Indexers must quarantine unsupported versions without halting the ingestion of valid canonical events.
