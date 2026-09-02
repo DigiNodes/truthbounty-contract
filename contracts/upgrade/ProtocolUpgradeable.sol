@@ -21,6 +21,11 @@ abstract contract ProtocolUpgradeable is
 {
     bytes32 public constant UPGRADE_CONTROLLER_ROLE = keccak256("UPGRADE_CONTROLLER_ROLE");
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     IUpgradeController public upgradeController;
 
     event UpgradeControllerUpdated(address indexed oldController, address indexed newController);

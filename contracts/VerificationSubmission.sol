@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IVerificationSubmission.sol";
 import "./interfaces/IClaimRegistry.sol";
 
@@ -129,6 +129,34 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
      */
     function getClaimVerifications(uint256 claimId) external view override returns (uint256[] memory) {
         return _claimVerifications[claimId];
+    }
+
+    /**
+     * @inheritdoc IVerificationSubmission
+     */
+    function getClaimVerificationsPaginated(
+        uint256 claimId,
+        uint256 offset,
+        uint256 limit
+    ) external view override returns (uint256[] memory verifications, uint256 total) {
+        uint256[] storage allVerifications = _claimVerifications[claimId];
+        total = allVerifications.length;
+
+        if (offset >= total || limit == 0) {
+            return (new uint256[](0), total);
+        }
+
+        uint256 count = total - offset;
+        if (count > limit) {
+            count = limit;
+        }
+
+        verifications = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            verifications[i] = allVerifications[offset + i];
+        }
+
+        return (verifications, total);
     }
 
     /**

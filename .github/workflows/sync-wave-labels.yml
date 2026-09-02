@@ -1,0 +1,80 @@
+name: Sync Wave lifecycle labels
+
+on:
+  pull_request:
+    paths:
+      - ".github/labels/wave-workflow.json"
+      - ".github/workflows/sync-wave-labels.yml"
+      - "automation/sync-wave-labels.sh"
+      - "docs/automation/WAVE_LABEL_SYNC.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/labels/wave-workflow.json"
+      - ".github/workflows/sync-wave-labels.yml"
+      - "automation/sync-wave-labels.sh"
+      - "docs/automation/WAVE_LABEL_SYNC.md"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the reviewed lifecycle-label plan"
+        required: true
+        type: boolean
+        default: false
+      confirmation:
+        description: "Type DigiNodes/truthbounty-contract to authorize the write"
+        required: true
+        type: string
+
+concurrency:
+  group: wave-label-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Validate and dry run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate script syntax
+        run: bash -n automation/sync-wave-labels.sh
+
+      - name: Validate configuration
+        run: jq -e . .github/labels/wave-workflow.json >/dev/null
+
+      - name: Produce synchronization plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          bash automation/sync-wave-labels.sh --dry-run | tee -a "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply explicitly approved lifecycle state
+    needs:
+      - plan
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply == true && inputs.confirmation == 'DigiNodes/truthbounty-contract' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Create labels and synchronize V2 candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          bash automation/sync-wave-labels.sh --apply | tee -a "$GITHUB_STEP_SUMMARY"

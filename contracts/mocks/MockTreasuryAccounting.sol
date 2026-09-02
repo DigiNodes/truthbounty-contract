@@ -21,6 +21,14 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
         totalStakeRecorded += amount;
     }
 
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external {
+        if (targetAccount == TreasuryAccount.STAKING_RESERVE) {
+            stakingReserve += amount;
+        } else if (targetAccount == TreasuryAccount.SLASHED_TREASURY) {
+            slashedTreasury += amount;
+        }
+    }
+
     function recordUnstake(address user, uint256 amount) external {
         stakingReserve -= amount;
         totalUnstakeRecorded += amount;
