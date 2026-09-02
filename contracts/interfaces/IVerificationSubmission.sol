@@ -87,6 +87,20 @@ interface IVerificationSubmission {
     function getClaimVerifications(uint256 claimId) external view returns (uint256[] memory);
 
     /**
+     * @notice Retrieves a paginated list of verification IDs associated with a specific claim.
+     * @param claimId The ID of the claim being queried.
+     * @param offset Starting index for pagination.
+     * @param limit Maximum number of records to return.
+     * @return verifications Array of verification IDs.
+     * @return total Total number of verifications for this claim.
+     */
+    function getClaimVerificationsPaginated(
+        uint256 claimId,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (uint256[] memory verifications, uint256 total);
+
+    /**
      * @notice Retrieves the total number of verifications submitted across all claims.
      */
     function getVerificationCount() external view returns (uint256);
