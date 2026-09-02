@@ -27,7 +27,7 @@ contract StakeVaultInvariantHandler is Test {
         token = new MockERC20("Stake", "STK");
         vault = new StakeVault(address(registry), address(token), address(this));
 
-        settlement = address(0xSETTLE);
+        settlement = address(0x5E771E);
         userA = address(0xA);
         userB = address(0xB);
 
