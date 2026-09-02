@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -39,7 +40,7 @@ import "./fees/IFeeManager.sol";
  * The claim must be challengeable and within its window for a dispute to open.
  * Appeal settlement / rewarding the challenger is OUT of scope (SC-016 non-goal).
  */
-contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable {
+contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable, AccessControl {
     using SafeERC20 for IERC20;
     // =========================================================================
     // Constants & Roles
@@ -110,14 +111,8 @@ contract DisputeResolution is IDisputeResolution, ReentrancyGuard, Pausable {
     event FeeManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // =========================================================================
-    // Errors
+    // Errors (local — interface errors inherited via IDisputeResolution)
     // =========================================================================
-
-    /// @notice Thrown when the registry or vault is a zero address on deploy.
-    error ZeroAddress();
-
-    /// @notice Thrown when bonding/fee config is missing on open.
-    error BondNotConfigured();
 
     /// @notice Thrown when setting an invalid (zero) challenge window.
     error InvalidChallengeWindow();
