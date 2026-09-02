@@ -90,6 +90,13 @@ interface ITreasuryAccounting {
         string calldata movementType
     ) external;
 
+    /**
+     * @dev Deposit tokens from an external caller into a specific treasury account
+     * @param targetAccount The treasury account to credit
+     * @param amount Amount of tokens to deposit
+     */
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external;
+
     // ============ VIEW FUNCTIONS ============
 
     /**
