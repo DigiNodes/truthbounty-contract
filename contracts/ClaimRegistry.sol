@@ -211,7 +211,7 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     }
 
     function getCanonicalClaim(bytes32 claimId) external view override returns (CanonicalClaim memory claim) {
-        if (!_canonicalClaimExists[claimId]) revert ClaimNotFound(claimId);
+        if (!_canonicalClaimExists[claimId]) revert CanonicalClaimNotFound(claimId);
         return _canonicalClaims[claimId];
     }
 
@@ -310,5 +310,156 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             parameterVersion,
             custodyRef
         );
+    }
+}
+
+struct FrozenVerificationRecord {
+    bool decision;
+    uint256 effectiveWeight;
+}
+
+interface IVerificationRoundManager {
+    /// @notice Returns the number of frozen verification records for a round/claim.
+    function frozenRecordCount(uint256 roundId, uint256 claimId) external view returns (uint256 count);
+
+    /// @notice Returns one frozen verification record by index.
+    function frozenRecordAt(uint256 roundId, uint256 claimId, uint256 index) external view returns (FrozenVerificationRecord memory record);
+
+    /// @notice Returns true when the threshold module signals threshold failure.
+    function thresholdFailure(uint256 roundId, uint256 claimId) external view returns (bool failed);
+
+    /// @notice Returns the protocol parameter version for a round.
+    function parameterVersion(uint256 roundId) external view returns (uint256 version);
+}
+
+/**
+ * @title DeterministicAggregationEngine
+ * @author TruthBounty Protocol
+ * @notice Integer-only, order-independent aggregation engine for frozen verification records.
+ * @dev This contract consumes frozen participation snapshots from an immutable round manager.
+ *      Callers may trigger aggregation, but they cannot supply weights or select records.
+ */
+contract DeterministicAggregationEngine {
+    enum AggregationOutcome {
+        Inconclusive,
+        True,
+        False
+    }
+
+    struct AggregationRecord {
+        uint256 roundId;
+        uint256 claimId;
+        uint256 trueEffectiveWeight;
+        uint256 falseEffectiveWeight;
+        uint256 trueCount;
+        uint256 falseCount;
+        AggregationOutcome outcome;
+        uint256 parameterVersion;
+    }
+
+    error InvalidRoundManager();
+    error TooManyParticipants(uint256 count);
+
+    event AggregationComputed(
+        uint256 indexed roundId,
+        uint256 indexed claimId,
+        AggregationOutcome outcome,
+        uint256 trueEffectiveWeight,
+        uint256 falseEffectiveWeight,
+        uint256 parameterVersion
+    );
+
+    /// @notice Maximum number of frozen records aggregated in a single call.
+    uint256 public constant MAX_PARTICIPANTS = 256;
+
+    /// @notice Immutable round manager used to get frozen records and threshold signals.
+    IVerificationRoundManager public immutable roundManager;
+
+    mapping(uint256 => mapping(uint256 => AggregationRecord)) private _aggregationRecords;
+    mapping(uint256 => mapping(uint256 => bool)) private _aggregated;
+
+    constructor(IVerificationRoundManager roundManager_) {
+        if (address(roundManager_) == address(0)) {
+            revert InvalidRoundManager();
+        }
+        roundManager = roundManager_;
+    }
+
+    /**
+     * @notice Aggregates frozen verification records for a round/claim pair.
+     * @param roundId The frozen round identifier.
+     * @param claimId The claim identifier.
+     * @return record The canonical aggregation record.
+     * @dev If already aggregated, the stored record is returned without re-reading the manager.
+     */
+    function aggregate(uint256 roundId, uint256 claimId) external returns (AggregationRecord memory record) {
+        if (_aggregated[roundId][claimId]) {
+            return _aggregationRecords[roundId][claimId];
+        }
+
+        uint256 count = roundManager.frozenRecordCount(roundId, claimId);
+        if (count > MAX_PARTICIPANTS) {
+            revert TooManyParticipants(count);
+        }
+
+        uint256 trueEffectiveWeight;
+        uint256 falseEffectiveWeight;
+        uint256 trueCount;
+        uint256 falseCount;
+
+        bool thresholdFailed = roundManager.thresholdFailure(roundId, claimId);
+
+        for (uint256 i; i < count; ++i) {
+            FrozenVerificationRecord memory frozen = roundManager.frozenRecordAt(roundId, claimId, i);
+
+            if (frozen.decision) {
+                trueEffectiveWeight += frozen.effectiveWeight;
+                unchecked {
+                    ++trueCount;
+                }
+            } else {
+                falseEffectiveWeight += frozen.effectiveWeight;
+                unchecked {
+                    ++falseCount;
+                }
+            }
+        }
+
+        AggregationOutcome outcome = AggregationOutcome.Inconclusive;
+        if (!thresholdFailed && trueEffectiveWeight != falseEffectiveWeight) {
+            outcome = trueEffectiveWeight > falseEffectiveWeight ? AggregationOutcome.True : AggregationOutcome.False;
+        }
+
+        uint256 parameterVersion = roundManager.parameterVersion(roundId);
+
+        record = AggregationRecord({
+            roundId: roundId,
+            claimId: claimId,
+            trueEffectiveWeight: trueEffectiveWeight,
+            falseEffectiveWeight: falseEffectiveWeight,
+            trueCount: trueCount,
+            falseCount: falseCount,
+            outcome: outcome,
+            parameterVersion: parameterVersion
+        });
+
+        _aggregated[roundId][claimId] = true;
+        _aggregationRecords[roundId][claimId] = record;
+
+        emit AggregationComputed(
+            roundId,
+            claimId,
+            outcome,
+            trueEffectiveWeight,
+            falseEffectiveWeight,
+            parameterVersion
+        );
+    }
+
+    /**
+     * @notice Returns the stored aggregation record, or an empty record if not aggregated yet.
+     */
+    function getAggregationRecord(uint256 roundId, uint256 claimId) external view returns (AggregationRecord memory record) {
+        return _aggregationRecords[roundId][claimId];
     }
 }
