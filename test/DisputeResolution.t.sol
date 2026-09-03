@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../contracts/ClaimRegistry.sol";
+import "../contracts/governance/ParameterVersionRegistry.sol";
 import "../contracts/StakeVault.sol";
 import "../contracts/DisputeResolution.sol";
 import "../contracts/MockERC20.sol";
@@ -45,7 +46,8 @@ contract DisputeResolutionTest is Test {
         "The unemployment rate in Germany fell to 5.1% in Q1 2026 according to Destatis.";
 
     function setUp() public {
-        registry = new ClaimRegistry(admin);
+        ParameterVersionRegistry paramRegistry = new ParameterVersionRegistry(admin, admin);
+        registry = new ClaimRegistry(admin, address(paramRegistry));
         token = new MockERC20("Bounty", "BOUNTY");
         vault = new StakeVault(admin, address(token));
         dispute = new DisputeResolution(

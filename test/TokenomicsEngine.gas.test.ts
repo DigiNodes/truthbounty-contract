@@ -33,9 +33,13 @@ describe("TokenomicsEngine Gas Benchmarks", function () {
     const distributorRole = await engine.DISTRIBUTOR_ROLE();
     await engine.grantRole(distributorRole, await distributor.getAddress());
 
+    const adminRole = await treasury.ADMIN_ROLE();
+    await treasury.grantRole(adminRole, await admin.getAddress());
+    await treasury.setMinStakingReserveRatio(0);
+
     const funding = ethers.parseEther("100000");
-    await token.mint(await sender.getAddress(), funding);
-    await token.connect(sender).approve(await engine.getAddress(), funding);
+    await token.mint(await distributor.getAddress(), funding);
+    await token.connect(distributor).approve(await engine.getAddress(), funding);
 
     return {
       engine,

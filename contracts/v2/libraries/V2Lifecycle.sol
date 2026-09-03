@@ -9,6 +9,182 @@ import {V2Errors} from "./V2Errors.sol";
 /// @dev Provides reusable utilities for managing entity state transitions and lifecycle events.
 library V2Lifecycle {
     // =========================================================================
+    // Versioned Protocol Configuration Registry
+    // =========================================================================
+
+    /// @notice Canonical economic and timing parameter set snapshot.
+    struct ParameterSet {
+        address[] supportedAssets;
+        uint128 minBounty;
+        uint128 maxBounty;
+        uint128 minStake;
+        uint128 maxStake;
+        uint128 challengeBond;
+        uint16 weightCapBps;
+        uint48 claimDuration;
+        uint48 verificationDuration;
+        uint48 disputeDuration;
+        uint48 appealDuration;
+        uint24 minParticipationBps;
+        uint24 maxParticipationBps;
+        uint16 confidenceThresholdBps;
+        uint24 appealMultiplierBps;
+        uint16 bountyAllocationBps;
+        uint16 stakeAllocationBps;
+        uint16 protocolAllocationBps;
+        uint16 minReputationBps;
+        uint16 maxReputationBps;
+        uint48 pauseCooldown;
+        uint48 unpauseCooldown;
+        uint8 roundingPolicy;
+    }
+
+    /// @notice Storage layout for published immutable parameter versions.
+    struct VersionedConfigRegistry {
+        address governance;
+        mapping(bytes32 => ParameterSet) versions;
+        mapping(bytes32 => bool) versionExists;
+        bytes32[] versionIds;
+        mapping(address => address) assetAdapters;
+    }
+
+    error NotGovernance(address sender);
+    error InvalidGovernance(address governance);
+    error UnsupportedAsset(address asset);
+    error InvalidSupportedAssets(uint256 assetCount);
+    error InvalidBountyRange(uint128 minBounty, uint128 maxBounty);
+    error InvalidStakeRange(uint128 minStake, uint128 maxStake);
+    error InvalidDuration(uint8 field);
+    error InvalidBasisPointsTotal(uint256 totalBps);
+    error InvalidAllocationBps(uint16 bps);
+    error InvalidWeightCap(uint16 weightCapBps);
+    error InvalidParticipationThreshold(uint24 thresholdBps);
+    error InvalidConfidenceThreshold(uint16 confidenceBps);
+    error InvalidAppealMultiplier(uint24 multiplierBps);
+    error InvalidReputationBounds(uint16 minBps, uint16 maxBps);
+    error InvalidPauseCooldown(uint48 cooldown);
+    error InvalidRoundingPolicy(uint8 roundingPolicy);
+    error ParameterSetAlreadyExists(bytes32 versionId);
+    error ParameterSetNotFound(bytes32 versionId);
+    error AssetAdapterAlreadySet(address asset);
+
+    uint16 internal constant MAX_BPS = 10_000;
+    uint16 internal constant TOTAL_ALLOCATION_BPS = 10_000;
+
+    /// @notice Hashes a parameter set to produce its immutable version ID.
+    function parameterSetId(ParameterSet memory params) internal pure returns (bytes32) {
+        return keccak256(abi.encode(params));
+    }
+
+    /// @notice Validates every configured bound and invariant for a parameter set.
+    function validateParameterSet(ParameterSet memory params) internal pure {
+        if (params.supportedAssets.length == 0) revert InvalidSupportedAssets(0);
+        for (uint256 i = 0; i < params.supportedAssets.length; ++i) {
+            if (params.supportedAssets[i] == address(0)) {
+                revert UnsupportedAsset(params.supportedAssets[i]);
+            }
+        }
+        if (params.minBounty > params.maxBounty) {
+            revert InvalidBountyRange(params.minBounty, params.maxBounty);
+        }
+        if (params.minStake > params.maxStake) {
+            revert InvalidStakeRange(params.minStake, params.maxStake);
+        }
+        if (params.claimDuration == 0) revert InvalidDuration(1);
+        if (params.verificationDuration == 0) revert InvalidDuration(2);
+        if (params.disputeDuration == 0) revert InvalidDuration(3);
+        if (params.appealDuration == 0) revert InvalidDuration(4);
+        if (params.pauseCooldown == 0) revert InvalidPauseCooldown(params.pauseCooldown);
+        if (params.unpauseCooldown == 0) revert InvalidPauseCooldown(params.unpauseCooldown);
+
+        if (params.weightCapBps > MAX_BPS) revert InvalidWeightCap(params.weightCapBps);
+        if (params.minParticipationBps > MAX_BPS ||
+            params.maxParticipationBps > MAX_BPS ||
+            params.minParticipationBps > params.maxParticipationBps) {
+            revert InvalidParticipationThreshold(params.maxParticipationBps);
+        }
+        if (params.confidenceThresholdBps > MAX_BPS) {
+            revert InvalidConfidenceThreshold(params.confidenceThresholdBps);
+        }
+        if (params.appealMultiplierBps == 0) {
+            revert InvalidAppealMultiplier(params.appealMultiplierBps);
+        }
+        if (params.minReputationBps > params.maxReputationBps || params.maxReputationBps > MAX_BPS) {
+            revert InvalidReputationBounds(params.minReputationBps, params.maxReputationBps);
+        }
+        if (params.roundingPolicy > 2) revert InvalidRoundingPolicy(params.roundingPolicy);
+
+        uint256 totalAllocationBps = uint256(params.bountyAllocationBps)
+            + uint256(params.stakeAllocationBps)
+            + uint256(params.protocolAllocationBps);
+        if (params.bountyAllocationBps > MAX_BPS) revert InvalidAllocationBps(params.bountyAllocationBps);
+        if (params.stakeAllocationBps > MAX_BPS) revert InvalidAllocationBps(params.stakeAllocationBps);
+        if (params.protocolAllocationBps > MAX_BPS) revert InvalidAllocationBps(params.protocolAllocationBps);
+        if (totalAllocationBps != TOTAL_ALLOCATION_BPS) {
+            revert InvalidBasisPointsTotal(totalAllocationBps);
+        }
+    }
+
+    /// @notice Initializes the registry governance address.
+    function initializeConfigRegistry(VersionedConfigRegistry storage self, address governance) internal {
+        if (self.governance != address(0) || governance == address(0)) {
+            revert InvalidGovernance(governance);
+        }
+        self.governance = governance;
+    }
+
+    /// @notice Approves an adapter for an asset before it can be included in a parameter set.
+    function setAssetAdapter(VersionedConfigRegistry storage self, address asset, address adapter) internal {
+        if (msg.sender != self.governance) revert NotGovernance(msg.sender);
+        if (asset == address(0) || adapter == address(0)) revert UnsupportedAsset(asset);
+        if (self.assetAdapters[asset] != address(0)) revert AssetAdapterAlreadySet(asset);
+        self.assetAdapters[asset] = adapter;
+    }
+
+    /// @notice Publishes a new immutable parameter set version through the timelocked governance hook.
+    function publishParameterSet(VersionedConfigRegistry storage self, ParameterSet memory params)
+        internal
+        returns (bytes32 versionId)
+    {
+        if (msg.sender != self.governance) revert NotGovernance(msg.sender);
+        validateParameterSet(params);
+        for (uint256 i = 0; i < params.supportedAssets.length; ++i) {
+            if (self.assetAdapters[params.supportedAssets[i]] == address(0)) {
+                revert UnsupportedAsset(params.supportedAssets[i]);
+            }
+        }
+        versionId = parameterSetId(params);
+        if (self.versionExists[versionId]) revert ParameterSetAlreadyExists(versionId);
+        self.versions[versionId] = params;
+        self.versionExists[versionId] = true;
+        self.versionIds.push(versionId);
+    }
+
+    /// @notice Returns a parameter set snapshot by version ID.
+    function getParameterSet(VersionedConfigRegistry storage self, bytes32 versionId)
+        internal
+        view
+        returns (ParameterSet memory params)
+    {
+        if (!self.versionExists[versionId]) revert ParameterSetNotFound(versionId);
+        return self.versions[versionId];
+    }
+
+    /// @notice Returns whether a parameter set version is published.
+    function isParameterSetPublished(VersionedConfigRegistry storage self, bytes32 versionId)
+        internal
+        view
+        returns (bool)
+    {
+        return self.versionExists[versionId];
+    }
+
+    /// @notice Returns the number of published parameter sets.
+    function versionCount(VersionedConfigRegistry storage self) internal view returns (uint256) {
+        return self.versionIds.length;
+    }
+
+    // =========================================================================
     // Claim Lifecycle Utilities
     // =========================================================================
 

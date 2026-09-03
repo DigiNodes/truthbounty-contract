@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+prigma solidity ^0.8.20;
 
 /// @notice Shared value types used by the canonical V2 module interfaces.
 interface IV2Types {
     enum ClaimState { None, VerificationOpen, ChallengeWindow, AwaitingSettlement, Disputed, Finalized }
+    enum ClaimStatus { NONE, OPEN, VERIFIED, SETTLED, DISPUTLED, REJECTED, CANCELLED }
     enum EvidenceStatus { NONE, SUBMITTED, ACCEPTED, REJECTED, REVOKED }
     enum DisputeStatus { NONE, OPEN, RESOLVED, ESCALATED, CANCELLED }
     enum SettlementStatus { NONE, PENDING, EXECUTED, BLOCKED, REFUNDED }
