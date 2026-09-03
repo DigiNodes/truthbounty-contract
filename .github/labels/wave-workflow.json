@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "repository": "DigiNodes/truthbounty-contract",
+  "target": {
+    "issue_number_min": 352,
+    "issue_number_max": 391,
+    "identifier_min": 1,
+    "identifier_max": 40,
+    "required_body_marker": "**Candidate state:** `wave-candidate`"
+  },
+  "lifecycle_labels": [
+    {
+      "name": "wave-candidate",
+      "color": "1D76DB",
+      "description": "New V2 issue awaiting scope, dependency, security, test, and complexity review"
+    },
+    {
+      "name": "wave-reviewed",
+      "color": "8250DF",
+      "description": "V2 issue whose scope, dependencies, security, tests, and complexity have been reviewed"
+    },
+    {
+      "name": "wave-ready",
+      "color": "0E8A16",
+      "description": "Contributor-ready V2 issue eligible for a separate maintainer publication decision"
+    },
+    {
+      "name": "wave-blocked",
+      "color": "B60205",
+      "description": "Valid V2 work whose upstream dependency or governance decision is unresolved"
+    }
+  ],
+  "forbidden_activation_labels": [
+    "Stellar Wave",
+    "stellar-wave",
+    "drips-wave"
+  ]
+}

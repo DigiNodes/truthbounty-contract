@@ -1,0 +1,650 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "../governance/GovernanceOwnable.sol";
+import "./IFeeManager.sol";
+
+/**
+ * @title FeeManager
+ * @notice Protocol Fee Management & Treasury Revenue Framework (SC-028)
+ *
+ * @dev Central, deterministic fee manager for the TruthBounty protocol.
+ *      Every protocol fee must pass through this contract. No module should
+ *      implement custom fee logic independently.
+ *
+ * Key responsibilities:
+ *  - Maintain versioned fee schedules for every protocol fee type
+ *  - Validate and collect fees from protocol modules
+ *  - Route collected revenue to governance-defined allocation targets
+ *  - Maintain complete, auditable accounting
+ *  - Expose governance controls for fee parameter updates
+ *
+ * Security considerations:
+ *  - ReentrancyGuard on all state-mutating external calls
+ *  - Fee bypass prevented: only authorised callers can collect
+ *  - Duplicate collection prevented: unique record IDs per event
+ *  - Arithmetic: Solidity 0.8.x built-in overflow protection
+ *  - Allocation integrity: basis points must sum to exactly 10000
+ *  - All fee transfers use SafeERC20
+ */
+contract FeeManager is IFeeManager, ReentrancyGuard, Pausable, GovernanceOwnable {
+    using SafeERC20 for IERC20;
+
+    // ============ Roles ============
+
+    bytes32 public constant ADMIN_ROLE     = keccak256("ADMIN_ROLE");
+    bytes32 public constant COLLECTOR_ROLE = keccak256("COLLECTOR_ROLE");
+    bytes32 public constant PAUSER_ROLE    = keccak256("PAUSER_ROLE");
+
+    // ============ Fee Type Constants ============
+
+    /// @notice Claim Fees
+    bytes32 public constant CLAIM_SUBMISSION_FEE    = keccak256("CLAIM_SUBMISSION_FEE");
+    bytes32 public constant CLAIM_UPDATE_FEE         = keccak256("CLAIM_UPDATE_FEE");
+
+    /// @notice Verification Fees
+    bytes32 public constant VERIFICATION_SUBMISSION_FEE = keccak256("VERIFICATION_SUBMISSION_FEE");
+    bytes32 public constant DISPUTE_INITIATION_FEE      = keccak256("DISPUTE_INITIATION_FEE");
+
+    /// @notice Treasury Fees
+    bytes32 public constant PROTOCOL_RESERVE_FEE    = keccak256("PROTOCOL_RESERVE_FEE");
+    bytes32 public constant ECOSYSTEM_ALLOCATION_FEE = keccak256("ECOSYSTEM_ALLOCATION_FEE");
+
+    /// @notice Miscellaneous Fees
+    bytes32 public constant PROTOCOL_SERVICE_FEE    = keccak256("PROTOCOL_SERVICE_FEE");
+
+    // ============ Allocation Target Constants ============
+
+    bytes32 public constant ALLOC_TREASURY_RESERVE      = keccak256("TREASURY_RESERVE");
+    bytes32 public constant ALLOC_SECURITY_FUND         = keccak256("SECURITY_FUND");
+    bytes32 public constant ALLOC_ECOSYSTEM_FUND        = keccak256("ECOSYSTEM_FUND");
+    bytes32 public constant ALLOC_CONTRIBUTOR_INCENTIVES = keccak256("CONTRIBUTOR_INCENTIVES");
+    bytes32 public constant ALLOC_EMERGENCY_RESERVE     = keccak256("EMERGENCY_RESERVE");
+
+    // ============ Constants ============
+
+    uint256 public constant BASIS_POINTS_DENOMINATOR = 10_000;
+    uint256 public constant MAX_ALLOCATION_TARGETS   = 20;
+    uint256 public constant MAX_FEE_HISTORY_PAGE     = 200;
+
+    // ============ State: Fee Schedules ============
+
+    /// @notice Active fee schedule per fee type
+    mapping(bytes32 => FeeSchedule) private _feeSchedules;
+
+    /// @notice Historical schedule versions: feeType => version => FeeSchedule
+    mapping(bytes32 => mapping(uint256 => FeeSchedule)) private _feeScheduleHistory;
+
+    /// @notice Latest governance version per fee type
+    mapping(bytes32 => uint256) public feeScheduleVersion;
+
+    // ============ State: Accounting ============
+
+    /// @notice Cumulative fees collected (all types combined)
+    uint256 private _totalFeesCollected;
+
+    /// @notice Cumulative fees collected per fee type
+    mapping(bytes32 => uint256) private _feesByType;
+
+    /// @notice Cumulative amounts distributed per allocation name
+    mapping(bytes32 => uint256) private _totalByAllocation;
+
+    /// @notice Cumulative fees distributed (used for invariant verification)
+    uint256 private _totalFeesDistributed;
+
+    // ============ State: Fee Records ============
+
+    /// @notice All fee collection records (append-only)
+    FeeRecord[] private _feeRecords;
+
+    /// @notice Prevent duplicate processing of the same record ID
+    mapping(bytes32 => bool) private _recordExists;
+
+    // ============ State: Allocation Targets ============
+
+    /// @notice Current allocation routing table
+    AllocationTarget[] private _allocationTargets;
+
+    // ============ State: Configuration ============
+
+    /// @notice ERC20 token used for fee payments
+    IERC20 private _feeToken;
+
+    /// @notice Global governance version counter (bumped on every schedule update)
+    uint256 public globalGovVersion;
+
+    // ============ Errors ============
+
+    error ZeroAmount();
+    error FeeTypeNotActive(bytes32 feeType);
+    error FeeScheduleNotEffective(bytes32 feeType, uint256 effectiveAt);
+    error FeeBelowMinimum(uint256 paid, uint256 minimum);
+    error FeeAboveMaximum(uint256 paid, uint256 maximum);
+    error InvalidBasisPoints(uint256 total);
+    error TooManyAllocationTargets(uint256 count, uint256 max);
+    error AllocationRecipientZero(bytes32 name);
+    error DuplicateFeeRecord(bytes32 recordId);
+    error PageLimitExceeded(uint256 limit, uint256 max);
+    error AllocationTransferFailed(bytes32 allocation);
+
+    // ============ Constructor ============
+
+    /**
+     * @param feeToken_           ERC20 token used for fee payments
+     * @param initialAdmin        Address granted DEFAULT_ADMIN_ROLE and ADMIN_ROLE
+     * @param governanceController_ Address of governance controller (may be address(0) initially)
+     * @param treasuryReserve     Treasury reserve address (receives the largest allocation)
+     * @param securityFund        Security fund address
+     * @param ecosystemFund       Ecosystem fund address
+     * @param contributorIncentives Contributor incentives address
+     * @param emergencyReserve    Emergency reserve address
+     */
+    constructor(
+        address feeToken_,
+        address initialAdmin,
+        address governanceController_,
+        address treasuryReserve,
+        address securityFund,
+        address ecosystemFund,
+        address contributorIncentives,
+        address emergencyReserve
+    ) {
+        if (feeToken_ == address(0))           revert ZeroAddress();
+        if (initialAdmin == address(0))        revert ZeroAddress();
+        if (treasuryReserve == address(0))     revert ZeroAddress();
+        if (securityFund == address(0))        revert ZeroAddress();
+        if (ecosystemFund == address(0))       revert ZeroAddress();
+        if (contributorIncentives == address(0)) revert ZeroAddress();
+        if (emergencyReserve == address(0))    revert ZeroAddress();
+
+        _feeToken = IERC20(feeToken_);
+
+        // Grant roles
+        _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _grantRole(ADMIN_ROLE, initialAdmin);
+        _grantRole(COLLECTOR_ROLE, initialAdmin);
+        _grantRole(PAUSER_ROLE, initialAdmin);
+
+        _setRoleAdmin(COLLECTOR_ROLE, ADMIN_ROLE);
+        _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+
+        // Governance integration
+        _initializeGovernance(governanceController_, initialAdmin, initialAdmin);
+
+        // ── Default fee schedules (all start inactive; governance activates) ──
+        _initFeeSchedule(CLAIM_SUBMISSION_FEE,        0.001e18, 0,  0, 0);
+        _initFeeSchedule(CLAIM_UPDATE_FEE,            0.0005e18, 0, 0, 0);
+        _initFeeSchedule(VERIFICATION_SUBMISSION_FEE, 0.001e18, 0,  0, 0);
+        _initFeeSchedule(DISPUTE_INITIATION_FEE,      0.002e18, 0,  0, 0);
+        _initFeeSchedule(PROTOCOL_RESERVE_FEE,        0,        50, 0, 0); // 0.5%
+        _initFeeSchedule(ECOSYSTEM_ALLOCATION_FEE,    0,        25, 0, 0); // 0.25%
+        _initFeeSchedule(PROTOCOL_SERVICE_FEE,        0.0005e18, 0, 0, 0);
+
+        // ── Default allocation routing ──
+        // 40% Treasury Reserve, 20% Security, 20% Ecosystem, 10% Contributors, 10% Emergency
+        _allocationTargets.push(AllocationTarget({
+            name:        ALLOC_TREASURY_RESERVE,
+            recipient:   treasuryReserve,
+            basisPoints: 4000,
+            active:      true
+        }));
+        _allocationTargets.push(AllocationTarget({
+            name:        ALLOC_SECURITY_FUND,
+            recipient:   securityFund,
+            basisPoints: 2000,
+            active:      true
+        }));
+        _allocationTargets.push(AllocationTarget({
+            name:        ALLOC_ECOSYSTEM_FUND,
+            recipient:   ecosystemFund,
+            basisPoints: 2000,
+            active:      true
+        }));
+        _allocationTargets.push(AllocationTarget({
+            name:        ALLOC_CONTRIBUTOR_INCENTIVES,
+            recipient:   contributorIncentives,
+            basisPoints: 1000,
+            active:      true
+        }));
+        _allocationTargets.push(AllocationTarget({
+            name:        ALLOC_EMERGENCY_RESERVE,
+            recipient:   emergencyReserve,
+            basisPoints: 1000,
+            active:      true
+        }));
+    }
+
+    // ============ Internal Init Helpers ============
+
+    function _initFeeSchedule(
+        bytes32 feeType,
+        uint256 fixedAmount,
+        uint256 basisPoints,
+        uint256 minValue,
+        uint256 maxValue
+    ) internal {
+        _feeSchedules[feeType] = FeeSchedule({
+            feeType:      feeType,
+            fixedAmount:  fixedAmount,
+            basisPoints:  basisPoints,
+            minValue:     minValue,
+            maxValue:     maxValue,
+            effectiveAt:  block.timestamp,
+            govVersion:   0,
+            active:       true
+        });
+    }
+
+    // ============ Fee Calculation ============
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function calculateFee(
+        bytes32 feeType,
+        uint256 baseAmount
+    ) external view override returns (uint256 feeAmount) {
+        return _calculateFee(feeType, baseAmount);
+    }
+
+    function _calculateFee(
+        bytes32 feeType,
+        uint256 baseAmount
+    ) internal view returns (uint256) {
+        FeeSchedule storage schedule = _feeSchedules[feeType];
+
+        uint256 fee = schedule.fixedAmount;
+
+        // Add percentage component
+        if (schedule.basisPoints > 0 && baseAmount > 0) {
+            fee += (baseAmount * schedule.basisPoints) / BASIS_POINTS_DENOMINATOR;
+        }
+
+        // Enforce minimum
+        if (schedule.minValue > 0 && fee < schedule.minValue) {
+            fee = schedule.minValue;
+        }
+
+        // Enforce maximum (0 = no cap)
+        if (schedule.maxValue > 0 && fee > schedule.maxValue) {
+            fee = schedule.maxValue;
+        }
+
+        return fee;
+    }
+
+    // ============ Fee Collection ============
+
+    /**
+     * @inheritdoc IFeeManager
+     * @dev Caller (protocol module) must be granted COLLECTOR_ROLE.
+     *      Payer must have approved this contract for at least `amount` tokens.
+     */
+    function collectFee(
+        bytes32 feeType,
+        address payer,
+        uint256 amount
+    ) external override nonReentrant whenNotPaused onlyRole(COLLECTOR_ROLE) {
+        if (payer == address(0)) revert ZeroAddress();
+        if (amount == 0)         revert ZeroAmount();
+
+        FeeSchedule storage schedule = _feeSchedules[feeType];
+
+        if (!schedule.active) revert FeeTypeNotActive(feeType);
+
+        if (schedule.effectiveAt > block.timestamp) {
+            revert FeeScheduleNotEffective(feeType, schedule.effectiveAt);
+        }
+
+        if (schedule.minValue > 0 && amount < schedule.minValue) {
+            revert FeeBelowMinimum(amount, schedule.minValue);
+        }
+
+        if (schedule.maxValue > 0 && amount > schedule.maxValue) {
+            revert FeeAboveMaximum(amount, schedule.maxValue);
+        }
+
+        // Generate unique record ID — prevents duplicate processing
+        bytes32 recordId = keccak256(abi.encode(
+            feeType, payer, amount, block.timestamp, _feeRecords.length
+        ));
+
+        if (_recordExists[recordId]) revert DuplicateFeeRecord(recordId);
+        _recordExists[recordId] = true;
+
+        // Pull fee token from payer
+        _feeToken.safeTransferFrom(payer, address(this), amount);
+
+        // Update accounting
+        _totalFeesCollected += amount;
+        _feesByType[feeType] += amount;
+
+        // Record the event
+        _feeRecords.push(FeeRecord({
+            feeType:  feeType,
+            payer:    payer,
+            amount:   amount,
+            timestamp: block.timestamp,
+            recordId: recordId
+        }));
+
+        emit FeeCollected(feeType, payer, amount);
+
+        // Distribute immediately
+        _distribute(amount);
+    }
+
+    // ============ Internal Distribution ============
+
+    /**
+     * @notice Distribute `amount` tokens across allocation targets
+     * @dev Uses basis-point splits. Any dust (from rounding) remains in the last active target.
+     */
+    function _distribute(uint256 amount) internal {
+        uint256 remaining = amount;
+        uint256 activeCount = 0;
+
+        // Count active targets to handle dust
+        for (uint256 i = 0; i < _allocationTargets.length; i++) {
+            if (_allocationTargets[i].active) activeCount++;
+        }
+
+        if (activeCount == 0) return; // No targets — funds accumulate in contract
+
+        uint256 lastActiveIdx = type(uint256).max;
+        for (uint256 i = 0; i < _allocationTargets.length; i++) {
+            if (_allocationTargets[i].active) lastActiveIdx = i;
+        }
+
+        uint256 distributed = 0;
+
+        for (uint256 i = 0; i < _allocationTargets.length; i++) {
+            AllocationTarget storage target = _allocationTargets[i];
+            if (!target.active) continue;
+
+            uint256 share;
+            if (i == lastActiveIdx) {
+                // Last active target receives remaining dust
+                share = remaining - distributed;
+            } else {
+                share = (amount * target.basisPoints) / BASIS_POINTS_DENOMINATOR;
+            }
+
+            if (share == 0) continue;
+
+            _totalByAllocation[target.name] += share;
+            _totalFeesDistributed += share;
+            distributed += share;
+
+            _feeToken.safeTransfer(target.recipient, share);
+
+            emit FeeDistributed(target.name, share);
+        }
+    }
+
+    // ============ Governance Controls ============
+
+    /**
+     * @inheritdoc IFeeManager
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
+    function updateFeeSchedule(
+        bytes32 feeType,
+        uint256 fixedAmount,
+        uint256 basisPoints,
+        uint256 minValue,
+        uint256 maxValue
+    ) external override onlyGovernanceOrAdmin {
+        if (basisPoints > BASIS_POINTS_DENOMINATOR) {
+            revert InvalidBasisPoints(basisPoints);
+        }
+        if (maxValue > 0 && minValue > maxValue) {
+            revert FeeBelowMinimum(minValue, maxValue);
+        }
+
+        FeeSchedule storage schedule = _feeSchedules[feeType];
+        uint256 previousValue = schedule.fixedAmount;
+
+        globalGovVersion++;
+        uint256 newVersion = globalGovVersion;
+
+        // Archive current schedule
+        _feeScheduleHistory[feeType][feeScheduleVersion[feeType]] = _feeSchedules[feeType];
+
+        // Apply new schedule (keep active flag, bump version)
+        schedule.feeType      = feeType;
+        schedule.fixedAmount  = fixedAmount;
+        schedule.basisPoints  = basisPoints;
+        schedule.minValue     = minValue;
+        schedule.maxValue     = maxValue;
+        schedule.effectiveAt  = block.timestamp;
+        schedule.govVersion   = newVersion;
+
+        feeScheduleVersion[feeType] = newVersion;
+
+        emit FeeScheduleUpdated(feeType, previousValue, fixedAmount);
+        emit ParameterUpdatedByGovernance(
+            keccak256(abi.encode("FEE_SCHEDULE", feeType)),
+            previousValue,
+            fixedAmount
+        );
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     * @deprecated Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
+    function setAllocationTargets(
+        AllocationTarget[] calldata targets
+    ) external override onlyGovernanceOrAdmin {
+        if (targets.length > MAX_ALLOCATION_TARGETS) {
+            revert TooManyAllocationTargets(targets.length, MAX_ALLOCATION_TARGETS);
+        }
+
+        uint256 totalBps = 0;
+        for (uint256 i = 0; i < targets.length; i++) {
+            if (targets[i].active) {
+                if (targets[i].recipient == address(0)) {
+                    revert AllocationRecipientZero(targets[i].name);
+                }
+                totalBps += targets[i].basisPoints;
+            }
+        }
+
+        if (totalBps != BASIS_POINTS_DENOMINATOR) {
+            revert InvalidBasisPoints(totalBps);
+        }
+
+        delete _allocationTargets;
+        for (uint256 i = 0; i < targets.length; i++) {
+            _allocationTargets.push(targets[i]);
+        }
+
+        emit AllocationTargetsUpdated(msg.sender, targets.length);
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function setFeeActive(
+        bytes32 feeType,
+        bool active
+    ) external override onlyGovernanceOrAdmin {
+        FeeSchedule storage schedule = _feeSchedules[feeType];
+        uint256 prev = schedule.active ? 1 : 0;
+        schedule.active = active;
+        emit FeeScheduleUpdated(feeType, prev, active ? 1 : 0);
+    }
+
+    /**
+     * @notice Update the fee token address
+     * @dev Only callable by DEFAULT_ADMIN_ROLE. Should only be used during protocol upgrades.
+     * @param newToken New ERC20 token address
+     */
+    function setFeeToken(address newToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newToken == address(0)) revert ZeroAddress();
+        address old = address(_feeToken);
+        _feeToken = IERC20(newToken);
+        emit FeeTokenUpdated(old, newToken);
+    }
+
+    // ============ Read Interfaces ============
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getFeeSchedule(bytes32 feeType) external view override returns (FeeSchedule memory) {
+        return _feeSchedules[feeType];
+    }
+
+    /**
+     * @notice Retrieve a historical fee schedule version
+     * @param feeType The fee type identifier
+     * @param version The governance version to retrieve
+     * @return schedule The archived FeeSchedule at that version
+     */
+    function getFeeScheduleAtVersion(
+        bytes32 feeType,
+        uint256 version
+    ) external view returns (FeeSchedule memory schedule) {
+        return _feeScheduleHistory[feeType][version];
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getAllocationTargets() external view override returns (AllocationTarget[] memory) {
+        return _allocationTargets;
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getTotalFeesCollected() external view override returns (uint256) {
+        return _totalFeesCollected;
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getFeesByType(bytes32 feeType) external view override returns (uint256) {
+        return _feesByType[feeType];
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getTotalByAllocation(bytes32 allocationName) external view override returns (uint256) {
+        return _totalByAllocation[allocationName];
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getFeeHistory(
+        uint256 offset,
+        uint256 limit
+    ) external view override returns (FeeRecord[] memory records) {
+        if (limit > MAX_FEE_HISTORY_PAGE) revert PageLimitExceeded(limit, MAX_FEE_HISTORY_PAGE);
+
+        uint256 total = _feeRecords.length;
+        if (offset >= total) return new FeeRecord[](0);
+
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+
+        records = new FeeRecord[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            records[i - offset] = _feeRecords[i];
+        }
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getFeeRecordCount() external view override returns (uint256) {
+        return _feeRecords.length;
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getTreasuryDistributions() external view override returns (
+        bytes32[] memory names,
+        address[] memory recipients,
+        uint256[] memory amounts,
+        uint256[] memory shares
+    ) {
+        uint256 len = _allocationTargets.length;
+        names      = new bytes32[](len);
+        recipients = new address[](len);
+        amounts    = new uint256[](len);
+        shares     = new uint256[](len);
+
+        for (uint256 i = 0; i < len; i++) {
+            AllocationTarget storage t = _allocationTargets[i];
+            names[i]      = t.name;
+            recipients[i] = t.recipient;
+            amounts[i]    = _totalByAllocation[t.name];
+            shares[i]     = t.basisPoints;
+        }
+    }
+
+    /**
+     * @inheritdoc IFeeManager
+     */
+    function getFeeToken() external view override returns (address) {
+        return address(_feeToken);
+    }
+
+    /**
+     * @notice Get total fees distributed (useful for invariant verification)
+     * @return Total amount distributed to all allocation targets
+     */
+    function getTotalFeesDistributed() external view returns (uint256) {
+        return _totalFeesDistributed;
+    }
+
+    /**
+     * @notice Get the current undistributed balance held by this contract
+     * @dev Under normal operation this should be zero as fees are distributed immediately.
+     *      A non-zero value indicates an allocation failure or deactivated targets.
+     * @return balance Current fee token balance held by this contract
+     */
+    function getRetainedBalance() external view returns (uint256) {
+        return _feeToken.balanceOf(address(this));
+    }
+
+    /**
+     * @notice Get a single fee record by index
+     * @param index The record index
+     * @return record The FeeRecord at that index
+     */
+    function getFeeRecord(uint256 index) external view returns (FeeRecord memory record) {
+        require(index < _feeRecords.length, "Index out of bounds");
+        return _feeRecords[index];
+    }
+
+    // ============ Pause ============
+
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    // ============ Storage Gap ============
+
+    /// @dev Reserved storage for future upgrades
+    uint256[50] private __gap;
+}
