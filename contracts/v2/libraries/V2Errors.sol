@@ -145,6 +145,12 @@ library V2Errors {
     /// @notice Recorded obligations exceed on-chain custody for an asset.
     error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
+    /// @notice Settlement outcome already recorded for this claim-round; repeated or conflicting instructions revert.
+    error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
+
+    /// @notice Invalid settlement outcome requested for this claim-round.
+    error InvalidSettlementOutcome(uint256 claimId, uint256 round);
+
     // =========================================================================
     // Aggregation & Reputation Errors
     // =========================================================================

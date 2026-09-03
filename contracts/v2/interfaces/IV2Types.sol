@@ -10,6 +10,9 @@ interface IV2Types {
     enum SettlementStatus { NONE, PENDING, EXECUTED, BLOCKED, REFUNDED }
     /// @notice Named accounting buckets for stake vault locks.
     enum LockCategory { NONE, VERIFIER_PRINCIPAL, CHALLENGE_BOND, BOUNTY_ESCROW, SETTLEMENT_ALLOCATION }
+    /// @notice Outcome of a claim-round settlement, used to enforce idempotent lock transitions.
+    enum SettlementOutcome { NONE, CONCLUDED, REFUNDED, CARRIED_FORWARD, ROLLED_OVER, UNLOCKED }
+    struct Claim { uint256 id; address claimant; bytes32 subject; uint256 reward; uint64 createdAt; ClaimStatus status; }
     struct Claim { uint256 id; address claimant; bytes32 subject; uint256 reward; uint64 createdAt; ClaimState state; }
     struct Evidence { uint256 id; uint256 claimId; address submitter; bytes32 contentHash; uint64 submittedAt; EvidenceStatus status; }
     struct Verification { uint256 id; uint256 claimId; address verifier; bool supportsClaim; uint256 stake; uint64 submittedAt; }
