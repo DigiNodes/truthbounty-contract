@@ -281,8 +281,8 @@ contract TruthBounty is AccessControl, ReentrancyGuard, Pausable, GovernanceOwna
     }
 
     function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
-    return Math.mulDiv(value, percent, 100);
-}
+        return Math.mulDiv(value, percent, 100);
+    }
 
     // ── Core Functions ─────────────────────────────────────────────────────
 
