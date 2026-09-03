@@ -45,6 +45,9 @@ contract EvidenceManager is AccessControl, Pausable {
     ///         We allow up to 512 bytes to accommodate future multihash formats.
     uint256 public constant MAX_CID_LENGTH = 512;
 
+    /// @notice Maximum evidence records attachable to a single claim (V2-SC-038 DoS bound).
+    uint256 public constant MAX_EVIDENCE_PER_CLAIM = 100;
+
     /// @notice Minimum byte-length: a real CID is at least 2 chars (e.g. "Qm…").
     uint256 public constant MIN_CID_LENGTH = 2;
 
@@ -121,6 +124,9 @@ contract EvidenceManager is AccessControl, Pausable {
 
     /// @notice Evidence with the given global ID does not exist.
     error EvidenceNotFound();
+
+    /// @notice Claim already has the maximum allowed evidence attachments.
+    error EvidenceCapacityExceeded(uint256 claimId, uint256 max);
 
     // =========================================================================
     // Events
@@ -233,6 +239,9 @@ contract EvidenceManager is AccessControl, Pausable {
 
         // ── 4. Claim state checks ────────────────────────────────────────────
         if (_claimClosed[claimId]) revert ClaimClosed();
+        if (_claimEvidence[claimId].length >= MAX_EVIDENCE_PER_CLAIM) {
+            revert EvidenceCapacityExceeded(claimId, MAX_EVIDENCE_PER_CLAIM);
+        }
 
         // ── 5. Duplicate detection ───────────────────────────────────────────
         bytes32 cidHash = keccak256(bytes(cid));
