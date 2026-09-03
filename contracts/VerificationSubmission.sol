@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IER20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IVerificationSubmission.sol";
@@ -15,9 +15,9 @@ import "./interfaces/IClaimRegistry.sol";
 contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // =========================================================================
+    // ===================================================================================================================
     // Immutables & State
-    // =========================================================================
+    // ===================================================================================================================
 
     IClaimRegistry public immutable claimRegistry;
     IERC20 public immutable stakingToken;
@@ -34,9 +34,35 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
     // claimId => verifier => hasVerified
     mapping(uint256 => mapping(address => bool)) private _hasVerified;
 
-    // =========================================================================
+    // ==================================================================================================================
+    // Constants & Errors
+    // ===================================================================================================================
+
+    uint256 public constant MAX_VERIFICATIONS_PER_CLAIM = 100;
+    uint256 public constant AGGREGATION_PARAMETER_VERSION = 1;
+
+    error MaxParticipantsExceeded();
+    error AggregationNotFrozen();
+
+    // ==================================================================================================================
+    // Types
+    // ==================================================================================================================
+
+    enum VerificationOutcome { Inconclusive, True, False }
+
+    struct AggregationRecord {
+        uint256 claimId;
+        uint256 trueWeight;
+        uint256 falseWeight;
+        uint256 trueCount;
+        uint256 falseCount;
+        VerificationOutcome outcome;
+        uint256 parameterVersion;
+    }
+
+    // ==================================================================================================================
     // Constructor
-    // =========================================================================
+    // ==================================================================================================================
 
     /**
      * @param _claimRegistry Address of the ClaimRegistry contract.
@@ -56,9 +82,9 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
         minStakeAmount = _minStakeAmount;
     }
 
-    // =========================================================================
+    // ==================================================================================================================
     // Write Functions
-    // =========================================================================
+    // ==================================================================================================================
 
     /**
      * @inheritdoc IVerificationSubmission
@@ -85,6 +111,11 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
             revert VerificationWindowClosed();
         }
 
+        // Enforce maximum participants per claim to prevent DoS from unbounded counts.
+        if (_claimVerifications[claimId].length >= MAX_VERIFICATIONS_PER_CLAIM) {
+            revert MaxParticipantsExceeded();
+        }
+
         // 2. State Updates
         uint256 verificationId = _nextVerificationId;
         unchecked {
@@ -105,17 +136,15 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
         _claimVerifications[claimId].push(verificationId);
 
         // 3. Stake Locking
-        // The tokens are pulled into this contract, locking them.
-        // Downstream Settlement Engine handles slashing and reward distribution.
         stakingToken.safeTransferFrom(msg.sender, address(this), stakeAmount);
 
         // 4. Event Emission
         emit VerificationSubmitted(claimId, verificationId, msg.sender, verdict, stakeAmount);
     }
 
-    // =========================================================================
+    // ==================================================================================================================
     // View Functions
-    // =========================================================================
+    // ==================================================================================================================
 
     /**
      * @inheritdoc IVerificationSubmission
@@ -183,7 +212,6 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
             return 0;
         }
         
-        // Find the verifier's stake amount
         uint256[] memory claimVerifications = _claimVerifications[claimId];
         for (uint256 i = 0; i < claimVerifications.length; i++) {
             Verification memory v = _verifications[claimVerifications[i]];
@@ -192,5 +220,57 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
             }
         }
         return 0;
+    }
+
+    /**
+     * @dev Computes the canonical deterministic aggregation result for a frozen claim.
+     * @param claimId The claim identifier.
+     * @return record The aggregation record with weights, counts, outcome, and parameter version.
+     */
+    function aggregateClaim(uint256 claimId) public view returns (AggregationRecord memory record) {
+        IClaimRegistry.Claim memory claim = claimRegistry.getClaim(claimId);
+
+        // Records are frozen only after the verification deadline has passed.
+        if (block.timestamp <= claim.verificationDeadline) {
+            revert AggregationNotFrozen();
+        }
+
+        uint256 trueWeight;
+        uint256 falseWeight;
+        uint256 trueCount;
+        uint256 falseCount;
+
+        uint256[] memory verificationIds = _claimVerifications[claimId];
+        for (uint256 i = 0; i < verificationIds.length; i++) {
+            Verification memory v = _verifications[verificationIds[i]];
+            if (v.verdict == VerificationVerdict.True) {
+                trueWeight += v.stake;
+                trueCount++;
+            } else if (v.verdict == VerificationVerdict.False) {
+                falseWeight += v.stake;
+                falseCount++;
+            }
+        }
+
+        VerificationOutcome outcome;
+        if (trueWeight == 0 && falseWeight == 0) {
+            outcome = VerificationOutcome.Inconclusive;
+        } else if (trueWeight > falseWeight) {
+            outcome = VerificationOutcome.True;
+        } else if (falseWeight > trueWeight) {
+            outcome = VerificationOutcome.False;
+        } else {
+            outcome = VerificationOutcome.Inconclusive;
+        }
+
+        record = AggregationRecord({
+            claimId: claimId,
+            trueWeight: trueWeight,
+            falseWeight: falseWeight,
+            trueCount: trueCount,
+            falseCount: falseCount,
+            outcome: outcome,
+            parameterVersion: AGGREGATION_PARAMETER_VERSION
+        });
     }
 }
