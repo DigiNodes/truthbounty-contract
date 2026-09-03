@@ -43,6 +43,9 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     mapping(uint256 => uint256) private _claimTotalVerifierStake;
     mapping(uint256 => mapping(address => uint256)) private _accountClaimVerifierStake;
 
+    /// @notice Records the finalized settlement outcome per (claimId, round) to enforce idempotency.
+    mapping(uint256 => mapping(uint256 => IV2Types.SettlementOutcome)) private _settlementOutcome;
+
     event VaultDeposited(address indexed asset, address indexed account, uint256 amount);
     event VaultLocked(
         address indexed asset,
@@ -178,6 +181,103 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     ) external nonReentrant {
         _onlyAuthorizedMutator();
         _slash(asset, account, claimId, round, category, amount, reason);
+    }
+
+    // -------------------------------------------------------------------------
+    // Typed settlement hooks (V2-SC-012)
+    // -------------------------------------------------------------------------
+
+    /// @inheritdoc IStakeCustody
+    function settleConclusive(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 round,
+        uint256 principalAmount,
+        uint256 rewardAmount
+    ) external override nonReentrant {
+        _onlySettlementModule();
+        _assertSettlementNotFinalized(claimId, round);
+        _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.CONCLUDED;
+
+        if (principalAmount > 0) {
+            _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, principalAmount);
+        }
+        if (rewardAmount > 0) {
+            _creditReward(asset, account, rewardAmount);
+        }
+        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount);
+    }
+
+    /// @inheritdoc IStakeCustody
+    function refundInconclusive(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 round,
+        uint256 amount
+    ) external override nonReentrant {
+        _onlySettlementModule();
+        _assertSettlementNotFinalized(claimId, round);
+        _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.REFUNDED;
+
+        _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
+        emit VaultRefundedInconclusive(asset, account, claimId, round, amount);
+    }
+
+    /// @inheritdoc IStakeCustody
+    function carryForwardAppeal(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 fromRound,
+        uint256 toRound,
+        uint256 amount
+    ) external override nonReentrant {
+        _onlySettlementModule();
+        _assertSettlementNotFinalized(claimId, fromRound);
+        _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.CARRIED_FORWARD;
+
+        _moveLock(asset, account, claimId, fromRound, toRound, amount);
+        emit VaultCarriedForward(asset, account, claimId, fromRound, toRound, amount);
+    }
+
+    /// @inheritdoc IStakeCustody
+    function rolloverRound(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 fromRound,
+        uint256 toRound,
+        uint256 amount
+    ) external override nonReentrant {
+        _onlySettlementModule();
+        _assertSettlementNotFinalized(claimId, fromRound);
+        _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.ROLLED_OVER;
+
+        _moveLock(asset, account, claimId, fromRound, toRound, amount);
+        emit VaultRolledOver(asset, account, claimId, fromRound, toRound, amount);
+    }
+
+    /// @inheritdoc IStakeCustody
+    function finalUnlock(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 round,
+        uint256 amount
+    ) external override nonReentrant {
+        _onlySettlementModule();
+        _assertSettlementNotFinalized(claimId, round);
+        _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.UNLOCKED;
+
+        _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
+        emit VaultFinalUnlocked(asset, account, claimId, round, amount);
+    }
+
+    /// @inheritdoc IStakeCustody
+    function settlementOutcome(uint256 claimId, uint256 round) external view override returns (IV2Types.SettlementOutcome) {
+        return _settlementOutcome[claimId][round];
     }
 
     /// @notice Pull-based withdrawal of the caller's claimable balance.
@@ -387,6 +487,55 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         if (!moduleRegistry.isRegistered(moduleId)) return false;
         (address implementation,,) = moduleRegistry.module(moduleId);
         return implementation == caller;
+    }
+
+    /// @notice Restricts a hook to the registered SETTLEMENT module.
+    function _onlySettlementModule() internal view {
+        if (!_isRegisteredModule(msg.sender, MODULE_SETTLEMENT)) revert V2Errors.UnauthorizedModule(msg.sender);
+    }
+
+    /// @notice Reverts if a settlement outcome has already been recorded for the claim-round.
+    function _assertSettlementNotFinalized(uint256 claimId, uint256 round) internal view {
+        if (_settlementOutcome[claimId][round] != IV2Types.SettlementOutcome.NONE) {
+            revert V2Errors.SettlementAlreadyFinalized(claimId, round);
+        }
+    }
+
+    /// @notice Credits a reward to an account's claimable balance, funded from protocol allocation.
+    function _creditReward(address asset, address account, uint256 amount) internal {
+        if (amount == 0) revert V2Errors.ZeroAmount();
+        uint256 allocation = _protocolAllocation[asset];
+        if (allocation < amount) revert V2Errors.InsufficientProtocolAllocation(amount, allocation);
+
+        _protocolAllocation[asset] = allocation - amount;
+        _claimable[asset][account] += amount;
+        _assetTotalClaimable[asset] += amount;
+
+        _assertReconciliation(asset);
+    }
+
+    /// @notice Moves a VERIFIER_PRINCIPAL lock from one round to another without changing custody totals.
+    function _moveLock(
+        address asset,
+        address account,
+        uint256 claimId,
+        uint256 fromRound,
+        uint256 toRound,
+        uint256 amount
+    ) internal {
+        if (amount == 0) revert V2Errors.ZeroAmount();
+        if (fromRound == toRound) revert V2Errors.InvalidArgument("same round");
+
+        bytes32 fromKey = _lockKey(asset, account, claimId, fromRound, IV2Types.LockCategory.VERIFIER_PRINCIPAL);
+        uint256 locked = _locks[fromKey];
+        if (locked < amount) revert V2Errors.InsufficientLocked(amount, locked);
+
+        _locks[fromKey] = locked - amount;
+
+        bytes32 toKey = _lockKey(asset, account, claimId, toRound, IV2Types.LockCategory.VERIFIER_PRINCIPAL);
+        _locks[toKey] += amount;
+
+        _assertReconciliation(asset);
     }
 
     function _assertReconciliation(address asset) internal view {
