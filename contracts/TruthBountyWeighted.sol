@@ -133,7 +133,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /// @notice Whether weighted staking is enabled
     bool public weightedStakingEnabled = true;
 
+    /// @notice Treasury address receiving protocol fees from successful settlements.
+    address public treasury;
+
+    /// @notice Percentage of the settlement reward pool routed to the treasury.
+    uint256 public protocolFeePercent = 10;
+
     // ============ Structs ============
+
+    enum SettlementState {
+        Pending,
+        Executing,
+        Completed
+    }
 
     struct Claim {
         uint256 id;
@@ -142,6 +154,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 createdAt;
         uint256 verificationWindowEnd;
         bool settled;
+        bool finalized;
         uint256 totalWeightedFor;      // Weighted votes for claim (NEW)
         uint256 totalWeightedAgainst;  // Weighted votes against claim (NEW)
         uint256 totalStakeAmount;      // Total raw stake amount
@@ -183,6 +196,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 winnerCount;           // Number of winning voters eligible for rewards
         uint256 winnersClaimed;        // Number of winning voters that claimed rewards
         uint256 rewardsClaimed;        // Total rewards already distributed
+        uint256 rewardPool;
+        uint256 winningStake;
+        uint256 losingStake;
+        uint256 protocolFee;
+        uint256 treasuryFee;
+        uint256 refundedStake;
+        bool settled;
     }
 
     struct VerifierStake {
@@ -203,6 +223,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(address => VerifierStake) public verifierStakes;
     mapping(uint256 => address[]) private claimVoters;  // Track all voters per claim for settlement
+    mapping(uint256 => SettlementState) public settlementStates;
     
     /// @notice Track reputation snapshots for staleness validation: user => (reputationScore, timestamp)
     mapping(address => ReputationSnapshot) public reputationSnapshots;
@@ -237,6 +258,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 totalRewards,
         uint256 totalSlashed
     );
+    event SettlementPreviewed(uint256 indexed claimId, uint256 rewardPool, uint256 protocolFee);
+    event SettlementCompleted(uint256 indexed claimId, uint256 rewardPool, uint256 protocolFee, address indexed treasury);
+    event TreasuryAllocated(uint256 indexed claimId, address indexed treasury, uint256 amount);
 
     event RewardsDistributed(
         uint256 indexed claimId,
@@ -260,6 +284,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
     event ClaimWiped(uint256 indexed claimId, address indexed admin, string reason);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event ProtocolFeePercentUpdated(uint256 oldPercent, uint256 newPercent);
     event ReputationUpdateEngineUpdated(address indexed oldEngine, address indexed newEngine);
 
     // ============ Errors ============
@@ -291,6 +317,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+
+        treasury = initialAdmin;
         
         // Initialize governance
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
@@ -326,6 +354,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             createdAt: block.timestamp,
             verificationWindowEnd: verificationWindowEnd,
             settled: false,
+            finalized: false,
             totalWeightedFor: 0,
             totalWeightedAgainst: 0,
             totalStakeAmount: 0,
@@ -475,22 +504,34 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
-        require(!claim.settled, "Claim already settled");
+        require(!claim.settled && !claim.finalized, "Claim already settled");
+        require(settlementStates[claimId] != SettlementState.Executing, "Settlement already executing");
+        require(settlementStates[claimId] != SettlementState.Completed, "Settlement already completed");
         require(claim.totalStakeAmount > 0, "No votes cast");
 
-        claim.settled = true;
+        settlementStates[claimId] = SettlementState.Executing;
 
         // Determine outcome based on WEIGHTED votes. Exact ties are resolved as
         // a refund-only outcome so no side is left unable to recover stake.
         bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
         bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
 
-        // Calculate rewards and slashing
+        // Calculate rewards and slashing deterministically before any state changes are finalized.
         (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(
             claimId,
             passed,
             isTie
         );
+
+        claim.settled = true;
+        claim.finalized = true;
+        settlementStates[claimId] = SettlementState.Completed;
+
+        SettlementResult storage settlement = settlementResults[claimId];
+        if (settlement.protocolFee > 0) {
+            require(bountyToken.transfer(treasury, settlement.protocolFee), "Treasury transfer failed");
+            emit TreasuryAllocated(claimId, treasury, settlement.protocolFee);
+        }
 
         emit ClaimSettled(
             claimId,
@@ -500,6 +541,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             rewardAmount,
             slashedAmount
         );
+        emit SettlementCompleted(claimId, settlement.rewardPool, settlement.protocolFee, treasury);
     }
 
     /**
@@ -842,7 +884,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 loserWeightedStake: 0,
                 winnerCount: 0,
                 winnersClaimed: 0,
-                rewardsClaimed: 0
+                rewardsClaimed: 0,
+                rewardPool: 0,
+                winningStake: 0,
+                losingStake: 0,
+                protocolFee: 0,
+                treasuryFee: 0,
+                refundedStake: claim.totalStakeAmount,
+                settled: true
             });
 
             // SC-008: Apply neutral reputation updates for all voters in a tie
@@ -856,6 +905,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 loserWeightedStake = passed ? claim.totalWeightedAgainst : claim.totalWeightedFor;
 
         // Exact total RAW stake from losing side (pre-calculated during voting)
+        uint256 winnerRawStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
         uint256 loserRawStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
         // Slash the configured percentage of losing raw stake.
@@ -864,6 +914,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         slashedAmount = _assignPerVoteSlashes(claimId, passed);
 
         // The configured reward share of slashed stake goes to winners.
+        rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
+        uint256 protocolFee = (rewardAmount * protocolFeePercent) / PERCENT_DENOMINATOR;
         rewardAmount = _percentOf(slashedAmount, rewardPercent);
 
         totalSlashed += slashedAmount;
@@ -877,7 +929,14 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             loserWeightedStake: loserWeightedStake,
             winnerCount: _countWinners(claimId, passed),
             winnersClaimed: 0,
-            rewardsClaimed: 0
+            rewardsClaimed: 0,
+            rewardPool: rewardAmount,
+            winningStake: winnerRawStake,
+            losingStake: loserRawStake,
+            protocolFee: protocolFee,
+            treasuryFee: protocolFee,
+            refundedStake: claim.totalStakeAmount - slashedAmount,
+            settled: true
         });
 
         // SC-008: Apply reputation updates after settlement is fully recorded
@@ -993,6 +1052,108 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
     }
 
+    // ============ Settlement View Functions ============
+
+    function getSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        if (claims[claimId].submitter == address(0)) {
+            return _emptySettlementResult();
+        }
+
+        if (settlementResults[claimId].settled) {
+            return settlementResults[claimId];
+        }
+
+        return _previewSettlement(claimId);
+    }
+
+    function isSettled(uint256 claimId) external view returns (bool) {
+        Claim storage claim = claims[claimId];
+        if (claim.submitter == address(0)) {
+            return false;
+        }
+        return claim.settled || settlementResults[claimId].settled;
+    }
+
+    function calculateSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        return _previewSettlement(claimId);
+    }
+
+    function previewSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        return _previewSettlement(claimId);
+    }
+
+    function _previewSettlement(uint256 claimId) internal view returns (SettlementResult memory) {
+        Claim storage claim = claims[claimId];
+        if (claim.submitter == address(0)) {
+            return _emptySettlementResult();
+        }
+
+        bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
+
+        if (isTie) {
+            return SettlementResult({
+                passed: false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerWeightedStake: 0,
+                loserWeightedStake: 0,
+                winnerCount: 0,
+                winnersClaimed: 0,
+                rewardsClaimed: 0,
+                rewardPool: 0,
+                winningStake: 0,
+                losingStake: 0,
+                protocolFee: 0,
+                treasuryFee: 0,
+                refundedStake: claim.totalStakeAmount,
+                settled: false
+            });
+        }
+
+        uint256 winnerRawStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
+        uint256 loserRawStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
+        uint256 slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
+        uint256 rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
+        uint256 protocolFee = (rewardAmount * protocolFeePercent) / PERCENT_DENOMINATOR;
+
+        return SettlementResult({
+            passed: passed,
+            totalRewards: rewardAmount,
+            totalSlashed: slashedAmount,
+            winnerWeightedStake: passed ? claim.totalWeightedFor : claim.totalWeightedAgainst,
+            loserWeightedStake: passed ? claim.totalWeightedAgainst : claim.totalWeightedFor,
+            winnerCount: _countWinners(claimId, passed),
+            winnersClaimed: 0,
+            rewardsClaimed: 0,
+            rewardPool: rewardAmount,
+            winningStake: winnerRawStake,
+            losingStake: loserRawStake,
+            protocolFee: protocolFee,
+            treasuryFee: protocolFee,
+            refundedStake: claim.totalStakeAmount - slashedAmount,
+            settled: false
+        });
+    }
+
+    function _emptySettlementResult() internal pure returns (SettlementResult memory) {
+        return SettlementResult({
+            passed: false,
+            totalRewards: 0,
+            totalSlashed: 0,
+            winnerWeightedStake: 0,
+            loserWeightedStake: 0,
+            winnerCount: 0,
+            winnersClaimed: 0,
+            rewardsClaimed: 0,
+            rewardPool: 0,
+            winningStake: 0,
+            losingStake: 0,
+            protocolFee: 0,
+            treasuryFee: 0,
+            refundedStake: 0,
+            settled: false
+        });
     /**
      * @notice Set the reputation update engine address
      * @param _newEngine Address of the ReputationUpdateEngine contract
@@ -1007,6 +1168,20 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     }
 
     // ============ Admin Functions ============
+
+    function setTreasury(address newTreasury) external onlyGovernanceOrAdmin {
+        require(newTreasury != address(0), "Invalid treasury address");
+        address oldTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryUpdated(oldTreasury, newTreasury);
+    }
+
+    function setProtocolFeePercent(uint256 newProtocolFeePercent) external onlyGovernanceOrAdmin {
+        require(newProtocolFeePercent <= PERCENT_DENOMINATOR, "Invalid protocol fee percent");
+        uint256 oldPercent = protocolFeePercent;
+        protocolFeePercent = newProtocolFeePercent;
+        emit ProtocolFeePercentUpdated(oldPercent, newProtocolFeePercent);
+    }
 
     /**
      * @notice Emergency function to wipe a claim containing illegal or harmful content
