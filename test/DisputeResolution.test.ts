@@ -3,6 +3,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
 import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import type { ClaimRegistry, StakeVault, DisputeResolution, MockERC20 } from "../typechain-types";
+import { deployClaimRegistry } from "./helpers/deployClaimRegistry";
 
 describe("DisputeResolution", function () {
     const BOND = ethers.parseEther("500");
@@ -37,9 +38,7 @@ describe("DisputeResolution", function () {
     async function deployFixture(): Promise<Fixture> {
         const [admin, updater, challenger, challenger2, claimCreator] = await ethers.getSigners();
 
-        const ClaimRegistryFactory = await ethers.getContractFactory("ClaimRegistry");
-        const registry = (await ClaimRegistryFactory.deploy(admin.address)) as ClaimRegistry;
-        await registry.waitForDeployment();
+        const registry = await deployClaimRegistry(admin.address);
 
         const REGISTRY_UPDATER_ROLE = await registry.REGISTRY_UPDATER_ROLE();
         await registry.connect(admin).grantRole(REGISTRY_UPDATER_ROLE, updater.address);

@@ -93,6 +93,19 @@ describe("VerificationAggregator", function () {
     }
   }
 
+  async function deployAggregator(opts: { minCount?: bigint; minWeight?: bigint; minConfidence?: bigint } = {}) {
+    const VerificationAggregator = await ethers.getContractFactory("VerificationAggregator");
+    const agg = await VerificationAggregator.deploy(
+      await truthBounty.getAddress(),
+      await owner.getAddress(),
+      opts.minCount ?? 1n,
+      opts.minWeight ?? 0n,
+      opts.minConfidence ?? 0n
+    );
+    await agg.waitForDeployment();
+    return agg;
+  }
+
   describe("Weight calculation", function () {
     it("accumulates effective stake per side (unanimous TRUE)", async function () {
       const claimId = await createClaim();
@@ -291,7 +304,64 @@ describe("VerificationAggregator", function () {
         { signer: verifier3, support: false, stake: MIN_STAKE },
       ]);
 
-      // Confidence 6666 < 8000 → revert
+      // Confidence 6666 < 8000
+      await expect(aggregator.aggregateClaim(claimId))
+        .to.be.revertedWithCustomError(aggregator, "ThresholdNotMet")
+        .withArgs("Insufficient confidence");
+    });
+  });
+
+  describe("Determinism and order independence", function () {
+    it("produces the same aggregation regardless of vote submission order", async function () {
+      const votes = [
+        { signer: verifier1, support: true, stake: MIN_STAKE, reputation: ethers.parseEther("2") },
+        { signer: verifier2, support: false, stake: MIN_STAKE, reputation: ethers.parseEther("1") },
+        { signer: verifier3, support: true, stake: MIN_STAKE, reputation: ethers.parseEther("3") },
+        { signer: verifier4, support: false, stake: MIN_STAKE, reputation: ethers.parseEther("1") },
+      ];
+      const claim1 = await createClaim();
+      await stakeFor([verifier1, verifier2, verifier3, verifier4], MIN_STAKE);
+      await voteFor(claim1, votes.slice().reverse());
+
+      const claim2 = await createClaim();
+      await stakeFor([verifier1, verifier2, verifier3, verifier4], MIN_STAKE);
+      await voteFor(claim2, votes);
+
+      const [true1, false1, count1] = await aggregator.calculateWeights(claim1);
+      const [true2, false2, count2] = await aggregator.calculateWeights(claim2);
+      expect(true1).to.equal(true2);
+      expect(false1).to.equal(false2);
+      expect(count1).to.equal(count2);
+    });
+
+    it("returns identical aggregation on repeated calls", async function () {
+      const claimId = await createClaim();
+      await stakeFor([verifier1, verifier2]);
+      await voteFor(claimId, [
+        { signer: verifier1, support: true, stake: MIN_STAKE },
+        { signer: verifier2, support: false, stake: MIN_STAKE },
+      ]);
+      await aggregator.aggregateClaim(claimId);
+      const first = await aggregator.getAggregation(claimId);
+      await aggregator.aggregateClaim(claimId);
+      const second = await aggregator.getAggregation(claimId);
+      expect(first.outcome).to.equal(second.outcome);
+      expect(first.confidence).to.equal(second.confidence);
+    });
+
+    it("handles numeric bounds without overflow", async function () {
+      const values = [0n, 1n, 100n, 1_000_000n, 1_000_000_000n];
+      for (const trueWeight of values) {
+        for (const falseWeight of values) {
+          const total = trueWeight + falseWeight;
+          if (total === 0n) continue;
+          const confidence = await aggregator.calculateConfidence(trueWeight, total);
+          expect(confidence).to.be.lte(10000n);
+        }
+      }
+    });
+  });
+});000 → revert
       await expect(aggregator.aggregateClaim(claimId))
         .to.be.revertedWithCustomError(aggregator, "ThresholdNotMet")
         .withArgs("Insufficient confidence");
