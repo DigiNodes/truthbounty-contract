@@ -38,6 +38,17 @@ Contracts are intentionally modular to support **multi-chain deployments**.
 
 ## 🔗 Contract Responsibilities
 
+## Security & Release Framework
+
+The protocol release process is documented in:
+
+- docs/verification/formal-verification-plan.md
+- docs/verification/protocol-invariants.md
+- docs/audit/audit-readiness-checklist.md
+- docs/release/release-candidate-process.md
+- docs/release/mainnet-readiness-scorecard.md
+- docs/runbooks/
+
 ### Core Modules
 
 - **Verifier Staking**
@@ -312,3 +323,6 @@ We welcome:
 - Protocol designers
 
 
+test
+test
+test

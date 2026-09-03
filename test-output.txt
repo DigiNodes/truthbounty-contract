@@ -1,0 +1,35 @@
+
+
+  VerificationSubmission
+    Deployment
+      ✔ should set immutable variables correctly (2519ms)
+    submitVerification - Success
+      ✔ should allow a valid verification and lock stake (53ms)
+      ✔ multiple verifiers can verify the same claim
+    submitVerification - Validation Failures
+      ✔ reverts if claim is not in UnderVerification status
+      1) reverts if verification window is closed
+      ✔ reverts on duplicate verification from same wallet
+      ✔ reverts if stake is insufficient
+    Gas Benchmarks
+
+  ┌─ Gas Benchmarks ─────────────────────────────────────
+  │  First verification:       272656 gas
+      ✔ measures gas for first verification submission
+  │  Subsequent verification:  238468 gas
+  └────────────────────────────────────────────────────────
+
+      ✔ measures gas for subsequent verification submission
+
+
+  8 passing (3s)
+  1 failing
+
+  1) VerificationSubmission
+       submitVerification - Validation Failures
+         reverts if verification window is closed:
+     TypeError: Cannot mix BigInt and other types, use explicit conversions
+      at Context.<anonymous> (test/VerificationSubmission.test.ts:128:43)
+
+
+

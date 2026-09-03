@@ -15,6 +15,11 @@ describe("VerifierSlashing", function () {
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address); // 1 day lock
 
+    // Deploy treasury accounting mock and wire it into Staking
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     // Deploy VerifierSlashing contract
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
     const slashing = await VerifierSlashing.deploy(await staking.getAddress(), admin.address, admin.address);
@@ -45,6 +50,7 @@ describe("VerifierSlashing", function () {
       token,
       staking,
       slashing,
+      treasuryAccounting,
       owner,
       admin,
       settlement,
@@ -387,4 +393,280 @@ describe("VerifierSlashing", function () {
       ).to.not.be.reverted;
     });
   });
+
+  describe("Economic Enforcement Framework", function () {
+    it("Should initialize default offence configurations", async function () {
+      const { slashing } = await loadFixture(deploySlashingFixture);
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      const config = await slashing.offenceConfigs(offenceId);
+      expect(config.slashPercentage).to.equal(50);
+      expect(config.reputationPenalty).to.equal(30);
+      expect(config.active).to.be.true;
+    });
+
+    it("Should successfully execute penalty and route slashed tokens to Treasury", async function () {
+      const { token, staking, slashing, admin, settlement, verifier1, stakeAmount } = await loadFixture(deploySlashingFixture);
+
+      const [,, reserve, secFund, insFund, burnAddr] = await ethers.getSigners();
+      
+      // Set treasury routing splits
+      await slashing.connect(admin).setTreasuryRouting(
+        reserve.address,
+        secFund.address,
+        insFund.address,
+        burnAddr.address,
+        20, // reserve %
+        30, // secFund %
+        40, // insFund %
+        10  // burnAddr %
+      );
+
+      // Verify routing config lookup
+      const routing = await slashing.getTreasuryRouting();
+      expect(routing._treasuryReserve).to.equal(reserve.address);
+      expect(routing._pctTreasuryReserve).to.equal(20);
+
+      const offenceId = await slashing.OFFENCE_VERIFICATION_FRAUD();
+      
+      // Execute penalty (Verification Fraud: 50% slash, 7 days suspension)
+      await expect(
+        slashing.connect(settlement).executePenalty(verifier1.address, offenceId, "Fraud detected")
+      ).to.emit(slashing, "StakeSlashed");
+
+      // Verify Staking balance reduced
+      const [finalStake] = await staking.stakes(verifier1.address);
+      expect(finalStake).to.equal(stakeAmount / BigInt(2));
+
+      // Verify splits routed correctly
+      const expectedSlashed = stakeAmount / BigInt(2);
+      expect(await token.balanceOf(reserve.address)).to.equal((expectedSlashed * BigInt(20)) / BigInt(100));
+      expect(await token.balanceOf(secFund.address)).to.equal((expectedSlashed * BigInt(30)) / BigInt(100));
+      expect(await token.balanceOf(insFund.address)).to.equal((expectedSlashed * BigInt(40)) / BigInt(100));
+      expect(await token.balanceOf(burnAddr.address)).to.equal((expectedSlashed * BigInt(10)) / BigInt(100));
+    });
+
+    it("Should enforce suspensions and permanent bans", async function () {
+      const { slashing, admin, settlement, verifier1 } = await loadFixture(deploySlashingFixture);
+
+      const collusionOffence = await slashing.OFFENCE_VERIFICATION_COLLUSION();
+      
+      expect(await slashing.isSuspended(verifier1.address)).to.be.false;
+      expect(await slashing.isBanned(verifier1.address)).to.be.false;
+
+      // Collusion offence triggers a permanent ban
+      await slashing.connect(settlement).executePenalty(verifier1.address, collusionOffence, "Colluded in verification");
+
+      expect(await slashing.isSuspended(verifier1.address)).to.be.true;
+      expect(await slashing.isBanned(verifier1.address)).to.be.true;
+
+      // Try to slash again and expect revert
+      await expect(
+        slashing.connect(settlement).slash(verifier1.address, 10, "Subsequent slash attempt")
+      ).to.be.revertedWithCustomError(slashing, "VerifierBanned");
+    });
+  });
+  describe("SC-015 Claim-Aware Slashing", function () {
+    it("Should transfer confiscated collateral to Treasury", async function () {
+      const {
+        token,
+        staking,
+        slashing,
+        owner,
+        admin,
+        settlement,
+        verifier1,
+        stakeAmount
+      } = await loadFixture(deploySlashingFixture);
+
+      const percentage = 25;
+      const expectedAmount = (stakeAmount * BigInt(percentage)) / 100n;
+      await staking.connect(owner).setTreasury(admin.address);
+      const treasuryBefore = await token.balanceOf(admin.address);
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        101,
+        percentage,
+        "Dishonest verification"
+      );
+
+      expect(await token.balanceOf(admin.address)).to.equal(
+        treasuryBefore + expectedAmount
+      );
+
+      expect(await token.balanceOf(await staking.getAddress())).to.equal(
+        stakeAmount * 2n - expectedAmount
+      );
+    });
+
+    it("Should reject duplicate claim offences", async function () {
+      const { slashing, settlement, verifier1 } =
+        await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        202,
+        10,
+        "Collusive vote"
+      );
+
+      await expect(
+        slashing.connect(settlement).slashVerifier(
+          verifier1.address,
+          202,
+          10,
+          "Collusive vote"
+        )
+      ).to.be.revertedWithCustomError(slashing, "DuplicateSlash");
+    });
+
+    it("Should permit distinct offences for the same claim", async function () {
+      const { slashing, settlement, verifier1 } =
+        await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        303,
+        10,
+        "Incorrect vote"
+      );
+
+      await expect(
+        slashing.connect(settlement).slashVerifier(
+          verifier1.address,
+          303,
+          10,
+          "Fraudulent evidence"
+        )
+      ).to.not.be.reverted;
+    });
+
+    it("Should store complete claim slash records", async function () {
+      const { slashing, settlement, verifier1 } =
+        await loadFixture(deploySlashingFixture);
+
+      const claimId = 404;
+      const percentage = 15;
+      const reason = "Repeated malicious behaviour";
+      const reasonHash = ethers.keccak256(ethers.toUtf8Bytes(reason));
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        claimId,
+        percentage,
+        reason
+      );
+
+      const history = await slashing.getSlashHistory(
+        verifier1.address,
+        0,
+        10
+      );
+
+      expect(history.length).to.equal(1);
+      expect(history[0].claimId).to.equal(claimId);
+      expect(history[0].percentage).to.equal(percentage);
+      expect(history[0].reasonHash).to.equal(reasonHash);
+      expect(history[0].offenceId).to.not.equal(ethers.ZeroHash);
+      expect(history[0].settlementEpoch).to.be.greaterThan(0);
+      expect(history[0].slashedBy).to.equal(settlement.address);
+    });
+
+    it("Should notify the reputation penalty adapter", async function () {
+      const { slashing, admin, settlement, verifier1, stakeAmount } =
+        await loadFixture(deploySlashingFixture);
+
+      const Receiver = await ethers.getContractFactory(
+        "MockReputationPenaltyReceiver"
+      );
+      const receiver = await Receiver.deploy();
+
+      await slashing
+        .connect(admin)
+        .setReputationPenaltyReceiver(await receiver.getAddress());
+
+      const percentage = 20;
+      const claimId = 505;
+      const reason = "Protocol rule violation";
+      const expectedAmount = (stakeAmount * 20n) / 100n;
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        claimId,
+        percentage,
+        reason
+      );
+
+      expect(await receiver.notificationCount()).to.equal(1);
+      expect(await receiver.lastVerifier()).to.equal(verifier1.address);
+      expect(await receiver.lastClaimId()).to.equal(claimId);
+      expect(await receiver.lastAmount()).to.equal(expectedAmount);
+      expect(await receiver.lastPercentage()).to.equal(percentage);
+      expect(await receiver.lastReasonHash()).to.equal(
+        ethers.keccak256(ethers.toUtf8Bytes(reason))
+      );
+    });
+
+    it("Should support full collateral confiscation", async function () {
+      const {
+        token,
+        staking,
+        slashing,
+        owner,
+        admin,
+        settlement,
+        verifier1,
+        stakeAmount
+      } = await loadFixture(deploySlashingFixture);
+
+      await staking.connect(owner).setTreasury(admin.address);
+      await slashing.connect(admin).updateSlashingConfig(100, 0);
+
+      const treasuryBefore = await token.balanceOf(admin.address);
+
+      await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        606,
+        100,
+        "Catastrophic protocol violation"
+      );
+
+      const [remainingStake] = await staking.stakes(verifier1.address);
+
+      expect(remainingStake).to.equal(0);
+      expect(await slashing.totalSlashed(verifier1.address)).to.equal(
+        stakeAmount
+      );
+      expect(await token.balanceOf(admin.address)).to.equal(
+        treasuryBefore + stakeAmount
+      );
+    });
+
+    it("Should derive settlement epochs from configuration", async function () {
+      const { slashing, admin, settlement, verifier1 } =
+        await loadFixture(deploySlashingFixture);
+
+      await slashing.connect(admin).setSettlementEpochDuration(86400);
+
+      const tx = await slashing.connect(settlement).slashVerifier(
+        verifier1.address,
+        707,
+        10,
+        "Epoch test"
+      );
+
+      const receipt = await tx.wait();
+      const block = await ethers.provider.getBlock(receipt!.blockNumber);
+      const history = await slashing.getSlashHistory(
+        verifier1.address,
+        0,
+        1
+      );
+
+      expect(history[0].settlementEpoch).to.equal(
+        BigInt(Math.floor(block!.timestamp / 86400))
+      );
+    });
+  });
+
 });

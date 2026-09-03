@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
+import "forge-std/Base.sol";
 import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/MockReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";

@@ -65,6 +65,9 @@ describe("SC-013 — Verifier Reputation Snapshot & Historical Consistency", fun
       const initialRep = ethers.parseEther("2.0"); // 2.0x multiplier
       await mockOracle.setReputationScore(verifier1Addr, initialRep);
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       // Create a claim (claimId = 0)
       await truthBounty.connect(submitter).createClaim("IPFS_HASH_001");
       const claimId = 0;
@@ -132,6 +135,9 @@ describe("SC-013 — Verifier Reputation Snapshot & Historical Consistency", fun
       const initialRep = ethers.parseEther("1.5");
       await mockOracle.setReputationScore(verifier1Addr, initialRep);
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       await truthBounty.connect(submitter).createClaim("IPFS_HASH_IMMUTABLE");
       const claimId = 0;
       const voteStake = ethers.parseEther("400");
@@ -166,6 +172,9 @@ describe("SC-013 — Verifier Reputation Snapshot & Historical Consistency", fun
       // Verifier 2 votes AGAINST with 2.0x rep and 300 stake -> weighted 600
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("1.0"));
       await mockOracle.setReputationScore(verifier2Addr, ethers.parseEther("2.0"));
+
+      // Move past the reputation update grace period so the updated scores apply
+      await time.increase(2 * 24 * 60 * 60 + 1);
 
       await truthBounty.connect(submitter).createClaim("CLAIM_SETTLEMENT_TEST");
       const claimId = 0;
