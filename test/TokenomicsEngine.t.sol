@@ -46,7 +46,12 @@ contract TokenomicsEngineTest is Test {
         vm.stopPrank();
 
         // Fund tokenomics with initial revenue
-        vm.startPrank(sender);
+        vm.startPrank(admin);
+        treasury.setMinStakingReserveRatio(0);
+        vm.stopPrank();
+
+        token.mint(distributor, INITIAL_SUPPLY);
+        vm.startPrank(distributor);
         token.approve(address(tokenomics), INITIAL_SUPPLY);
         vm.stopPrank();
     }

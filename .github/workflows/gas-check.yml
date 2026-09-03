@@ -44,6 +44,12 @@ jobs:
             echo "⚠ Gas changes detected:"
             git diff .gas-snapshots.json
           fi
+
+      - name: Validate V2 gas budget config
+        run: |
+          if [ -f config/gas-budgets.json ]; then
+            node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync('config/gas-budgets.json','utf8')); if(!j.budgets||!j.bounds) { process.exit(1);} console.log('gas-budgets.json OK');"
+          fi
       
       - name: Upload gas reports
         if: always()

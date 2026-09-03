@@ -1,0 +1,201 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Test.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
+import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
+import {GovernanceForbiddenCalls} from "../../contracts/governance/v2/libraries/GovernanceForbiddenCalls.sol";
+import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
+import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
+import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
+import {MockGovernedModule} from "../../contracts/mocks/MockGovernedModule.sol";
+
+contract TruthBountyGovernorTest is Test {
+    uint48 internal constant VOTING_DELAY = 1;
+    uint32 internal constant VOTING_PERIOD = 100;
+    uint256 internal constant TIMELOCK_DELAY = 1 days;
+    uint256 internal constant QUORUM_NUMERATOR = 4;
+    uint256 internal constant TOKEN_SUPPLY = 1_000_000 ether;
+
+    TruthBountyGovernanceToken internal token;
+    GovernedModuleRegistry internal registry;
+    TimelockController internal timelock;
+    TruthBountyGovernor internal governor;
+    GovernanceGuardian internal guardianContract;
+    MockGovernedModule internal module;
+
+    address internal admin = makeAddr("admin");
+    address internal guardian = makeAddr("guardian");
+    address internal voter = makeAddr("voter");
+    address internal proposer = makeAddr("proposer");
+
+    function setUp() public {
+        vm.startPrank(admin);
+
+        registry = new GovernedModuleRegistry(admin);
+        token = new TruthBountyGovernanceToken(admin, TOKEN_SUPPLY);
+        token.transfer(proposer, 200_000 ether);
+        token.transfer(voter, 800_000 ether);
+
+        address[] memory proposers = new address[](0);
+        address[] memory executors = new address[](0);
+        timelock = new TimelockController(TIMELOCK_DELAY, proposers, executors, admin);
+
+        governor = new TruthBountyGovernor(
+            token,
+            timelock,
+            registry,
+            guardian,
+            VOTING_DELAY,
+            VOTING_PERIOD,
+            100_000 ether,
+            QUORUM_NUMERATOR
+        );
+
+        guardianContract = new GovernanceGuardian(admin, guardian, governor);
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+        GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
+        GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
+        timelock.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
+
+        module = new MockGovernedModule();
+        registry.registerModule("MOCK_MODULE", address(module));
+
+        vm.stopPrank();
+
+        vm.prank(proposer);
+        token.delegate(proposer);
+        vm.prank(voter);
+        token.delegate(voter);
+    }
+
+    function _proposalCalldata(uint256 newValue) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(MockGovernedModule.setValue.selector, newValue);
+    }
+
+    function _createProposal(uint256 newValue) internal returns (uint256 proposalId) {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        values[0] = 0;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = _proposalCalldata(newValue);
+
+        vm.prank(proposer);
+        proposalId = governor.propose(targets, values, calldatas, "update mock module value");
+    }
+
+    function _voteAndQueue(uint256 proposalId) internal {
+        vm.warp(block.timestamp + VOTING_DELAY + 1);
+        vm.prank(voter);
+        governor.castVote(proposalId, 1);
+        governor.queue(proposalId);
+    }
+
+    function test_FullProposalLifecycle() public {
+        uint256 proposalId = _createProposal(42);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Pending));
+
+        _voteAndQueue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Queued));
+
+        vm.warp(block.timestamp + TIMELOCK_DELAY + 1);
+        governor.execute(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Executed));
+        assertEq(module.value(), 42);
+    }
+
+    function test_ProposalDefeatedWithoutQuorum() public {
+        uint256 proposalId = _createProposal(7);
+        vm.warp(block.timestamp + VOTING_DELAY + VOTING_PERIOD + 1);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Defeated));
+    }
+
+    function test_CancelledByGuardian() public {
+        uint256 proposalId = _createProposal(11);
+        vm.warp(block.timestamp + VOTING_DELAY + 1);
+
+        vm.prank(guardian);
+        guardianContract.vetoProposal(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Canceled));
+    }
+
+    function test_EarlyExecuteReverts() public {
+        uint256 proposalId = _createProposal(99);
+        _voteAndQueue(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
+    }
+
+    function test_DuplicateExecuteReverts() public {
+        uint256 proposalId = _createProposal(55);
+        _voteAndQueue(proposalId);
+        vm.warp(block.timestamp + TIMELOCK_DELAY + 1);
+        governor.execute(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
+    }
+
+    function test_ForbiddenTargetReverts() public {
+        address unregistered = makeAddr("unregistered");
+        address[] memory targets = new address[](1);
+        targets[0] = unregistered;
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = _proposalCalldata(1);
+
+        vm.prank(proposer);
+        vm.expectRevert(abi.encodeWithSelector(TruthBountyGovernor.TargetNotGovernedModule.selector, unregistered));
+        governor.propose(targets, values, calldatas, "bad target");
+    }
+
+    function test_ForbiddenSelectorReverts() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(MockGovernedModule.settleClaim.selector, uint256(1));
+
+        vm.prank(proposer);
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceForbiddenCalls.ForbiddenGovernanceCall.selector, MockGovernedModule.settleClaim.selector)
+        );
+        governor.propose(targets, values, calldatas, "forbidden settlement");
+    }
+
+    function test_ProposalThresholdBlocksSpam() public {
+        address spammer = makeAddr("spammer");
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = _proposalCalldata(1);
+
+        vm.prank(spammer);
+        vm.expectRevert();
+        governor.propose(targets, values, calldatas, "spam");
+    }
+
+    function test_PublishManifestEmitsConfig() public {
+        vm.expectEmit(true, true, true, false);
+        emit TruthBountyGovernor.GovernanceManifestPublished(
+            address(governor),
+            address(timelock),
+            address(token),
+            address(registry),
+            VOTING_DELAY,
+            VOTING_PERIOD,
+            100_000 ether,
+            QUORUM_NUMERATOR,
+            TIMELOCK_DELAY
+        );
+        governor.publishManifest();
+    }
+}
