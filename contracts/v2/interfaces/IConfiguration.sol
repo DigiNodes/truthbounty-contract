@@ -1,11 +1,1 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-import {IV2Module} from "./IV2Module.sol";
-interface IConfiguration is IV2Module {
-    event ParameterUpdated(bytes32 indexed key, uint256 oldValue, uint256 newValue, address indexed actor);
-    event AddressParameterUpdated(bytes32 indexed key, address indexed oldValue, address indexed newValue, address actor);
-    function getUint(bytes32 key) external view returns (uint256);
-    function getAddress(bytes32 key) external view returns (address);
-    function setUint(bytes32 key, uint256 value) external;
-    function setAddress(bytes32 key, address value) external;
-}
+// SPDX-License-Identifier: MIT pragma solidity ^0.8.20; import {IV2Module} from "./IV2Module.sol"; interface IConfiguration is IV2Module { struct ParameterSet { address[] supportedAssets; uint256 minBounty; uint256 maxBounty; uint256 minStake; uint256 maxStake; uint256 weightCap; uint256 challengeDuration; uint256 appealDuration; uint256 participationThreshold; uint256 confidenceThreshold; uint256 challengeBond; uint256 appealMultiplier; uint256[] allocationBasisPoints; uint256 minReputation; uint256 maxReputation; uint256 pauseCooldown; } event ParameterSetPublished(uint256 indexed versionId, address indexed actor); error InvalidParameterSet(bytes32 reason); function publish(ParameterSet calldata params) external returns (uint256 versionId); function getParameterSet(uint256 versionId) external view returns (ParameterSet memory); function getLatestVersion() external view returns (uint256); function getVersionCount() external view returns (uint256); }

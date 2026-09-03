@@ -40,6 +40,8 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
         totalSlashRecorded += amount;
     }
 
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external {}
+
     function recordRewardDistribution(address recipient, uint256 amount) external {}
 
     function transferBetweenAccounts(

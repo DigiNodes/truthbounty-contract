@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "issue": "V2-SC-038",
+  "referenceBlockGasLimit": 30000000,
+  "recommendedTxGasCeiling": 12000000,
+  "budgets": {
+    "CLAIM_CREATION": 350000,
+    "EVIDENCE_ATTACHMENT": 180000,
+    "VERIFICATION_VOTE": 350000,
+    "AGGREGATION": 600000,
+    "PROVISIONAL_SETTLEMENT": 250000,
+    "CHALLENGE_OPEN": 120000,
+    "APPEAL_SETTLEMENT": 650000,
+    "FINALIZATION": 200000,
+    "WITHDRAWAL": 120000
+  },
+  "bounds": {
+    "MAX_VERIFIERS_PER_CLAIM": 200,
+    "MAX_EVIDENCE_PER_CLAIM": 100,
+    "MAX_SETTLEMENT_BATCH_SIZE": 200,
+    "MAX_REWARD_BATCH_SIZE": 100
+  }
+}
