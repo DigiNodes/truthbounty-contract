@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "forge-std/Fuzz.sol";
 import "../../contracts/tokenomics/TokenomicsEngine.sol";
 import "../../contracts/treasury/TreasuryAccounting.sol";
 import "../../contracts/MockERC20.sol";
@@ -22,7 +21,7 @@ interface ITokenomicsEngineView {
         );
 }
 
-contract TokenomicsFuzzTest is Test, Fuzz {
+contract TokenomicsFuzzTest is Test {
     TokenomicsEngine tokenomics;
     TreasuryAccounting treasury;
     MockERC20 token;
