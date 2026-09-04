@@ -25,6 +25,16 @@ contract ParameterVersionRegistry is
     bytes32 public constant VERSION_EXECUTOR_ROLE = keccak256("VERSION_EXECUTOR_ROLE");
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
+    // ============ Errors ============
+    error InvalidAllocationBPS(uint256 sum);
+    error InvalidEmissionLimit();
+    error InvalidRewardMultiplier();
+    error InvalidFee();
+    error InvalidBPS();
+    error InvalidStakeAmount();
+    error InvalidReputationRange();
+    error InvalidSlashBPS();
+
     // ============ Constants ============
     
     /// @notice Minimum timelock required for any parameter version activation (cannot be shortened)
@@ -139,6 +149,42 @@ contract ParameterVersionRegistry is
         
         emit VersionProposed(versionCounter, msg.sender, block.timestamp, 0);
         emit VersionActivated(versionCounter, block.timestamp);
+    }
+
+    function _validateParameterBounds(EconomicParameters calldata parameters) internal pure {
+        // Allocation basis points must total exactly 10,000 (100%)
+        uint256 allocationSum = parameters.verifierRewardsBPS
+            + parameters.treasuryReserveBPS
+            + parameters.ecosystemIncentivesBPS
+            + parameters.governanceIncentivesBPS
+            + parameters.protocolDevelopmentBPS
+            + parameters.emergencyReserveBPS;
+        if (allocationSum != BPS_DENOMINATOR) revert InvalidAllocationBPS(allocationSum);
+
+        // Validate emission limit and reward multiplier are non-zero
+        if (parameters.emissionLimit == 0) revert InvalidEmissionLimit();
+        if (parameters.rewardMultiplier == 0) revert InvalidRewardMultiplier();
+
+        // Validate fee parameters
+        if (parameters.claimSubmissionFee == 0) revert InvalidFee();
+        if (parameters.verificationSubmissionFee == 0) revert InvalidFee();
+        if (parameters.disputeInitiationFee == 0) revert InvalidFee();
+        if (parameters.protocolReserveFeeBPS > BPS_DENOMINATOR) revert InvalidBPS();
+
+        // Validate staking bounds
+        if (parameters.minStakeAmount == 0) revert InvalidStakeAmount();
+
+        // Validate reputation bounds
+        if (parameters.minReputationScore > parameters.maxReputationScore) revert InvalidReputationRange();
+        if (parameters.defaultReputationScore < parameters.minReputationScore
+            || parameters.defaultReputationScore > parameters.maxReputationScore) revert InvalidReputationRange();
+
+        // Validate slashing bounds
+        if (parameters.slashPercentageBPS > parameters.maxSlashPercentageBPS) revert InvalidSlashBPS();
+        if (parameters.maxSlashPercentageBPS > BPS_DENOMINATOR) revert InvalidBPS();
+
+        // Validate treasury reserve target
+        if (parameters.treasuryReserveTargetBPS > BPS_DENOMINATOR) revert InvalidBPS();
     }
 
     // ============ External Functions ============
@@ -297,6 +343,7 @@ contract ParameterVersionRegistry is
      */
     function isVersionSuperseded(uint256 versionId) external view returns (bool) {
         return _versionSuperseded[versionId];
+    }ded[versionId];
     }
 
     // ============ Internal Validation ============

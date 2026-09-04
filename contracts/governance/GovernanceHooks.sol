@@ -60,6 +60,49 @@ interface GovernanceHooks {
         PROTOCOL_FEE_ALLOCATION_BPS
     }
 
+    // ============ Protocol Parameter Set ============
+
+    /**
+     * @notice Immutable snapshot of all protocol parameters governing a claim.
+     * @dev Versions are immutable once published; claims reference a version ID.
+     */
+    struct ProtocolParameterSet {
+        // Supported assets
+        address[] supportedAssets;
+        // Bounty/stake bounds
+        uint256 minBounty;
+        uint256 maxBounty;
+        uint256 minStake;
+        uint256 maxStake;
+        // Weight cap
+        uint256 weightCap;
+        // Durations (in seconds; must be > 0)
+        uint256 verificationWindow;
+        uint256 challengeWindow;
+        uint256 appealWindow;
+        // Participation thresholds
+        uint256 settlementThresholdPercent;
+        uint256 participationThreshold;
+        // Confidence
+        uint256 confidenceThreshold;
+        // Challenge bond
+        uint256 challengeBond;
+        // Appeal multiplier (in basis points)
+        uint256 appealMultiplierBps;
+        // Allocation basis points (must sum to 10_000)
+        uint256 verifierRewardAllocationBps;
+        uint256 treasuryReserveAllocationBps;
+        uint256 ecosystemIncentiveAllocationBps;
+        uint256 governanceIncentiveAllocationBps;
+        uint256 protocolDevelopmentAllocationBps;
+        uint256 emergencyReserveAllocationBps;
+        // Reputation bounds
+        uint256 minReputation;
+        uint256 maxReputation;
+        // Pause cooldown
+        uint256 pauseCooldown;
+    }
+
     // ============ Events ============
 
     event ParameterUpdateRequested(
@@ -99,6 +142,22 @@ interface GovernanceHooks {
     event UpgradeExecuted(
         bytes32 indexed proposalId,
         address newImplementation
+    );
+
+    event ParameterSetProposed(
+        bytes32 indexed proposalId,
+        uint256 oldVersionId,
+        address indexed proposer
+    );
+
+    event ParameterSetExecuted(
+        bytes32 indexed proposalId,
+        uint256 indexed versionId,
+        address indexed executor
+    );
+
+    event ParameterSetCancelled(
+        bytes32 indexed proposalId
     );
 
     // ============ Parameter Update Functions ============
@@ -210,4 +269,39 @@ interface GovernanceHooks {
         uint8 status,
         address proposer
     );
+
+    // ============ Versioned Parameter Set Functions ============
+
+    /**
+     * @notice Get the current immutable parameter-set version ID.
+     * @return The active version ID
+     */
+    function getCurrentParameterSetVersion() external view returns (uint256);
+
+    /**
+     * @notice Get the full parameter set for a given version ID.
+     * @param versionId The immutable version ID
+     * @return The parameter set snapshot
+     */
+    function getParameterSet(uint256 versionId) external view returns (ProtocolParameterSet memory);
+
+    /**
+     * @notice Propose a new parameter set version (timelocked governance only).
+     * @param newSet The full parameter set to become the next version
+     * @return proposalId The ID of the created proposal
+     */
+    function proposeParameterSet(ProtocolParameterSet calldata newSet) external returns (bytes32 proposalId);
+
+    /**
+     * @notice Execute an approved parameter-set version proposal.
+     * @param proposalId The ID of the approved proposal
+     * @return versionId The newly published immutable version ID
+     */
+    function executeParameterSet(bytes32 proposalId) external returns (uint256 versionId);
+
+    /**
+     * @notice Cancel a pending parameter-set version proposal.
+     * @param proposalId The ID of the proposal to cancel
+     */
+    function cancelParameterSet(bytes32 proposalId) external;
 }
