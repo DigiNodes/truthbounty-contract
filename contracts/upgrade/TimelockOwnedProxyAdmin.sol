@@ -114,12 +114,9 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         
         upgrade.executed = true;
         
-        // Perform the upgrade
-        if (upgrade.data.length > 0) {
-            _executeUpgradeAndCall(upgrade.proxy, upgrade.implementation, upgrade.data);
-        } else {
-            _executeUpgrade(upgrade.proxy, upgrade.implementation);
-        }
+        // Perform the upgrade (OZ v5 ProxyAdmin exposes upgradeAndCall only).
+        ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(upgrade.proxy);
+        upgradeAndCall(proxy, upgrade.implementation, upgrade.data);
     }
     
     /**
@@ -184,19 +181,16 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     }
     
     /**
-     * @dev Internal: perform upgrade without calldata
+     * @dev Override upgradeAndCall to keep ProxyAdmin owner checks while routing scheduled upgrades.
      */
-    function _executeUpgrade(address proxy, address implementation) internal {
-        ITransparentUpgradeableProxy(proxy).upgradeToAndCall(implementation, "");
+    function upgradeAndCall(
+        ITransparentUpgradeableProxy proxy,
+        address implementation,
+        bytes memory data
+    ) public payable override onlyOwner {
+        super.upgradeAndCall(proxy, implementation, data);
     }
 
-    /**
-     * @dev Internal: perform upgrade with calldata
-     */
-    function _executeUpgradeAndCall(address proxy, address implementation, bytes memory data) internal {
-        ITransparentUpgradeableProxy(proxy).upgradeToAndCall(implementation, data);
-    }
-    
     // Storage gap for future upgrades
     uint256[50] private __gap;
 }

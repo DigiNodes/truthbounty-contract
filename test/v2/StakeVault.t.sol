@@ -325,6 +325,251 @@ contract StakeVaultTest is Test {
         assertEq(major, 2);
         assertEq(minor, 0);
     }
+
+    // -------------------------------------------------------------------------
+    // Typed settlement hooks (V2-SC-012)
+    // -------------------------------------------------------------------------
+
+    function _depositAndLock(uint256 claimId, uint256 round, uint256 amount) internal {
+        vm.prank(verifier);
+        vault.depositStake(claimId, amount);
+        if (round > 0) {
+            vm.prank(settlement);
+            vault.rolloverRound(address(token), verifier, claimId, 0, round, amount);
+        }
+    }
+
+    function test_settleConclusive_unlocksPrincipalAndCreditsReward() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        // Fund protocol allocation for reward.
+        vm.prank(verifier);
+        vault.deposit(address(token), STAKE);
+        vm.prank(slashing);
+        vault.slashStake(CLAIM_A, verifier, STAKE, keccak256("reward-fund"));
+
+        vm.prank(settlement);
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, STAKE / 2);
+
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE + STAKE / 2);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.CONCLUDED);
+    }
+
+    function test_settleConclusive_unauthorizedReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+    }
+
+    function test_settleConclusive_duplicateReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+    }
+
+    function test_settleConclusive_conflictingOutcomeReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+    }
+
+    function test_settleConclusive_overAllocationReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InsufficientLocked.selector, STAKE + 1, STAKE));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE + 1, 0);
+    }
+
+    function test_settleConclusive_wrongAssetReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InsufficientLocked.selector, STAKE, 0));
+        vault.settleConclusive(address(tokenB), verifier, CLAIM_A, 0, STAKE, 0);
+    }
+
+    function test_settleConclusive_wrongRoundReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InsufficientLocked.selector, STAKE, 0));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 1, STAKE, 0);
+    }
+
+    function test_refundInconclusive_unlocksPrincipal() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.REFUNDED);
+    }
+
+    function test_refundInconclusive_unauthorizedReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_refundInconclusive_duplicateReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_carryForwardAppeal_movesLockToNextRound() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 1, STAKE);
+
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.CARRIED_FORWARD);
+        assertEq(vault.totalCustody(address(token)), STAKE);
+    }
+
+    function test_carryForwardAppeal_unauthorizedReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 1, STAKE);
+    }
+
+    function test_carryForwardAppeal_duplicateReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 1, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 2, STAKE);
+    }
+
+    function test_carryForwardAppeal_sameRoundReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InvalidArgument.selector, "same round"));
+        vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 0, STAKE);
+    }
+
+    function test_rolloverRound_movesLockToNextRound() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.rolloverRound(address(token), verifier, CLAIM_A, 0, 1, STAKE);
+
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.ROLLED_OVER);
+    }
+
+    function test_rolloverRound_unauthorizedReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vault.rolloverRound(address(token), verifier, CLAIM_A, 0, 1, STAKE);
+    }
+
+    function test_finalUnlock_releasesLockToClaimable() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.UNLOCKED);
+    }
+
+    function test_finalUnlock_unauthorizedReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_finalUnlock_duplicateReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_settlementOutcome_initialNone() public view {
+        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.NONE);
+    }
+
+    function test_settleConclusive_partialUnlock() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE / 2, 0);
+
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE / 2);
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE / 2);
+    }
+
+    function test_settleConclusive_rewardExceedsAllocationReverts() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InsufficientProtocolAllocation.selector, STAKE, 0));
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, 0, STAKE);
+    }
 }
 
 /// @dev Attempts to reenter `withdraw` during token transfer.

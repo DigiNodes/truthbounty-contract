@@ -218,6 +218,13 @@ contract TokenomicsEngine is
         onlyRole(DISTRIBUTOR_ROLE)
         returns (bytes32 distributionId)
     {
+        return _distributeRevenue(source, amount);
+    }
+
+    function _distributeRevenue(RevenueSource source, uint256 amount)
+        internal
+        returns (bytes32 distributionId)
+    {
         if (amount == 0) revert ZeroAmount();
 
         SourceAllocation memory config = sourceAllocations[source];
@@ -302,7 +309,7 @@ contract TokenomicsEngine is
         resultIds = new bytes32[](length);
 
         for (uint256 i = 0; i < length;) {
-            resultIds[i] = distributeRevenue(sources[i], amounts[i]);
+            resultIds[i] = _distributeRevenue(sources[i], amounts[i]);
 
             unchecked {
                 ++i;
@@ -383,7 +390,7 @@ contract TokenomicsEngine is
     // ============ Governance Controls ==========
 
     /**
-     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -418,7 +425,7 @@ contract TokenomicsEngine is
     }
 
     /**
-     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -429,7 +436,7 @@ contract TokenomicsEngine is
     }
 
     /**
-     * @dev Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
      *             parameter version updates with proper timelock and validation. This function
      *             will be removed in a future release.
      */
@@ -513,12 +520,17 @@ contract TokenomicsEngine is
         }
     }
 
-    function getProcessedDistribution(bytes32 distributionId) external view override returns (bool) {
-        return processedDistributions[distributionId];
-    }
-
     function getDistributionHistoryLength() external view returns (uint256) {
         return distributionHistory.length;
+    }
+
+    function getProcessedDistribution(bytes32 distributionId)
+        external
+        view
+        override
+        returns (bool)
+    {
+        return processedDistributions[distributionId];
     }
 
     // ============ Internal Helpers ==========

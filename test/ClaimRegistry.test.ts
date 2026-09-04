@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
 import type { ClaimRegistry } from "../typechain-types";
+import { deployClaimRegistry } from "./helpers/deployClaimRegistry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -30,9 +31,7 @@ async function futureDeadline(offsetSeconds = 7 * 24 * 60 * 60 /* 7 days */): Pr
 async function deployFixture() {
     const [admin, updater, user, other] = await ethers.getSigners();
 
-    const ClaimRegistry = await ethers.getContractFactory("ClaimRegistry");
-    const registry = (await ClaimRegistry.deploy(admin.address)) as ClaimRegistry;
-    await registry.waitForDeployment();
+    const registry = await deployClaimRegistry(admin.address);
 
     // Grant the REGISTRY_UPDATER_ROLE to `updater` so we can test status updates
     const REGISTRY_UPDATER_ROLE = await registry.REGISTRY_UPDATER_ROLE();
@@ -67,10 +66,15 @@ describe("ClaimRegistry", function () {
         });
 
         it("reverts if initial admin is the zero address", async function () {
+            const [admin] = await ethers.getSigners();
+            const ParamFactory = await ethers.getContractFactory("ParameterVersionRegistry");
+            const paramRegistry = await ParamFactory.deploy(admin.address, admin.address);
+            await paramRegistry.waitForDeployment();
+
             const ClaimRegistry = await ethers.getContractFactory("ClaimRegistry");
-            await expect(ClaimRegistry.deploy(ethers.ZeroAddress)).to.be.revertedWith(
-                "ClaimRegistry: zero admin address",
-            );
+            await expect(
+                ClaimRegistry.deploy(ethers.ZeroAddress, await paramRegistry.getAddress())
+            ).to.be.revertedWith("ClaimRegistry: zero admin address");
         });
     });
 
