@@ -13,7 +13,7 @@ import "./StorageCompatibilityValidator.sol";
  *      the timelock with the required 7-day delay. It also includes additional validation checks
  *      before allowing any upgrades to prevent unsafe implementations.
  */
-contract TimelockOwnedProxyAdmin is ProxyAdmin {
+contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     // 7-day upgrade delay as required
     uint256 public constant UPGRADE_DELAY = 7 days;
     
@@ -69,9 +69,10 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin {
         
         timelock = TimelockController(payable(_timelock));
         storageValidator = StorageCompatibilityValidator(_storageValidator);
-        
-        // Transfer ownership to the timelock immediately - this ensures only timelock can call owner-only functions
-        _transferOwnership(_timelock);
+
+        // ProxyAdmin's constructor sets the owner via Ownable(initialOwner).
+        // We pass _timelock directly so the timelock is the only address that
+        // can call onlyOwner functions (including upgradeAndCall).
     }
     
     /**
