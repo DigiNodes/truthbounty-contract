@@ -3,6 +3,9 @@
 
 name: CI
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -101,7 +104,7 @@ jobs:
         with:
           version: latest
       - name: Run Foundry fuzz tests
-        run: forge test --match-path "fuzz"
+        run: forge test --match-path "test/fuzz/**"
 
   invariant-tests:
     name: Invariant Tests
@@ -130,7 +133,7 @@ jobs:
         with:
           version: latest
       - name: Run Foundry invariant tests
-        run: forge test --match-path "Invariant"
+        run: forge test --match-path "test/invariant/**"
 
   gas-check:
     name: Gas Check
@@ -159,9 +162,4 @@ jobs:
         with:
           version: latest
       - name: Check gas snapshots
-        run: |
-          if [ -f .gas-snapshots.json ]; then
-            forge snapshot --check
-          else
-            echo "No gas snapshot file found. Skipping."
-          fi
+        run: forge snapshot --check
