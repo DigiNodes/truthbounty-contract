@@ -1154,6 +1154,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             refundedStake: 0,
             settled: false
         });
+    }
+
     /**
      * @notice Set the reputation update engine address
      * @param _newEngine Address of the ReputationUpdateEngine contract
