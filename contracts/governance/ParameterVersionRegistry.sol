@@ -343,7 +343,6 @@ contract ParameterVersionRegistry is
      */
     function isVersionSuperseded(uint256 versionId) external view returns (bool) {
         return _versionSuperseded[versionId];
-    }ded[versionId];
     }
 
     // ============ Internal Validation ============
