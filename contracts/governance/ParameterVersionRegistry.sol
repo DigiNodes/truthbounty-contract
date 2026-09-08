@@ -28,7 +28,6 @@ contract ParameterVersionRegistry is
     // ============ Errors ============
     error InvalidAllocationBPS(uint256 sum);
     error InvalidEmissionLimit();
-    error InvalidRewardMultiplier();
     error InvalidFee();
     error InvalidBPS();
     error InvalidStakeAmount();
@@ -345,42 +344,6 @@ contract ParameterVersionRegistry is
         return _versionSuperseded[versionId];
     }
 
-    // ============ Internal Validation ============
-    
-    function _validateParameterBounds(EconomicParameters calldata params) internal pure {
-        // Validate allocation basis points sum to exactly 10000
-        uint256 totalBPS = params.verifierRewardsBPS +
-                          params.treasuryReserveBPS +
-                          params.ecosystemIncentivesBPS +
-                          params.governanceIncentivesBPS +
-                          params.protocolDevelopmentBPS +
-                          params.emergencyReserveBPS;
-                          
-        if (totalBPS != BPS_DENOMINATOR) revert InvalidAllocationBPS(totalBPS);
-        
-        // Validate fee parameters are within reasonable bounds
-        if (params.claimSubmissionFee > 100e18) revert InvalidFee("claimSubmissionFee too high");
-        if (params.verificationSubmissionFee > 100e18) revert InvalidFee("verificationSubmissionFee too high");
-        if (params.disputeInitiationFee > 100e18) revert InvalidFee("disputeInitiationFee too high");
-        if (params.protocolReserveFeeBPS > 1000) revert InvalidFee("protocolReserveFeeBPS too high (max 10%)");
-        
-        // Validate reputation parameters
-        if (params.minReputationScore > params.maxReputationScore) revert InvalidReputationBounds();
-        if (params.defaultReputationScore < params.minReputationScore || params.defaultReputationScore > params.maxReputationScore) {
-            revert InvalidDefaultReputation();
-        }
-        
-        // Validate slashing parameters
-        if (params.slashPercentageBPS > params.maxSlashPercentageBPS) revert InvalidSlashBounds();
-        if (params.maxSlashPercentageBPS > BPS_DENOMINATOR) revert InvalidMaxSlash();
-        
-        // Validate staking parameters
-        if (params.minStakeAmount == 0) revert InvalidMinStake();
-        
-        // Validate multiplier parameters
-        if (params.rewardMultiplier == 0) revert InvalidRewardMultiplier();
-    }
-
     // ============ Guardian cannot activate or edit versions (security requirement) ===========
     
     /// @notice Guardians can only cancel queued versions, never activate or edit them
@@ -412,12 +375,5 @@ contract ParameterVersionRegistry is
     error InvalidClaimId();
     error TimelockTooShort(uint256 provided, uint256 minimum);
     error TimelockTooLong(uint256 provided, uint256 maximum);
-    error InvalidAllocationBPS(uint256 total);
-    error InvalidFee(string reason);
-    error InvalidReputationBounds();
-    error InvalidDefaultReputation();
-    error InvalidSlashBounds();
-    error InvalidMaxSlash();
-    error InvalidMinStake();
     error InvalidRewardMultiplier();
 }
