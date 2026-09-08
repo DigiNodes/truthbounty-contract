@@ -78,12 +78,12 @@ contract TokenomicsEngineTest is Test {
     }
 
     function test_Revert_ZeroTreasury() public {
-        vm.expectRevert(TokenomicsEngine.AllocationConfigInvalid("zero treasury"));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.AllocationConfigInvalid.selector, "zero treasury"));
         new TokenomicsEngine(address(0), address(token), admin, address(0));
     }
 
     function test_Revert_ZeroToken() public {
-        vm.expectRevert(TokenomicsEngine.AllocationConfigInvalid("zero token"));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.AllocationConfigInvalid.selector, "zero token"));
         new TokenomicsEngine(address(treasury), address(0), admin, address(0));
     }
 
