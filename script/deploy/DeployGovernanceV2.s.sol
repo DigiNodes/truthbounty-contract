@@ -8,6 +8,7 @@ import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModu
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
 
 /**
@@ -58,7 +59,7 @@ contract DeployGovernanceV2 is Script {
             cfg.quorumNumerator
         );
 
-        GovernanceGuardian guardianContract = new GovernanceGuardian(cfg.admin, cfg.guardian, governor);
+        GovernanceGuardian guardianContract = new GovernanceGuardian(cfg.admin, cfg.guardian, ITruthBountyGovernor(address(governor)));
 
         vm.stopBroadcast();
         vm.startBroadcast(cfg.guardian);
