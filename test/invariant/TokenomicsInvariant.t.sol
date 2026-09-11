@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "forge-std/StdInvariant.sol";
 import "forge-std/Test.sol";
 import "../../contracts/tokenomics/TokenomicsEngine.sol";
+import "../../contracts/tokenomics/ITokenomicsEngine.sol";
 import "../../contracts/treasury/TreasuryAccounting.sol";
 import "../../contracts/MockERC20.sol";
 
@@ -19,7 +20,7 @@ contract TokenomicsInvariant is StdInvariant, Test {
     uint256 constant INITIAL_SUPPLY = 1_000_000e18;
 
     function setUp() public {
-        token = new MockERC20();
+        token = new MockERC20("TruthBounty Test", "TBT");
         token.mint(sender, INITIAL_SUPPLY);
 
         treasury = new TreasuryAccounting(
@@ -51,10 +52,10 @@ contract TokenomicsInvariant is StdInvariant, Test {
     // ============ Invariant 1: Allocation Shares Sum to Total ============
 
     function invariant_AllocationSharesSumToTotal() public {
-        uint256 len = tokenomics.distributionHistoryLength();
+        uint256 len = tokenomics.getDistributionHistoryLength();
         for (uint256 i = 0; i < len; i++) {
             bytes32 distributionId = tokenomics.distributionIds(i);
-            TokenomicsEngine.DistributionRecord memory d = tokenomics.getDistributionRecord(distributionId);
+            ITokenomicsEngine.DistributionRecord memory d = tokenomics.getDistributionRecord(distributionId);
             uint256 sum = d.verifierRewards
                 + d.treasuryReserve
                 + d.ecosystemIncentives
@@ -86,8 +87,8 @@ contract TokenomicsInvariant is StdInvariant, Test {
 
     function invariant_ActiveConfigsSumTo10000() public {
         for (uint256 i = 0; i < 5; i++) {
-            TokenomicsEngine.RevenueSource source = TokenomicsEngine.RevenueSource(i);
-            TokenomicsEngine.SourceAllocation memory config = tokenomics.getAllocationConfig(source);
+            ITokenomicsEngine.RevenueSource source = ITokenomicsEngine.RevenueSource(i);
+            ITokenomicsEngine.SourceAllocation memory config = tokenomics.getAllocationConfig(source);
             if (config.active) {
                 uint256 totalBPS = config.verifierRewardsBPS
                     + config.treasuryReserveBPS
@@ -103,7 +104,7 @@ contract TokenomicsInvariant is StdInvariant, Test {
     // ============ Invariant 5: History Length Bounds ============
 
     function invariant_HistoryWithinBounds() public {
-        uint256 len = tokenomics.distributionHistoryLength();
+        uint256 len = tokenomics.getDistributionHistoryLength();
         assertLe(len, type(uint256).max);
     }
 }
