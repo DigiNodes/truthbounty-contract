@@ -559,7 +559,7 @@ contract TokenomicsEngineTest is Test {
                 + config.protocolDevelopmentBPS
                 + config.emergencyReserveBPS;
 
-            assertEq(totalBPS, TokenomicsEngine.BPS_DENOMINATOR, "BPS must sum to 10000");
+            assertEq(totalBPS, tokenomics.BPS_DENOMINATOR(), "BPS must sum to 10000");
         }
     }
 
