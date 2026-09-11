@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../../contracts/tokenomics/TokenomicsEngine.sol";
+import "../../contracts/tokenomics/ITokenomicsEngine.sol";
 import "../../contracts/treasury/TreasuryAccounting.sol";
 import "../../contracts/MockERC20.sol";
 
@@ -32,7 +33,7 @@ contract TokenomicsFuzzTest is Test {
     uint256 constant INITIAL_SUPPLY = 1_000_000e18;
 
     function setUp() public {
-        token = new MockERC20();
+        token = new MockERC20("TruthBounty Test", "TBT");
         token.mint(address(this), INITIAL_SUPPLY);
 
         treasury = new TreasuryAccounting(
@@ -84,7 +85,7 @@ contract TokenomicsFuzzTest is Test {
         }
 
         vm.startPrank(admin);
-        TokenomicsEngine.SourceAllocation memory config = TokenomicsEngine.SourceAllocation({
+        ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: verifier,
             treasuryReserveBPS: treasury,
             ecosystemIncentivesBPS: ecosystem,
@@ -99,7 +100,7 @@ contract TokenomicsFuzzTest is Test {
         );
         vm.stopPrank();
 
-        TokenomicsEngine.SourceAllocation memory stored = tokenomics.getAllocationConfig(
+        ITokenomicsEngine.SourceAllocation memory stored = tokenomics.getAllocationConfig(
             TokenomicsEngine.RevenueSource.PROTOCOL_FEES
         );
         assertEq(stored.verifierRewardsBPS, verifier);
@@ -299,7 +300,7 @@ contract TokenomicsFuzzTest is Test {
         if (total == 10000) return;
 
         vm.startPrank(admin);
-        TokenomicsEngine.SourceAllocation memory config = TokenomicsEngine.SourceAllocation({
+        ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: bound(verifier, 1, 9999),
             treasuryReserveBPS: bound(treasury, 1, 9999),
             ecosystemIncentivesBPS: bound(ecosystem, 1, 9999),
