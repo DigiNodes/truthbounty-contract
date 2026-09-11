@@ -17,8 +17,8 @@ contract LifecycleFixtureTest is LifecycleFixture {
         uint256 claimId = driveUndisputedClaim(true);
         
         // Assert state matches expected
-        // Claim struct has 11 fields. 6th is `settled`
-        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
+        // Claim struct has 12 fields. 6th is `settled`
+        (, , , , , bool settled, , , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
         // Verify balances (verifiers won the undisputed claim and should receive rewards)
@@ -29,7 +29,7 @@ contract LifecycleFixtureTest is LifecycleFixture {
     function testChallengedClaimLifecycle_ChallengerWins() public {
         uint256 claimId = driveChallengedClaim(true);
         
-        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
+        (, , , , , bool settled, , , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
         // Vote struct has 11 fields. 6th is `rewardClaimed`, 7th is `stakeReturned`
@@ -45,7 +45,7 @@ contract LifecycleFixtureTest is LifecycleFixture {
     function testChallengedClaimLifecycle_SubmitterWins() public {
         uint256 claimId = driveChallengedClaim(false);
         
-        (, , , , , bool settled, , , , , ) = truthBounty.claims(claimId);
+        (, , , , , bool settled, , , , , , ) = truthBounty.claims(claimId);
         assertTrue(settled, "Claim should be settled");
         
         (, , , , , bool v1RewardClaimed, bool v1StakeReturned, , , , ) = truthBounty.votes(claimId, verifier1);
