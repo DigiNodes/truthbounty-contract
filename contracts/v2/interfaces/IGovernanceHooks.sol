@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-ppragma solidity ^^0.8.20;
+pragma solidity ^0.8.20;
 
 interface IConfigurationRegistry {
     struct ParameterSet {
