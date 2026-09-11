@@ -243,10 +243,10 @@ contract VerificationSubmission is IVerificationSubmission, ReentrancyGuard {
         uint256[] memory verificationIds = _claimVerifications[claimId];
         for (uint256 i = 0; i < verificationIds.length; i++) {
             Verification memory v = _verifications[verificationIds[i]];
-            if (v.verdict == VerificationVerdict.True) {
+            if (v.verdict == VerificationVerdict.TRUE) {
                 trueWeight += v.stake;
                 trueCount++;
-            } else if (v.verdict == VerificationVerdict.False) {
+            } else if (v.verdict == VerificationVerdict.FALSE) {
                 falseWeight += v.stake;
                 falseCount++;
             }
