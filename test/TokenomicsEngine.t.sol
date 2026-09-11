@@ -122,7 +122,7 @@ contract TokenomicsEngineTest is Test {
 
     function test_DistributeRevenue_RejectsZeroAmount() public {
         vm.startPrank(distributor);
-        vm.expectRevert(TokenomicsEngine.ZeroAmount());
+        vm.expectRevert(TokenomicsEngine.ZeroAmount.selector);
         tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, 0);
         vm.stopPrank();
     }
@@ -144,7 +144,7 @@ contract TokenomicsEngineTest is Test {
         vm.stopPrank();
 
         vm.startPrank(distributor);
-        vm.expectRevert(TokenomicsEngine.SourceNotActive(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.SourceNotActive.selector, ITokenomicsEngine.RevenueSource.PROTOCOL_FEES));
         tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, 100e18);
         vm.stopPrank();
     }
@@ -164,7 +164,7 @@ contract TokenomicsEngineTest is Test {
         token.approve(address(tokenomics), amount);
         vm.stopPrank();
 
-        vm.expectRevert(TokenomicsEngine.DuplicateDistribution(bytes32(0)));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.DuplicateDistribution.selector, bytes32(0)));
         tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, amount);
         vm.stopPrank();
     }
@@ -185,7 +185,7 @@ contract TokenomicsEngineTest is Test {
         vm.stopPrank();
 
         vm.startPrank(distributor);
-        vm.expectRevert(TokenomicsEngine.TreasuryOverdraft());
+        vm.expectRevert(TokenomicsEngine.TreasuryOverdraft.selector);
         tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, 100e18);
         vm.stopPrank();
     }
@@ -220,7 +220,7 @@ contract TokenomicsEngineTest is Test {
         uint256[] memory amounts = new uint256[](2);
 
         vm.startPrank(distributor);
-        vm.expectRevert(TokenomicsEngine.InvalidBatchLength());
+        vm.expectRevert(TokenomicsEngine.InvalidBatchLength.selector);
         tokenomics.allocateBatch(sources, amounts);
         vm.stopPrank();
     }
@@ -230,7 +230,7 @@ contract TokenomicsEngineTest is Test {
         uint256[] memory amounts = new uint256[](0);
 
         vm.startPrank(distributor);
-        vm.expectRevert(TokenomicsEngine.InvalidBatchLength());
+        vm.expectRevert(TokenomicsEngine.InvalidBatchLength.selector);
         tokenomics.allocateBatch(sources, amounts);
         vm.stopPrank();
     }
@@ -303,7 +303,7 @@ contract TokenomicsEngineTest is Test {
 
     function test_SetRewardMultiplier_RevertsOnZero() public {
         vm.startPrank(admin);
-        vm.expectRevert(TokenomicsEngine.InvalidRewardMultiplier());
+        vm.expectRevert(TokenomicsEngine.InvalidRewardMultiplier.selector);
         tokenomics.setRewardMultiplier(0);
         vm.stopPrank();
     }
@@ -318,7 +318,7 @@ contract TokenomicsEngineTest is Test {
 
     function test_SetTreasuryReserveTarget_RevertsOnExcess() public {
         vm.startPrank(admin);
-        vm.expectRevert(TokenomicsEngine.InvalidTreasuryReserveTarget());
+        vm.expectRevert(TokenomicsEngine.InvalidTreasuryReserveTarget.selector);
         tokenomics.setTreasuryReserveTarget(10001);
         vm.stopPrank();
     }
@@ -514,7 +514,7 @@ contract TokenomicsEngineTest is Test {
         token.approve(address(tokenomics), 100e18);
         vm.stopPrank();
 
-        vm.expectRevert(TokenomicsEngine.EmissionLimitExceeded(100e18, 50e18));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.EmissionLimitExceeded.selector, 100e18, 50e18));
         tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, 50e18);
         vm.stopPrank();
     }
