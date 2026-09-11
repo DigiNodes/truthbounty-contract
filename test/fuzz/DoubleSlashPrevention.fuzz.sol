@@ -123,7 +123,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
         truthBounty.settleClaim(claimId);
 
         // Get settlement results
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, , , , , ) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed, , , , , , , , , , , , ) = truthBounty.settlementResults(claimId);
 
         // Calculate sum of per-vote slashes by tracking before/after balances
         uint256 expectedTotalSlashed = 0;
@@ -193,7 +193,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
         for (uint256 i = 0; i < 5; i++) {
             address verifier = verifiers[i];
             (, bool support, , , , , , uint256 slashAmount, , , ) = truthBounty.votes(claimId, verifier);
-            (bool passed, , , , , , , ) = truthBounty.settlementResults(claimId);
+            (bool passed, , , , , , , , , , , , , , ) = truthBounty.settlementResults(claimId);
 
             if (support != passed) {
                 // This is a loser
@@ -258,7 +258,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
             truthBounty.settleClaim(claimId);
 
             // Add claim's slashed amount to total
-            (, , uint256 totalSlashed, , , , , ) = truthBounty.settlementResults(claimId);
+            (, , uint256 totalSlashed, , , , , , , , , , , , ) = truthBounty.settlementResults(claimId);
             totalExpectedSlash += totalSlashed;
         }
 
@@ -318,7 +318,7 @@ contract DoubleSlashPreventionFuzzTest is Test {
         vm.prank(admin, admin);
         overflowTruthBounty.settleClaim(claimId);
 
-        (, , uint256 totalSlashed, , , , , ) = overflowTruthBounty.settlementResults(claimId);
+        (, , uint256 totalSlashed, , , , , , , , , , , , ) = overflowTruthBounty.settlementResults(claimId);
         uint256 expectedSlash = loserStake / 5; // 20% of the losing side's stake
 
         assertEq(totalSlashed, expectedSlash, "Large slash amount should calculate correctly");
