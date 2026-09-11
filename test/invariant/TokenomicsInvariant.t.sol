@@ -96,7 +96,7 @@ contract TokenomicsInvariant is StdInvariant, Test {
                     + config.governanceIncentivesBPS
                     + config.protocolDevelopmentBPS
                     + config.emergencyReserveBPS;
-                assertEq(totalBPS, TokenomicsEngine.BPS_DENOMINATOR());
+                assertEq(totalBPS, tokenomics.BPS_DENOMINATOR());
             }
         }
     }
