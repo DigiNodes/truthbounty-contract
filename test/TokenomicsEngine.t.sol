@@ -369,7 +369,7 @@ contract TokenomicsEngineTest is Test {
 
         vm.startPrank(distributor);
         vm.expectEmit(true, false, false, true);
-        emit TokenomicsEngine.RevenueReceived(
+        emit ITokenomicsEngine.RevenueReceived(
             ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             amount,
             distributor
@@ -387,7 +387,7 @@ contract TokenomicsEngineTest is Test {
 
         vm.startPrank(distributor);
         vm.expectEmit(true, false, false, false);
-        emit TokenomicsEngine.IncentiveDistributionCompleted(
+        emit ITokenomicsEngine.IncentiveDistributionCompleted(
             bytes32(0),
             40e18, // verifier rewards (4000 BPS)
             15e18, // ecosystem
@@ -411,7 +411,7 @@ contract TokenomicsEngineTest is Test {
             active: true
         });
         vm.expectEmit(true, false, false, false);
-        emit TokenomicsEngine.AllocationUpdated(
+        emit ITokenomicsEngine.AllocationUpdated(
             ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             4000, 2000, 1500, 1000, 1000, 500,
             5000, 3000, 0, 1000, 500, 500
