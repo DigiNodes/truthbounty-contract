@@ -88,7 +88,7 @@ contract TokenomicsEngineTest is Test {
     }
 
     function test_Revert_ZeroAdmin() public {
-        vm.expectRevert(TokenomicsEngine.AllocationConfigInvalid("zero admin"));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.AllocationConfigInvalid.selector, "zero admin"));
         new TokenomicsEngine(address(treasury), address(token), address(0), address(0));
     }
 
@@ -277,7 +277,7 @@ contract TokenomicsEngineTest is Test {
             active: true
         });
         // Sum = 11000 > 10000
-        vm.expectRevert(TokenomicsEngine.AllocationConfigInvalid("basis points do not sum to 10000"));
+        vm.expectRevert(abi.encodeWithSelector(TokenomicsEngine.AllocationConfigInvalid.selector, "basis points do not sum to 10000"));
         tokenomics.setSourceAllocation(
             ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             invalidConfig
@@ -303,7 +303,7 @@ contract TokenomicsEngineTest is Test {
 
     function test_SetRewardMultiplier_RevertsOnZero() public {
         vm.startPrank(admin);
-        vm.expectReverr(TokenomicsEngine.InvalidRewardMultiplier());
+        vm.expectRevert(TokenomicsEngine.InvalidRewardMultiplier());
         tokenomics.setRewardMultiplier(0);
         vm.stopPrank();
     }
