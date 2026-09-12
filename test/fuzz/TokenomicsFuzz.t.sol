@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../../contracts/tokenomics/TokenomicsEngine.sol";
+import "../../contracts/tokenomics/ITokenomicsEngine.sol";
 import "../../contracts/treasury/TreasuryAccounting.sol";
 import "../../contracts/MockERC20.sol";
 
@@ -32,7 +33,7 @@ contract TokenomicsFuzzTest is Test {
     uint256 constant INITIAL_SUPPLY = 1_000_000e18;
 
     function setUp() public {
-        token = new MockERC20();
+        token = new MockERC20("TruthBounty Test", "TBT");
         token.mint(address(this), INITIAL_SUPPLY);
 
         treasury = new TreasuryAccounting(
@@ -84,7 +85,7 @@ contract TokenomicsFuzzTest is Test {
         }
 
         vm.startPrank(admin);
-        TokenomicsEngine.SourceAllocation memory config = TokenomicsEngine.SourceAllocation({
+        ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: verifier,
             treasuryReserveBPS: treasury,
             ecosystemIncentivesBPS: ecosystem,
@@ -94,13 +95,13 @@ contract TokenomicsFuzzTest is Test {
             active: true
         });
         tokenomics.setSourceAllocation(
-            TokenomicsEngine.RevenueSource.PROTOCOL_FEES,
+            ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             config
         );
         vm.stopPrank();
 
-        TokenomicsEngine.SourceAllocation memory stored = tokenomics.getAllocationConfig(
-            TokenomicsEngine.RevenueSource.PROTOCOL_FEES
+        ITokenomicsEngine.SourceAllocation memory stored = tokenomics.getAllocationConfig(
+            ITokenomicsEngine.RevenueSource.PROTOCOL_FEES
         );
         assertEq(stored.verifierRewardsBPS, verifier);
         assertEq(stored.treasuryReserveBPS, treasury);
@@ -128,12 +129,12 @@ contract TokenomicsFuzzTest is Test {
 
         vm.startPrank(distributor);
         bytes32 distributionId = tokenomics.distributeRevenue(
-            TokenomicsEngine.RevenueSource.PROTOCOL_FEES,
+            ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             amount
         );
         vm.stopPrank();
 
-        TokenomicsEngine.DistributionRecord memory record = tokenomics.getDistributionRecord(distributionId);
+        ITokenomicsEngine.DistributionRecord memory record = tokenomics.getDistributionRecord(distributionId);
         assertEq(record.totalAmount, amount);
 
         uint256 sum = record.verifierRewards
@@ -154,14 +155,14 @@ contract TokenomicsFuzzTest is Test {
         count = bound(count, 1, 5);
         totalAmount = bound(totalAmount, 1, INITIAL_SUPPLY / 10);
 
-        TokenomicsEngine.RevenueSource[] memory sources = new TokenomicsEngine.RevenueSource[](count);
+        ITokenomicsEngine.RevenueSource[] memory sources = new ITokenomicsEngine.RevenueSource[](count);
         uint256[] memory amounts = new uint256[](count);
 
         uint256 perSource = totalAmount / count;
         uint256 remainder = totalAmount % count;
 
         for (uint256 i = 0; i < count; i++) {
-            sources[i] = TokenomicsEngine.RevenueSource(i);
+            sources[i] = ITokenomicsEngine.RevenueSource(i);
             amounts[i] = i < remainder ? perSource + 1 : perSource;
         }
 
@@ -211,15 +212,15 @@ contract TokenomicsFuzzTest is Test {
         vm.startPrank(distributor);
 
         if (attempt1 <= limit) {
-            tokenomics.distributeRevenue(TokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt1);
+            tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt1);
         } else {
             vm.expectRevert(TokenomicsEngine.EmissionLimitExceeded.selector);
-            tokenomics.distributeRevenue(TokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt1);
+            tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt1);
         }
 
         if (attempt1 + attempt2 > limit && attempt1 <= limit) {
             vm.expectRevert(TokenomicsEngine.EmissionLimitExceeded.selector);
-            tokenomics.distributeRevenue(TokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt2);
+            tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, attempt2);
         }
 
         vm.stopPrank();
@@ -249,12 +250,12 @@ contract TokenomicsFuzzTest is Test {
 
         vm.startPrank(distributor);
         bytes32 distributionId = tokenomics.distributeRevenue(
-            TokenomicsEngine.RevenueSource.PROTOCOL_FEES,
+            ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             amount
         );
         vm.stopPrank();
 
-        TokenomicsEngine.DistributionRecord memory record = tokenomics.getDistributionRecord(distributionId);
+        ITokenomicsEngine.DistributionRecord memory record = tokenomics.getDistributionRecord(distributionId);
 
         // Base verifier reward for PROTOCOL_FEES is 4000 BPS
         uint256 expectedVerifierRewards = (amount * 4000 * multiplier) / (10000 * 1e18);
@@ -276,8 +277,8 @@ contract TokenomicsFuzzTest is Test {
         vm.stopPrank();
 
         vm.startPrank(distributor);
-        bytes32 id1 = tokenomics.distributeRevenue(TokenomicsEngine.RevenueSource.PROTOCOL_FEES, amount);
-        bytes32 id2 = tokenomics.distributeRevenue(TokenomicsEngine.RevenueSource.TREASURY_ALLOCATION, amount);
+        bytes32 id1 = tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.PROTOCOL_FEES, amount);
+        bytes32 id2 = tokenomics.distributeRevenue(ITokenomicsEngine.RevenueSource.TREASURY_ALLOCATION, amount);
         vm.stopPrank();
 
         assertTrue(id1 != id2, "IDs must be unique across sources");
@@ -299,7 +300,7 @@ contract TokenomicsFuzzTest is Test {
         if (total == 10000) return;
 
         vm.startPrank(admin);
-        TokenomicsEngine.SourceAllocation memory config = TokenomicsEngine.SourceAllocation({
+        ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: bound(verifier, 1, 9999),
             treasuryReserveBPS: bound(treasury, 1, 9999),
             ecosystemIncentivesBPS: bound(ecosystem, 1, 9999),
@@ -310,7 +311,7 @@ contract TokenomicsFuzzTest is Test {
         });
         vm.expectRevert(TokenomicsEngine.AllocationConfigInvalid.selector);
         tokenomics.setSourceAllocation(
-            TokenomicsEngine.RevenueSource.PROTOCOL_FEES,
+            ITokenomicsEngine.RevenueSource.PROTOCOL_FEES,
             config
         );
         vm.stopPrank();

@@ -105,7 +105,7 @@ contract SlashingHandler is CommonBase {
         uint256 claimId = claimIds[claimIdx];
 
         // Skip if already settled
-        (,,,,, bool settled,,,,,) = truthBounty.claims(claimId);
+        (,,,,, bool settled,,,,,,) = truthBounty.claims(claimId);
         if (settled) return;
 
         // Move past window if needed
