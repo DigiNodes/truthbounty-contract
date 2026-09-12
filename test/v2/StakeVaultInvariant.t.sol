@@ -144,7 +144,7 @@ contract StakeVaultInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         handler = new StakeVaultInvariantHandler();
-        targetContract(address(handler.vault));
+        targetContract(address(handler.vault()));
     }
 
     function invariant_obligationsNeverExceedCustody() public view {
