@@ -1,0 +1,40 @@
+name: V2 Policy Advisory
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-policy:
+    name: Architecture Policy (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect changed production files
+        shell: bash
+        run: |
+          set -u
+          git diff --name-only "origin/${{ github.base_ref || 'main' }}...HEAD" |
+            grep -E '^(src|script)/.*\.(sol|ts|js)$' > /tmp/truthbounty-files || true
+
+          if [[ ! -s /tmp/truthbounty-files ]]; then
+            echo "No changed production contract files."
+            exit 0
+          fi
+
+          while IFS= read -r file; do
+            if grep -Ein 'stellar|soroban|freighter' "$file"; then
+              echo "::warning file=$file::Alternate-chain runtime reference detected. TruthBounty V2 is Optimism/EVM-only."
+            fi
+            if grep -Ein 'address\(0\)|0x0000000000000000000000000000000000000000' "$file"; then
+              echo "::warning file=$file::Review zero-address handling and constructor/configuration validation."
+            fi
+          done < /tmp/truthbounty-files
+
+          echo "Advisory mode: findings do not fail this workflow."
