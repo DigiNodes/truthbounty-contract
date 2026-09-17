@@ -9,6 +9,7 @@ import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModu
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
 import {MockGovernedModule} from "../../contracts/mocks/MockGovernedModule.sol";
 
@@ -54,7 +55,7 @@ contract TruthBountyGovernorTest is Test {
             QUORUM_NUMERATOR
         );
 
-        guardianContract = new GovernanceGuardian(admin, guardian, governor);
+        guardianContract = new GovernanceGuardian(admin, guardian, ITruthBountyGovernor(address(governor)));
         vm.prank(guardian);
         governor.setGovernanceGuardianModule(address(guardianContract));
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);

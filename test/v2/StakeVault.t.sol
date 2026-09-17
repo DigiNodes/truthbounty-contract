@@ -354,7 +354,7 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.claimableBalance(address(token), verifier), STAKE + STAKE / 2);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.CONCLUDED);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.CONCLUDED));
     }
 
     function test_settleConclusive_unauthorizedReverts() public {
@@ -426,7 +426,7 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.claimableBalance(address(token), verifier), STAKE);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.REFUNDED);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.REFUNDED));
     }
 
     function test_refundInconclusive_unauthorizedReverts() public {
@@ -459,7 +459,7 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.CARRIED_FORWARD);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.CARRIED_FORWARD));
         assertEq(vault.totalCustody(address(token)), STAKE);
     }
 
@@ -502,7 +502,7 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.ROLLED_OVER);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.ROLLED_OVER));
     }
 
     function test_rolloverRound_unauthorizedReverts() public {
@@ -523,7 +523,7 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.claimableBalance(address(token), verifier), STAKE);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.UNLOCKED);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.UNLOCKED));
     }
 
     function test_finalUnlock_unauthorizedReverts() public {
@@ -548,7 +548,7 @@ contract StakeVaultTest is Test {
     }
 
     function test_settlementOutcome_initialNone() public view {
-        assertEq(vault.settlementOutcome(CLAIM_A, 0), IV2Types.SettlementOutcome.NONE);
+        assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.NONE));
     }
 
     function test_settleConclusive_partialUnlock() public {
