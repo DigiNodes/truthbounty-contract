@@ -70,7 +70,7 @@ jobs:
           DEPLOY_ENV: ${{ github.event.inputs.environment }}
 
       - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-artifacts-${{ github.event.inputs.environment }}
           path: deployments/${{ github.event.inputs.environment }}/
