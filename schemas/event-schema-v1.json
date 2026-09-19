@@ -68,6 +68,7 @@
       "name": "Dispute Resolution",
       "description": "Reconstructs dispute challenges, escalation bonds, rulings, and resulting outcome overrides.",
       "eventNames": [
+        "DisputeOpenedV1",
         "DisputeRaisedV1",
         "DisputeResolvedV1"
       ]
@@ -517,7 +518,7 @@
     },
     {
       "name": "DisputeOpenedV1",
-      "family": "uncategorized",
+      "family": "disputes",
       "signature": "event DisputeOpenedV1(uint256 indexed claimId, uint256 indexed disputeId, address indexed challenger, uint8 challengedOutcome, uint8 challengedStatus, address bondToken, uint256 bondAmount, uint64 appealDeadline, bytes32 appealRationaleHash, uint64 timestamp, uint16 version)",
       "topic0": "0x2dc0b76268b3ea7f2776ca97823ec0e3f3850e8fd55d17a7edcef9142ba529c6",
       "version": 1,
@@ -579,7 +580,7 @@
           "indexed": false
         }
       ],
-      "stateReplayRole": "Reconstructs uncategorized state transitions for indexer projection.",
+      "stateReplayRole": "Reconstructs disputes state transitions for indexer projection.",
       "financialImpact": false,
       "description": "Canonical V1 event for DisputeOpenedV1."
     },
@@ -2347,5 +2348,5 @@
       "description": "Canonical V1 event for WithdrawalQueuedV1."
     }
   ],
-  "checksum": "0xacd327809e82229c8df49ea951ac4be54037a2f491dad0cfc6cf9c151ef2b0cb"
+  "checksum": "0x66ae40a63656615c2620ae328b971bcdaeb033eb02f6265d3b0f08627460cd3f"
 }
