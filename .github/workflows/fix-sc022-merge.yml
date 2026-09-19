@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload compiler output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sc022-compile-output
           path: compile-output.txt
