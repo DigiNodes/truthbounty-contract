@@ -198,6 +198,70 @@ library V2Errors {
     error EmergencyAuthorityRequired();
 
     // =========================================================================
+    // Module Registry Errors
+    // =========================================================================
+
+    /// @notice Module key is not part of the canonical manifest.
+    error UnknownModuleId(bytes32 moduleId);
+
+    /// @notice Module key already has a pending or active registration.
+    error DuplicateModule(bytes32 moduleId);
+
+    /// @notice Module record does not exist.
+    error ModuleNotFound(bytes32 moduleId);
+
+    /// @notice Module is registered but not yet active.
+    error ModuleNotActive(bytes32 moduleId);
+
+    /// @notice Module is already ACTIVE; activation is a no-op.
+    error AlreadyActive(bytes32 moduleId);
+
+    /// @notice Module key has been deprecated and cannot be (re)activated.
+    error DeprecatedModule(bytes32 moduleId);
+
+    /// @notice Address carries no code (an EOA or empty address cannot be a module).
+    error ModuleNotAContract(address target);
+
+    /// @notice Attempted self-registration: the registry cannot register itself.
+    error SelfRegistration();
+
+    /// @notice A proxy is already bound to another module key (prevents circular authority).
+    error DuplicateProxy(address proxy);
+
+    /// @notice Module does not implement the expected canonical interface.
+    error ModuleInterfaceMismatch(bytes4 expected, bytes4 actual);
+
+    /// @notice Module protocol version is incompatible with the canonical release.
+    error ModuleVersionMismatch(uint16 actualMajor, uint16 expectedMajor);
+
+    /// @notice Declared registration version differs from the live module's reported version.
+    error DeclaredVersionMismatch(uint16 declaredMajor, uint16 declaredMinor, uint16 actualMajor, uint16 actualMinor);
+
+    /// @notice Address is on the forbidden legacy list.
+    error ForbiddenModule(address implementation);
+
+    /// @notice A required canonical dependency is not active.
+    error DependencyUnsatisfied(bytes32 moduleId, bytes32 requiredModuleId);
+
+    /// @notice Replacement proposed with identical content to the current module version.
+    error ReplacementNoop(bytes32 moduleId);
+
+    /// @notice No replacement is pending for the module key.
+    error ReplacementNotPending(bytes32 moduleId);
+
+    /// @notice Replacement timelock has not elapsed.
+    error ReplacementNotReady(bytes32 moduleId, uint256 readyAt);
+
+    /// @notice A zero or ERC-165-invalid interface ID was supplied.
+    error InvalidInterfaceId(bytes4 interfaceId);
+
+    /// @notice Guardian role is explicitly excluded from registry mutations.
+    error GuardianCannotReplaceModule(address caller);
+
+    /// @notice Denied mutator without the required deployer/governance role.
+    error RegistryUnauthorized();
+
+    // =========================================================================
     // Generic Validation Errors
     // =========================================================================
 

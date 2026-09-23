@@ -1,14 +1,12 @@
-import { HardhatUserConfig } from "hardhat/config";
-import "@nomicfoundation/hardhat-toolbox";
-import "hardhat-gas-reporter";
-import "@nomicfoundation/hardhat-ignition-ethers";
+import { defineConfig } from "hardhat/config";
+import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+import upgrades from "@openzeppelin/hardhat-upgrades";
 import * as dotenv from "dotenv";
-import "@openzeppelin/hardhat-upgrades";
 
 dotenv.config();
 
-const config: HardhatUserConfig = {
-solidity: {
+const config = defineConfig({
+  solidity: {
     version: "0.8.28",
     settings: {
       evmVersion: "cancun",
@@ -19,11 +17,14 @@ solidity: {
       },
     },
   },
+  plugins: [hardhatToolboxMochaEthers, upgrades],
   networks: {
     hardhat: {
+      type: "edr-simulated",
       allowUnlimitedContractSize: true,
     },
     optimismSepolia: {
+      type: "http",
       url:
         process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
@@ -34,6 +35,7 @@ solidity: {
         : undefined,
     },
     optimismMainnet: {
+      type: "http",
       url:
         process.env.OPTIMISM_MAINNET_RPC_URL || "https://mainnet.optimism.io",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
@@ -51,16 +53,6 @@ solidity: {
       optimisticSepolia: process.env.OPTIMISM_ETHERSCAN_API_KEY || "",
     },
   },
-  gasReporter: {
-    enabled: process.env.REPORT_GAS === "true",
-    outputFile: ".gas-reports.json",
-    noColors: true,
-    excludeContracts: [],
-    // @ts-ignore
-    snapshots: {
-      outputFile: ".gas-snapshots.json",
-    },
-  },
-};
+});
 
 export default config;
