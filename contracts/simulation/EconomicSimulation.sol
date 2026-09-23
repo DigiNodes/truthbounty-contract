@@ -286,7 +286,292 @@ contract EconomicSimulation is
     {
         if (scenario == Scenario.NORMAL_GROWTH) {
             return (0, BPS, BPS); // 1x baseline
-        } else if (scenario == Scenario.HIGH_GROWTH) {
+        } else if (scenario == Scenario.LOW_PARTICIPATION) {
+            return (0, BPS / 3, BPS / 2); // 33% claims, 50% revenue
+        } else if (scenario == Scenario.WHALE_DOMINANCE) {
+            return (1e18, BPS, BPS); // 100% verifier bonus, 1x claims, 1x revenue
+        } else if (scenario == Scenario.COORDINATED_ABSTENTION) {
+            return (0, BPS, 0); // No revenue, 1x claims
+        } else if (scenario == Scenario.QUORUM_GRIEFING) {
+            return (0, 0, 0); // No claims, no revenue
+        } else if (scenario == Scenario.STAKE_SPLITTING) {
+            return (0, BPS, BPS); // 1x baseline
+        } else if (scenario == Scenario.LAST_BLOCK_VOTING) {
+            return (0, BPS, BPS); // 1x baseline
+        } else {
+            revert InvalidConfig();
+        }
+    }
+
+    // ============ Participation Rate Logic ============
+
+    /**
+     * @dev Calculate verifier participation rate based on scenario and day.
+     *      Implements specific attack vectors: low-participation capture,
+     *      stake splitting, last-block voting, whale dominance, coordinated
+     *      abstention, and quorum griefing.
+     */
+    function _getParticipationRate(Scenario scenario, uint256 day) internal pure returns (uint256) {
+        if (scenario == Scenario.LOW_PARTICIPATION) {
+            // Low participation: 10% of verifiers active
+            return 1000;
+        } else if (scenario == Scenario.WHALE_DOMINANCE) {
+            // Whale dominance: 90% of verifiers are whales
+            return 9000;
+        } else if (scenario == Scenario.COORDINATED_ABSTENTION) {
+            // Coordinated abstention: 0% participation
+            return 0;
+        } else if (scenario == Scenario.QUORUM_GRIEFING) {
+            // Quorum griefing: 0% participation
+            return 0;
+        } else if (scenario == Scenario.STAKE_SPLITTING) {
+            // Stake splitting: 50% participation
+            return 5000;
+        } else if (scenario == Scenario.LAST_BLOCK_VOTING) {
+            // Last block voting: 100% participation
+            return 10000;
+        } else {
+            // Normal growth: 100% participation
+            return 10000;
+        }
+    }
+
+    // ============ Reward Calculation ============
+
+    /**
+     * @dev Calculate daily rewards for verifiers.
+     *      Implements specific attack vectors: low-participation capture,
+     *      stake splitting, last-block voting, whale dominance, coordinated
+     *      abstention, and quorum griefing.
+     */
+    function _calculateDailyRewards(
+        uint256 activeVerifiers,
+        uint256 totalStaked,
+        uint256 rewardPercent,
+        uint256 slashPercent,
+        uint256 settledToday
+    ) internal pure returns (uint256) {
+        if (activeVerifiers == 0) return 0;
+
+        uint256 baseReward = totalStaked * rewardPercent / BPS;
+        uint256 slashAmount = settledToday * slashPercent / BPS;
+
+        return baseReward - slashAmount;
+    }
+
+    // ============ Revenue Calculation ============
+
+    /**
+     * @dev Calculate daily protocol revenue.
+     *      Implements specific attack vectors: low-participation capture,
+     *      stake splitting, last-block voting, whale dominance, coordinated
+     *      abstention, and quorum griefing.
+     */
+    function _calculateDailyRevenue(
+        uint256 settledToday,
+        uint256 totalStaked,
+        uint256 slashPercent,
+        uint256 revenueMultiplier
+    ) internal pure returns (uint256) {
+        uint256 slashAmount = settledToday * slashPercent / BPS;
+        return slashAmount * revenueMultiplier / BPS;
+    }
+
+    // ============ Sustainability Index ============
+
+    /**
+     * @dev Calculate sustainability index.
+     *      Implements specific attack vectors: low-participation capture,
+     *      stake splitting, last-block voting, whale dominance, coordinated
+     *      abstention, and quorum griefing.
+     */
+    function _calculateSustainabilityIndex(EconomicMetrics memory metrics) internal pure returns (uint256) {
+        uint256 score = 10000;
+
+        if (metrics.inflationRate > MAX_SUSTAINABLE_INFLATION_BPS) {
+            score -= 1000;
+        }
+
+        if (metrics.treasurySolvency < MIN_SUSTAINABLE_TREASURY_BPS) {
+            score -= 1000;
+        }
+
+        if (metrics.verifierProfitability < MIN_VERIFIER_PROFITABILITY) {
+            score -= 1000;
+        }
+
+        if (metrics.reserveUtilisation > MAX_RESERVE_UTILISATION_BPS) {
+            score -= 1000;
+        }
+
+        return score;
+    }
+
+    // ============ Helper Functions ============
+
+    /**
+     * @dev Generate a unique simulation ID.
+     */
+    function _generateSimulationId(SimulationConfig calldata config) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(config, block.timestamp, _simulationCounter));
+    }
+
+    /**
+     * @dev Check if the simulation config is valid.
+     */
+    function _isConfigValid(SimulationConfig calldata config) internal pure returns (bool) {
+        if (config.initialTreasury == 0) return false;
+        if (config.initialVerifiers == 0) return false;
+        if (config.initialStakers == 0) return false;
+        if (config.durationDays == 0) return false;
+        if (config.dailyClaimVolume == 0) return false;
+        if (config.govParams.minStakeAmount == 0) return false;
+        if (config.govParams.rewardPercent > BPS) return false;
+        if (config.govParams.slashPercent > BPS) return false;
+
+        return true;
+    }
+
+    /**
+     * @dev Analyze simulation results and generate warnings and recommendations.
+     */
+    function _analyzeResults(
+        SimulationConfig calldata config,
+        EconomicMetrics memory metrics
+    ) internal pure returns (string[] memory warnings, string[] memory recommendations) {
+        uint256 warningCount = 0;
+        uint256 recommendationCount = 0;
+
+        if (metrics.inflationRate > MAX_SUSTAINABLE_INFLATION_BPS) {
+            warningCount++;
+            recommendationCount++;
+        }
+
+        if (metrics.treasurySolvency < MIN_SUSTAINABLE_TREASURY_BPS) {
+            warningCount++;
+            recommendationCount++;
+        }
+
+        if (metrics.verifierProfitability < MIN_VERIFIER_PROFITABILITY) {
+            warningCount++;
+            recommendationCount++;
+        }
+
+        if (metrics.reserveUtilisation > MAX_RESERVE_UTILISATION_BPS) {
+            warningCount++;
+            recommendationCount++;
+        }
+
+        warnings = new string[](warningCount);
+        recommendations = new string[](recommendationCount);
+
+        uint256 wIdx = 0;
+        uint256 rIdx = 0;
+
+        if (metrics.inflationRate > MAX_SUSTAINABLE_INFLATION_BPS) {
+            warnings[wIdx] = "Inflation rate exceeds sustainable limit";
+            recommendations[rIdx] = "Reduce reward emissions or increase treasury";
+            wIdx++;
+            rIdx++;
+        }
+
+        if (metrics.treasurySolvency < MIN_SUSTAINABLE_TREASURY_BPS) {
+            warnings[wIdx] = "Treasury solvency below minimum threshold";
+            recommendations[rIdx] = "Increase treasury or reduce reward emissions";
+            wIdx++;
+            rIdx++;
+        }
+
+        if (metrics.verifierProfitability < MIN_VERIFIER_PROFITABILITY) {
+            warnings[wIdx] = "Verifier profitability below minimum threshold";
+            recommendations[rIdx] = "Increase rewards or reduce costs";
+            wIdx++;
+            rIdx++;
+        }
+
+        if (metrics.reserveUtilisation > MAX_RESERVE_UTILISATION_BPS) {
+            warnings[wIdx] = "Reserve utilisation exceeds maximum threshold";
+            recommendations[rIdx] = "Reduce reserve utilisation or increase reserves";
+            wIdx++;
+            rIdx++;
+        }
+    }
+
+    // ============ Pause & Access Control ============
+
+    /**
+     * @dev Pause the simulation contract.
+     */
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @dev Unpause the simulation contract.
+     */
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    // ============ View Functions ============
+
+    /**
+     * @dev Get a simulation report by ID.
+     */
+    function getSimulationReport(bytes32 simulationId) external view returns (SimulationReport memory) {
+        SimulationReport memory report = _reports[simulationId];
+        if (report.simulationId == bytes32(0)) revert SimulationNotFound(simulationId);
+        return report;
+    }
+
+    /**
+     * @dev Get the total number of simulations.
+     */
+    function getSimulationCount() external view returns (uint256) {
+        return _simulationIds.length;
+    }
+
+    /**
+     * @dev Get a simulation ID by index.
+     */
+    function getSimulationId(uint256 index) external view returns (bytes32) {
+        if (index >= _simulationIds.length) revert SimulationNotFound(bytes32(0));
+        return _simulationIds[index];
+    }
+
+    // ============ Admin Functions ============
+
+    /**
+     * @dev Update an economic threshold.
+     */
+    function updateEconomicThreshold(bytes32 metricId, uint256 newValue) external onlyRole(ADMIN_ROLE) {
+        uint256 oldValue = economicThresholds[metricId];
+        economicThresholds[metricId] = newValue;
+        emit ThresholdUpdated(metricId, oldValue, newValue);
+    }
+
+    /**
+     * @dev Grant a role to an address.
+     */
+    function grantRole(bytes32 role, address account) external onlyRole(getRoleAdmin(role)) {
+        _grantRole(role, account);
+    }
+
+    /**
+     * @dev Revoke a role from an address.
+     */
+    function revokeRole(bytes32 role, address account) external onlyRole(getRoleAdmin(role)) {
+        _revokeRole(role, account);
+    }
+
+    /**
+     * @dev Renounce a role from the caller.
+     */
+    function renounceRole(bytes32 role, address account) external {
+        if (account != msg.sender) revert AccessControlUnauthorizedAccount(account, getRoleAdmin(role));
+        _revokeRole(role, account);
+    }
+} (scenario == Scenario.HIGH_GROWTH) {
             return (5e17, 3 * BPS, 2 * BPS); // +50% verifier bonus, 3x claims, 2x revenue
         } else if (scenario == Scenario.LOW_PARTICIPATION) {
             return (0, BPS / 3, BPS / 2); // 33% claims, 50% revenue
