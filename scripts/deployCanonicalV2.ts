@@ -164,7 +164,10 @@ async function main() {
   console.log("- AppealVerificationRound:", await suite.appealVerificationRound.getAddress());
 }
 
-if (require.main === module) {
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (invokedDirectly) {
   main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
