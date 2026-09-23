@@ -315,9 +315,21 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         return _protocolAllocation[asset];
     }
 
-    /// @notice Returns custody and total accounted obligations for reconciliation.
+    /// @notice Returns the canonical conservation equation terms for the asset.
+    /// @dev The invariant is: actualBalance == custody == claimable + locked + protocolAllocation.
     function reconcile(address asset) external view returns (uint256 custody, uint256 obligations) {
         return _reconcile(asset);
+    }
+
+    /// @notice Returns the canonical conservation terms including the raw on-chain balance for debugging and invariant checks.
+    function conservation(address asset)
+        external
+        view
+        returns (uint256 custody, uint256 obligations, uint256 actualBalance)
+    {
+        custody = _totalCustody[asset];
+        obligations = _protocolAllocation[asset] + _assetTotalLocked[asset] + _assetTotalClaimable[asset];
+        actualBalance = IERC20(asset).balanceOf(address(this));
     }
 
     // -------------------------------------------------------------------------
@@ -540,7 +552,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
 
     function _assertReconciliation(address asset) internal view {
         (uint256 custody, uint256 obligations) = _reconcile(asset);
+        uint256 actualBalance = IERC20(asset).balanceOf(address(this));
+
         if (obligations > custody) revert V2Errors.ObligationsExceedCustody(asset, custody, obligations);
+        if (custody != obligations || actualBalance != custody) {
+            revert V2Errors.ConservationInvariantViolation(asset, custody, obligations, actualBalance);
+        }
     }
 
     function _reconcile(address asset) internal view returns (uint256 custody, uint256 obligations) {
