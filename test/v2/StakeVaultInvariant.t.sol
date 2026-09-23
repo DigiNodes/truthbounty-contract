@@ -31,7 +31,7 @@ contract StakeVaultInvariantHandler is Test {
         userA = address(0xA);
         userB = address(0xB);
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         token.mint(userA, type(uint128).max / 2);
         token.mint(userB, type(uint128).max / 2);
