@@ -31,6 +31,14 @@ contract ProtocolUpgradeableHarness is ProtocolUpgradeable {
     }
 }
 
+contract UninitializedERC1967Proxy is ERC1967Proxy {
+    constructor(address implementation) ERC1967Proxy(implementation, bytes("")) {}
+
+    function _unsafeAllowUninitialized() internal pure override returns (bool) {
+        return true;
+    }
+}
+
 contract ProtocolInitializerSecurityTest is Test {
     address internal admin = address(0xA11CE);
     address internal attacker = address(0xBAD);
@@ -62,7 +70,7 @@ contract ProtocolInitializerSecurityTest is Test {
 
     function test_UnguardedDerivedSetupCannotInitialize() public {
         ProtocolUpgradeableHarness implementation = new ProtocolUpgradeableHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), bytes(""));
+        UninitializedERC1967Proxy proxy = new UninitializedERC1967Proxy(address(implementation));
         ProtocolUpgradeableHarness proxied = ProtocolUpgradeableHarness(address(proxy));
 
         vm.prank(attacker);
