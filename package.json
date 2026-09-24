@@ -9,6 +9,7 @@
     "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv",
     "test:fuzz:extended": "forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv && forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv",
     "test:coverage": "forge coverage --report lcov",
+    "test:coverage:gate": "forge coverage --report lcov --report summary --skip script && npx ts-node scripts/coverage-quality-gate.ts",
     "compile": "hardhat compile",
     "compile:forge": "forge build",
     "deploy": "hardhat run scripts/deploySlashing.ts",
