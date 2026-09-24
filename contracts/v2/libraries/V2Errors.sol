@@ -2,12 +2,30 @@
 pragma solidity ^0.8.20;
 
 /// @title V2Errors
-/// @notice Shared error definitions for the TruthBounty V2 protocol.
-/// @dev This library centralizes all protocol-level errors to ensure consistency
-///      across all V2 modules and improve maintainability.
+/// @notice Canonical custom-error catalog for the TruthBounty V2 protocol.
+/// @dev Revert taxonomy (machine-readable, no string reasons):
+///
+///      | Domain            | Selector family                         | Fail-closed on                          |
+///      |-------------------|-----------------------------------------|-----------------------------------------|
+///      | Auth / access     | Unauthorized*, ZeroAddress, Zero*       | Missing role, zero identity             |
+///      | Claims            | Claim*, CanonicalClaim*, InvalidClaim*  | Missing / duplicate / illegal transition |
+///      | Evidence          | Evidence*, DuplicateEvidence, ZeroDigest| Window, digest, nonce, duplicate        |
+///      | Verification      | Verification*, AlreadyVerified, Verdict | Window / stake / verdict                |
+///      | Settlement        | Settlement*, InvalidRoundTransfer       | Timing, outcome, round integrity        |
+///      | Disputes          | Dispute*                                | Window / duplicate / reason             |
+///      | Stake / custody   | Insufficient*, UnsupportedAsset, …      | Balances, assets, conservation          |
+///      | Aggregation       | InvalidAggregation*, Reputation*        | Score / update failures                 |
+///      | Configuration     | Invalid*Range/Duration/Bps, Parameter*  | Invalid set invariants                   |
+///      | Governance        | NotGovernance, ZeroGuardian*, Module*   | Authority / allowlist                   |
+///      | Slashing          | Slash*, SlashingNotPermitted            | Over-slash / policy                     |
+///      | Emergency         | ProtocolPaused, EmergencyAuthority*     | Pause / guardian path                   |
+///
+///      Modules MUST revert with these selectors (via `V2Errors.<Error>`) instead of
+///      `require`/`revert` string reasons or ad-hoc local errors that collide by name
+///      but differ by ABI. Prefer typed parameters over `string` reasons.
 library V2Errors {
     // =========================================================================
-    // Authorization & Access Control Errors
+    // Authorization & Access Control
     // =========================================================================
 
     /// @notice Attempted action by unauthorized caller.
@@ -22,8 +40,14 @@ library V2Errors {
     /// @notice Attempted action by an unregistered or unauthorized module.
     error UnauthorizedModule(address caller);
 
+    /// @notice Zero admin address supplied at construction.
+    error ZeroAdmin();
+
+    /// @notice Zero claim-registry address supplied at construction.
+    error ZeroClaimRegistry();
+
     // =========================================================================
-    // Claim-Related Errors
+    // Claims
     // =========================================================================
 
     /// @notice Claim not found.
@@ -47,8 +71,15 @@ library V2Errors {
     /// @notice Invalid claim reward amount.
     error InvalidReward();
 
+    /// @notice Referenced claim id is unknown to the claim registry.
+    error InvalidClaim(uint256 claimId);
+
+    /// @notice Claim no longer accepts evidence (finalized / terminal status).
+    /// @param status Underlying claim-status enum cast to uint8.
+    error ClaimFinalized(uint256 claimId, uint8 status);
+
     // =========================================================================
-    // Evidence-Related Errors
+    // Evidence
     // =========================================================================
 
     /// @notice Evidence not found.
@@ -58,13 +89,22 @@ library V2Errors {
     error InvalidEvidenceHash();
 
     /// @notice Evidence submission window closed.
-    error EvidenceWindowClosed();
+    error EvidenceWindowClosed(uint256 claimId, uint64 deadline, uint64 timestamp);
 
     /// @notice Duplicate evidence submission.
-    error DuplicateEvidence();
+    error DuplicateEvidence(bytes32 commitmentKey);
+
+    /// @notice Zero content or metadata digest.
+    error ZeroDigest();
+
+    /// @notice Contributor nonce mismatch.
+    error InvalidNonce(address contributor, uint256 expected, uint256 provided);
+
+    /// @notice Pagination limit out of bounds.
+    error InvalidPageLimit(uint256 limit);
 
     // =========================================================================
-    // Verification-Related Errors
+    // Verification
     // =========================================================================
 
     /// @notice Verification not found.
@@ -83,7 +123,7 @@ library V2Errors {
     error InvalidVerdict();
 
     // =========================================================================
-    // Settlement-Related Errors
+    // Settlement
     // =========================================================================
 
     /// @notice Settlement not found.
@@ -98,8 +138,17 @@ library V2Errors {
     /// @notice Invalid settlement amount.
     error InvalidSettlementAmount();
 
+    /// @notice Settlement outcome already recorded for this claim-round.
+    error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
+
+    /// @notice Invalid settlement outcome requested for this claim-round.
+    error InvalidSettlementOutcome(uint256 claimId, uint256 round);
+
+    /// @notice Round transfer / rollover / carry-forward rejected because from == to.
+    error InvalidRoundTransfer(uint256 fromRound, uint256 toRound);
+
     // =========================================================================
-    // Dispute-Related Errors
+    // Disputes
     // =========================================================================
 
     /// @notice Dispute not found.
@@ -115,7 +164,7 @@ library V2Errors {
     error InvalidDisputeReason();
 
     // =========================================================================
-    // Stake & Custody-Related Errors
+    // Stake & Custody
     // =========================================================================
 
     /// @notice Insufficient stake balance.
@@ -145,14 +194,8 @@ library V2Errors {
     /// @notice Recorded obligations exceed on-chain custody for an asset.
     error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
-    /// @notice Settlement outcome already recorded for this claim-round; repeated or conflicting instructions revert.
-    error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
-
-    /// @notice Invalid settlement outcome requested for this claim-round.
-    error InvalidSettlementOutcome(uint256 claimId, uint256 round);
-
     // =========================================================================
-    // Aggregation & Reputation Errors
+    // Aggregation & Reputation
     // =========================================================================
 
     /// @notice Invalid aggregation result.
@@ -165,7 +208,7 @@ library V2Errors {
     error InvalidReputationScore();
 
     // =========================================================================
-    // Configuration & Governance Errors
+    // Configuration & Parameter Registry
     // =========================================================================
 
     /// @notice Configuration not found.
@@ -177,8 +220,94 @@ library V2Errors {
     /// @notice Parameter update not authorized.
     error ParameterUpdateNotAuthorized();
 
+    /// @notice Caller is not the configured governance authority.
+    error NotGovernance(address sender);
+
+    /// @notice Governance address invalid for registry initialization.
+    error InvalidGovernance(address governance);
+
+    /// @notice Supported-assets list is empty or otherwise invalid.
+    error InvalidSupportedAssets(uint256 assetCount);
+
+    /// @notice Bounty min/max range is inverted or empty.
+    error InvalidBountyRange(uint128 minBounty, uint128 maxBounty);
+
+    /// @notice Stake min/max range is inverted or empty.
+    error InvalidStakeRange(uint128 minStake, uint128 maxStake);
+
+    /// @notice Duration field is zero or otherwise invalid.
+    /// @param field 1=claim, 2=verification, 3=dispute, 4=appeal.
+    error InvalidDuration(uint8 field);
+
+    /// @notice Allocation basis-points do not sum to 10_000.
+    error InvalidBasisPointsTotal(uint256 totalBps);
+
+    /// @notice Single allocation leg exceeds 10_000 bps.
+    error InvalidAllocationBps(uint16 bps);
+
+    /// @notice Weight cap exceeds 10_000 bps.
+    error InvalidWeightCap(uint16 weightCapBps);
+
+    /// @notice Participation threshold invalid.
+    error InvalidParticipationThreshold(uint24 thresholdBps);
+
+    /// @notice Confidence threshold exceeds 10_000 bps.
+    error InvalidConfidenceThreshold(uint16 confidenceBps);
+
+    /// @notice Appeal bond multiplier invalid (zero).
+    error InvalidAppealMultiplier(uint24 multiplierBps);
+
+    /// @notice Reputation bound pair invalid.
+    error InvalidReputationBounds(uint16 minBps, uint16 maxBps);
+
+    /// @notice Pause / unpause cooldown is zero.
+    error InvalidPauseCooldown(uint48 cooldown);
+
+    /// @notice Rounding policy enum out of range.
+    error InvalidRoundingPolicy(uint8 roundingPolicy);
+
+    /// @notice Parameter set version already published.
+    error ParameterSetAlreadyExists(bytes32 versionId);
+
+    /// @notice Parameter set version not published.
+    error ParameterSetNotFound(bytes32 versionId);
+
+    /// @notice Asset adapter already registered.
+    error AssetAdapterAlreadySet(address asset);
+
     // =========================================================================
-    // Slashing Errors
+    // Governance Modules
+    // =========================================================================
+
+    /// @notice Zero guardian address.
+    error ZeroGuardianAddress();
+
+    /// @notice Zero governor address.
+    error ZeroGovernorAddress();
+
+    /// @notice Zero module address in governed registry.
+    error ZeroModuleAddress();
+
+    /// @notice Caller is not a guardian.
+    error NotGuardian(address caller);
+
+    /// @notice Proposal target is not a governed module.
+    error TargetNotGovernedModule(address target);
+
+    /// @notice Guardian module already configured.
+    error GovernanceGuardianModuleAlreadySet(address existingModule);
+
+    /// @notice Caller may not set the guardian module.
+    error UnauthorizedGuardianModuleSetter(address caller);
+
+    /// @notice Module already registered in the governed allowlist.
+    error ModuleAlreadyRegistered(address module);
+
+    /// @notice Module not registered in the governed allowlist.
+    error ModuleNotRegistered(address module);
+
+    // =========================================================================
+    // Slashing
     // =========================================================================
 
     /// @notice Slash amount exceeds stake.
@@ -188,7 +317,7 @@ library V2Errors {
     error SlashingNotPermitted();
 
     // =========================================================================
-    // Emergency Control Errors
+    // Emergency Controls
     // =========================================================================
 
     /// @notice Protocol is paused.
@@ -198,12 +327,8 @@ library V2Errors {
     error EmergencyAuthorityRequired();
 
     // =========================================================================
-    // Generic Validation Errors
+    // Generic Validation (typed — avoid string reasons)
     // =========================================================================
-
-    /// @notice Invalid function argument.
-    /// @param reason Description of what was invalid.
-    error InvalidArgument(string reason);
 
     /// @notice Operation not supported.
     error NotSupported();

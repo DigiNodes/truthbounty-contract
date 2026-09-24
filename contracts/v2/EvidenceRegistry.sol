@@ -10,6 +10,7 @@ import {ITruthBountyEvents} from "../interfaces/ITruthBountyEvents.sol";
 import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {V2Errors} from "./libraries/V2Errors.sol";
 
 /// @title EvidenceRegistry
 /// @notice Content-addressed V2 evidence commitment registry.
@@ -40,16 +41,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     mapping(address => uint256) private _nextContributorNonce;
     mapping(bytes32 => bool) private _commitmentExists;
 
-    error ZeroAdmin();
-    error ZeroClaimRegistry();
-    error ZeroDigest();
-    error InvalidClaim(uint256 claimId);
-    error EvidenceWindowClosed(uint256 claimId, uint64 deadline, uint64 timestamp);
-    error ClaimFinalized(uint256 claimId, IClaimRegistry.ClaimStatus status);
-    error InvalidNonce(address contributor, uint256 expected, uint256 provided);
-    error DuplicateEvidence(bytes32 commitmentKey);
-    error EvidenceNotFound(uint256 evidenceId);
-    error InvalidPageLimit(uint256 limit);
 
     event EvidenceCommitted(
         uint256 indexed claimId,
@@ -63,8 +54,8 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     );
 
     constructor(address initialAdmin, address claimRegistry_) {
-        if (initialAdmin == address(0)) revert ZeroAdmin();
-        if (claimRegistry_ == address(0)) revert ZeroClaimRegistry();
+        if (initialAdmin == address(0)) revert V2Errors.ZeroAdmin();
+        if (claimRegistry_ == address(0)) revert V2Errors.ZeroClaimRegistry();
 
         claimRegistry = IClaimRegistry(claimRegistry_);
 
@@ -103,22 +94,22 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         whenNotPaused
         returns (uint256 evidenceId)
     {
-        if (contentDigest == bytes32(0) || metadataDigest == bytes32(0)) revert ZeroDigest();
-        if (!claimRegistry.claimExists(claimId)) revert InvalidClaim(claimId);
+        if (contentDigest == bytes32(0) || metadataDigest == bytes32(0)) revert V2Errors.ZeroDigest();
+        if (!claimRegistry.claimExists(claimId)) revert V2Errors.InvalidClaim(claimId);
 
         IClaimRegistry.Claim memory claim = claimRegistry.getClaim(claimId);
-        if (!_acceptsEvidence(claim.status)) revert ClaimFinalized(claimId, claim.status);
+        if (!_acceptsEvidence(claim.status)) revert V2Errors.ClaimFinalized(claimId, uint8(claim.status));
 
         uint64 now_ = uint64(block.timestamp);
         if (now_ > claim.verificationDeadline) {
-            revert EvidenceWindowClosed(claimId, claim.verificationDeadline, now_);
+            revert V2Errors.EvidenceWindowClosed(claimId, claim.verificationDeadline, now_);
         }
 
         uint256 expectedNonce = _nextContributorNonce[msg.sender];
-        if (nonce != expectedNonce) revert InvalidNonce(msg.sender, expectedNonce, nonce);
+        if (nonce != expectedNonce) revert V2Errors.InvalidNonce(msg.sender, expectedNonce, nonce);
 
         bytes32 commitmentKey = keccak256(abi.encode(claimId, msg.sender, contentDigest, metadataDigest));
-        if (_commitmentExists[commitmentKey]) revert DuplicateEvidence(commitmentKey);
+        if (_commitmentExists[commitmentKey]) revert V2Errors.DuplicateEvidence(commitmentKey);
 
         evidenceId = computeEvidenceId(claimId, msg.sender, contentDigest, metadataDigest, nonce);
         _commitmentExists[commitmentKey] = true;
@@ -157,7 +148,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         onlyRole(EVIDENCE_ADMIN_ROLE)
     {
         EvidenceCommitment storage evidence = _evidenceById[evidenceId];
-        if (evidence.status == IV2Types.EvidenceStatus.NONE) revert EvidenceNotFound(evidenceId);
+        if (evidence.status == IV2Types.EvidenceStatus.NONE) revert V2Errors.EvidenceNotFound(evidenceId);
 
         IV2Types.EvidenceStatus previous = evidence.status;
         evidence.status = status;
@@ -189,7 +180,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         override
         returns (uint256[] memory evidenceIds, uint256 nextCursor)
     {
-        if (limit == 0 || limit > MAX_PAGE_SIZE) revert InvalidPageLimit(limit);
+        if (limit == 0 || limit > MAX_PAGE_SIZE) revert V2Errors.InvalidPageLimit(limit);
 
         uint256[] storage ids = _claimEvidenceIds[claimId];
         uint256 length = ids.length;
@@ -237,7 +228,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
     function _existingEvidence(uint256 evidenceId) private view returns (EvidenceCommitment storage evidence) {
         evidence = _evidenceById[evidenceId];
-        if (evidence.status == IV2Types.EvidenceStatus.NONE) revert EvidenceNotFound(evidenceId);
+        if (evidence.status == IV2Types.EvidenceStatus.NONE) revert V2Errors.EvidenceNotFound(evidenceId);
     }
 
     function _acceptsEvidence(IClaimRegistry.ClaimStatus status) private pure returns (bool) {
