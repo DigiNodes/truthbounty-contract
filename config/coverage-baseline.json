@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "issue": "V2-SC-089",
+  "metric": "branches",
+  "files": {
+    "contracts/v2/StakeVault.sol": 54.83
+  }
+}
