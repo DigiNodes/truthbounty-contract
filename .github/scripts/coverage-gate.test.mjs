@@ -34,9 +34,25 @@ test("normalizes Windows and ./-prefixed paths", () => {
   assert.deepEqual(checkCoverage(files, baseline({ "contracts/v2/StakeVault.sol": 100 })), []);
 });
 
-test("treats a contract with no branches as fully covered", () => {
-  const files = parseLcov(lcov([{ path: "contracts/v2/libraries/V2Errors.sol", found: 0, hit: 0 }]));
-  assert.deepEqual(checkCoverage(files, baseline({ "contracts/v2/libraries/V2Errors.sol": 100 })), []);
+test("fails when a baselined contract reports zero branches", () => {
+  const files = parseLcov(lcov([{ path: "contracts/v2/StakeVault.sol", found: 0, hit: 0 }]));
+  const failures = checkCoverage(files, baseline({ "contracts/v2/StakeVault.sol": 50 }));
+  assert.match(failures[0], /measured no branches/);
+});
+
+test("rejects duplicate records for the same contract", () => {
+  const text = lcov([
+    { path: "contracts/v2/StakeVault.sol", found: 10, hit: 1 },
+    { path: "contracts/v2/StakeVault.sol", found: 10, hit: 10 },
+  ]);
+  assert.throws(() => parseLcov(text), /duplicate record/);
+});
+
+test("rejects records with missing or malformed branch totals", () => {
+  assert.throws(() => parseLcov("SF:contracts/v2/StakeVault.sol\nend_of_record"), /missing BRF or BRH/);
+  assert.throws(() => parseLcov("SF:a.sol\nBRF:10\nBRH:bad\nend_of_record"), /invalid BRH/);
+  assert.throws(() => parseLcov("SF:a.sol\nBRF:-1\nBRH:0\nend_of_record"), /invalid BRF/);
+  assert.throws(() => parseLcov("SF:a.sol\nBRF:2\nBRH:3\nend_of_record"), /exceeds BRF/);
 });
 
 test("rejects an invalid baseline configuration", () => {

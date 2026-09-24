@@ -13,22 +13,38 @@ const EPSILON = 0.005;
 
 const normalizePath = (path) => path.trim().replace(/\\/g, "/").replace(/^\.\//, "");
 
-/** Parses lcov text into a map of source path -> { found, hit } branch counts. */
+const parseCount = (path, field, value) => {
+  if (!/^\d+$/.test(value.trim())) throw new Error(`${path}: invalid ${field} value ${JSON.stringify(value)}`);
+  return Number(value);
+};
+
+/**
+ * Parses lcov text into a map of source path -> { found, hit } branch counts.
+ * Throws (fail closed) on duplicate records, missing or malformed BRF/BRH, or hit > found.
+ */
 export function parseLcov(text) {
   const files = new Map();
   let current = null;
+  let record = null;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("SF:")) {
       current = normalizePath(line.slice(3));
-      files.set(current, { found: 0, hit: 0 });
-    } else if (current && line.startsWith("BRF:")) {
-      files.get(current).found = Number(line.slice(4));
-    } else if (current && line.startsWith("BRH:")) {
-      files.get(current).hit = Number(line.slice(4));
+      if (files.has(current)) throw new Error(`${current}: duplicate record in coverage report`);
+      record = { found: undefined, hit: undefined };
+      files.set(current, record);
+    } else if (record && line.startsWith("BRF:")) {
+      record.found = parseCount(current, "BRF", line.slice(4));
+    } else if (record && line.startsWith("BRH:")) {
+      record.hit = parseCount(current, "BRH", line.slice(4));
     } else if (line === "end_of_record") {
       current = null;
+      record = null;
     }
+  }
+  for (const [path, { found, hit }] of files) {
+    if (found === undefined || hit === undefined) throw new Error(`${path}: record is missing BRF or BRH`);
+    if (hit > found) throw new Error(`${path}: BRH ${hit} exceeds BRF ${found}`);
   }
   return files;
 }
@@ -58,7 +74,13 @@ export function checkCoverage(lcovFiles, baseline) {
       failures.push(`${path}: missing from coverage report (baseline ${min}%)`);
       continue;
     }
-    const pct = counts.found === 0 ? 100 : (counts.hit / counts.found) * 100;
+    // Only contracts with branches are baselined, so zero measured branches means
+    // the measurement broke (e.g. instrumentation or test selection), not 100%.
+    if (counts.found === 0) {
+      failures.push(`${path}: coverage report measured no branches (baseline ${min}%)`);
+      continue;
+    }
+    const pct = (counts.hit / counts.found) * 100;
     if (pct + EPSILON < min) {
       failures.push(`${path}: branch coverage ${pct.toFixed(2)}% is below baseline ${min}% (${counts.hit}/${counts.found})`);
     }
