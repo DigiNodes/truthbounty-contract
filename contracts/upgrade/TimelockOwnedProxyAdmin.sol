@@ -14,8 +14,10 @@ import "./StorageCompatibilityValidator.sol";
  *      before allowing any upgrades to prevent unsafe implementations.
  */
 contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
-    // 7-day upgrade delay as required
-    uint256 public constant UPGRADE_DELAY = 7 days;
+    // 7-day minimum upgrade delay as required
+    uint256 public constant MIN_UPGRADE_DELAY = 7 days;
+    // 30-day maximum upgrade delay - prevents stale pending upgrades
+    uint256 public constant MAX_UPGRADE_DELAY = 30 days;
     
     // Mapping to track pending upgrades
     struct PendingUpgrade {
@@ -23,6 +25,8 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         address implementation;
         bytes data;
         uint256 executeAfter;
+        uint256 expireAt;
+        bytes32 predecessorId;
         bool executed;
         bool cancelled;
     }
@@ -33,14 +37,20 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     
     // Track all implementations that have ever been used to prevent reuse
     mapping(address => bool) public usedImplementations;
+    // Nonce to ensure unique operation IDs even for same-block upgrades
+    uint256 private _operationNonce;
     
     event UpgradeScheduled(
         bytes32 indexed upgradeId,
         address indexed proxy,
         address indexed newImplementation,
-        uint256 executeAfter
+        uint256 executeAfter,
+        uint256 expireAt,
+        bytes32 predecessorId
     );
     event UpgradeCancelled(bytes32 indexed upgradeId);
+    event UpgradeExecuted(bytes32 indexed upgradeId);
+    event UpgradeExpired(bytes32 indexed upgradeId);
     event ImplementationValidated(address indexed implementation, bytes32 versionHash);
     event InvalidImplementationRejected(address indexed implementation, string reason);
     
@@ -50,9 +60,13 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     error TimelockNotElapsed();
     error UpgradeAlreadyExecuted();
     error UpgradeAlreadyCancelled();
+    error UpgradeExpired();
+    error PredecessorNotCompleted(bytes32 predecessorId);
+    error InvalidDelay(uint256 delay);
     error InvalidImplementation(string reason);
     error ImplementationAlreadyUsed(address implementation);
     error EOANotAllowed(address account);
+    error OperationIdCollision(bytes32 operationId);
     
     modifier onlyTimelockController() {
         if (msg.sender != address(timelock)) revert OnlyTimelock();
