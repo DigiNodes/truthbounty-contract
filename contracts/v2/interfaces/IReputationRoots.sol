@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 import {IV2Module} from "./IV2Module.sol";
 interface IReputationRoots is IV2Module {
-    event RootProposed(uint256 indexed epoch, bytes32 indexed root, address indexed proposer);
-    event RootAccepted(uint256 indexed epoch, bytes32 indexed root);
+    event RootProposed(uint256 indexed epoch, bytes32 indexed root, address indexed proposer, uint64 timestamp, uint16 version);
+    event RootAccepted(uint256 indexed epoch, bytes32 indexed root, uint64 timestamp, uint16 version);
     function proposeRoot(uint256 epoch, bytes32 root, string calldata uri) external;
     function acceptRoot(uint256 epoch) external;
     function rootAt(uint256 epoch) external view returns (bytes32 root, bool accepted);
