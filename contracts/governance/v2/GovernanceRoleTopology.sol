@@ -16,6 +16,11 @@ library GovernanceRoleTopology {
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
     bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
 
+    /// @notice Emitted after the timelock role topology is configured.
+    /// @param timelock Timelock receiving roles.
+    /// @param governor Governor receiving proposer and canceller rights.
+    /// @param guardian Guardian receiving cancellation rights.
+    /// @param minDelay Configured timelock minimum delay in seconds.
     event GovernanceTopologyConfigured(
         address indexed timelock,
         address indexed governor,
@@ -25,6 +30,10 @@ library GovernanceRoleTopology {
 
     /**
      * @dev Assign canonical timelock roles after governor deployment.
+     * @param timelock Timelock receiving the role topology.
+     * @param governor Governor receiving proposer and canceller rights.
+     * @param guardian Guardian receiving canceller rights only.
+     * @param minDelay Configured minimum execution delay in seconds.
      */
     function configure(
         TimelockController timelock,
@@ -42,6 +51,8 @@ library GovernanceRoleTopology {
 
     /**
      * @dev Hand timelock self-administration to the timelock itself after bootstrap.
+     * @param timelock Timelock whose administrator role is finalized.
+     * @param currentAdmin Bootstrap administrator whose role is revoked.
      */
     function finalizeTimelockAdmin(TimelockController timelock, address currentAdmin) internal {
         timelock.grantRole(TIMELOCK_ADMIN_ROLE, address(timelock));
