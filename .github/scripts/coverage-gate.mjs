@@ -14,13 +14,15 @@ const EPSILON = 0.005;
 const normalizePath = (path) => path.trim().replace(/\\/g, "/").replace(/^\.\//, "");
 
 const parseCount = (path, field, value) => {
-  if (!/^\d+$/.test(value.trim())) throw new Error(`${path}: invalid ${field} value ${JSON.stringify(value)}`);
-  return Number(value);
+  const count = /^\d+$/.test(value.trim()) ? Number(value) : NaN;
+  if (!Number.isSafeInteger(count)) throw new Error(`${path}: invalid ${field} value ${JSON.stringify(value)}`);
+  return count;
 };
 
 /**
  * Parses lcov text into a map of source path -> { found, hit } branch counts.
- * Throws (fail closed) on duplicate records, missing or malformed BRF/BRH, or hit > found.
+ * Throws (fail closed) on duplicate or unterminated records, missing or malformed
+ * BRF/BRH, or hit > found.
  */
 export function parseLcov(text) {
   const files = new Map();
@@ -29,6 +31,7 @@ export function parseLcov(text) {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("SF:")) {
+      if (record) throw new Error(`${current}: record is missing end_of_record`);
       current = normalizePath(line.slice(3));
       if (files.has(current)) throw new Error(`${current}: duplicate record in coverage report`);
       record = { found: undefined, hit: undefined };
@@ -42,6 +45,7 @@ export function parseLcov(text) {
       record = null;
     }
   }
+  if (record) throw new Error(`${current}: record is missing end_of_record (truncated report?)`);
   for (const [path, { found, hit }] of files) {
     if (found === undefined || hit === undefined) throw new Error(`${path}: record is missing BRF or BRH`);
     if (hit > found) throw new Error(`${path}: BRH ${hit} exceeds BRF ${found}`);
@@ -81,7 +85,8 @@ export function checkCoverage(lcovFiles, baseline) {
       continue;
     }
     const pct = (counts.hit / counts.found) * 100;
-    if (pct + EPSILON < min) {
+    // Written as a negated >= so an unexpected NaN fails instead of passing.
+    if (!(pct + EPSILON >= min)) {
       failures.push(`${path}: branch coverage ${pct.toFixed(2)}% is below baseline ${min}% (${counts.hit}/${counts.found})`);
     }
   }

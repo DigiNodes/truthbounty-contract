@@ -53,6 +53,13 @@ test("rejects records with missing or malformed branch totals", () => {
   assert.throws(() => parseLcov("SF:a.sol\nBRF:10\nBRH:bad\nend_of_record"), /invalid BRH/);
   assert.throws(() => parseLcov("SF:a.sol\nBRF:-1\nBRH:0\nend_of_record"), /invalid BRF/);
   assert.throws(() => parseLcov("SF:a.sol\nBRF:2\nBRH:3\nend_of_record"), /exceeds BRF/);
+  const huge = "9".repeat(400);
+  assert.throws(() => parseLcov(`SF:a.sol\nBRF:${huge}\nBRH:${huge}\nend_of_record`), /invalid BRF/);
+});
+
+test("rejects truncated or unterminated records", () => {
+  assert.throws(() => parseLcov("SF:a.sol\nBRF:10\nBRH:10"), /missing end_of_record/);
+  assert.throws(() => parseLcov("SF:a.sol\nBRF:1\nBRH:1\nSF:b.sol\nBRF:1\nBRH:1\nend_of_record"), /missing end_of_record/);
 });
 
 test("rejects an invalid baseline configuration", () => {
