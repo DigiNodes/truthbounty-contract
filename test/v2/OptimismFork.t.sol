@@ -7,6 +7,16 @@ import "../../contracts/v2/libraries/V2AmountUnits.sol";
 import "../../contracts/mocks/MockModuleRegistry.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+interface IGasPriceOracle {
+    function getL1Fee(bytes memory data) external view returns (uint256);
+    function isEcotone() external view returns (bool);
+}
+
+interface IL1Block {
+    function number() external view returns (uint64);
+    function basefee() external view returns (uint256);
+}
+
 /// @notice Canonical V2 custody lifecycle against a pinned Optimism mainnet fork (V2-SC-079).
 /// @dev Runs only when `OPTIMISM_RPC_URL` is set; otherwise every test is skipped so offline CI stays green.
 ///      Pin with `OPTIMISM_FORK_BLOCK` (defaults to `DEFAULT_FORK_BLOCK`).
@@ -49,6 +59,16 @@ contract OptimismForkTest is Test {
         assertGt(L1_BLOCK.code.length, 0);
         assertGt(GAS_PRICE_ORACLE.code.length, 0);
         assertGt(WETH.code.length, 0);
+    }
+
+    /// @notice Optimism gas rules: L2 basefee, L1 block oracle, and a non-zero L1 data fee for V2 calldata.
+    function test_GasRules() public onlyFork {
+        assertGt(block.basefee, 0);
+        assertGt(IL1Block(L1_BLOCK).number(), 0);
+        assertGt(IL1Block(L1_BLOCK).basefee(), 0);
+        assertTrue(IGasPriceOracle(GAS_PRICE_ORACLE).isEcotone());
+        bytes memory depositCall = abi.encodeCall(StakeVault.deposit, (USDC, 1_000e6));
+        assertGt(IGasPriceOracle(GAS_PRICE_ORACLE).getL1Fee(depositCall), 0);
     }
 
     function test_RealTokenDecimals() public onlyFork {

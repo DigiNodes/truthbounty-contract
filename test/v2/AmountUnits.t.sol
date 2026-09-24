@@ -19,6 +19,25 @@ contract DecimalsToken is ERC20 {
 
 contract NoDecimalsToken { }
 
+/// @dev Returns raw, possibly malformed ABI data from `decimals()`.
+contract RawDecimalsToken {
+    bytes internal _ret;
+    bool internal _revert;
+
+    constructor(bytes memory ret, bool shouldRevert) {
+        _ret = ret;
+        _revert = shouldRevert;
+    }
+
+    fallback() external {
+        bytes memory ret = _ret;
+        if (_revert) revert("decimals");
+        assembly {
+            return(add(ret, 32), mload(ret))
+        }
+    }
+}
+
 contract AmountUnitsHarness {
     function decimalsOf(address asset) external view returns (uint8) {
         return V2AmountUnits.decimalsOf(asset);
@@ -77,5 +96,48 @@ contract AmountUnitsTest is Test {
         uint256 back = h.fromNormalized(h.toNormalized(amount, dec), dec);
         assertLe(back, amount);
         if (dec <= 18) assertEq(back, amount);
+    }
+
+    function test_RejectsMalformedDecimalsReturnData() public {
+        address[4] memory bad = [
+            address(new RawDecimalsToken(abi.encode(uint256(6)), true)), // reverts
+            address(new RawDecimalsToken(hex"06", false)), // short return
+            address(new RawDecimalsToken(abi.encode(uint256(6), uint256(0)), false)), // long return
+            address(new RawDecimalsToken(abi.encode(uint256(256)), false)) // does not fit uint8
+        ];
+        for (uint256 i = 0; i < bad.length; i++) {
+            vm.expectRevert(abi.encodeWithSelector(V2AmountUnits.UnsupportedDecimals.selector, bad[i]));
+            h.decimalsOf(bad[i]);
+        }
+        assertEq(h.decimalsOf(address(new RawDecimalsToken(abi.encode(uint256(36)), false))), 36);
+    }
+
+    function test_BoundaryDecimals() public view {
+        assertEq(h.toNormalized(1, 0), 1e18);
+        assertEq(h.fromNormalized(1e18 - 1, 0), 0);
+        assertEq(h.toNormalized(1e18, 36), 1);
+        assertEq(h.toNormalized(1e18 - 1, 36), 0);
+        assertEq(h.fromNormalized(1, 36), 1e18);
+    }
+
+    function test_OverflowFailsClosed() public {
+        vm.expectRevert(stdError.arithmeticError);
+        h.toNormalized(type(uint256).max, 6);
+        vm.expectRevert(stdError.arithmeticError);
+        h.fromNormalized(type(uint256).max, 36);
+        vm.expectRevert(abi.encodeWithSelector(V2AmountUnits.DecimalsOutOfRange.selector, uint8(255)));
+        h.fromNormalized(1, 255);
+    }
+
+    function testFuzz_NormalizationIsMonotonic(uint128 a, uint128 b, uint8 dec) public view {
+        dec = uint8(bound(dec, 0, 36));
+        (uint256 lo, uint256 hi) = a <= b ? (uint256(a), uint256(b)) : (uint256(b), uint256(a));
+        assertLe(h.toNormalized(lo, dec), h.toNormalized(hi, dec));
+        assertLe(h.fromNormalized(lo, dec), h.fromNormalized(hi, dec));
+    }
+
+    function testFuzz_FromNormalizedNeverInflates(uint128 normalized, uint8 dec) public view {
+        dec = uint8(bound(dec, 0, 36));
+        assertLe(h.toNormalized(h.fromNormalized(normalized, dec), dec), normalized);
     }
 }
