@@ -139,6 +139,8 @@ jobs:
     name: Coverage Gate
     runs-on: ubuntu-latest
     needs: test
+    # Report coverage even when tests fail; the Test job still fails the run on its own.
+    if: ${{ always() && needs.test.result != 'cancelled' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,12 +165,13 @@ jobs:
           MIN_BRANCH_PCT: "54.83"
         run: |
           awk -v file="$COVERAGE_FILE" -v min="$MIN_BRANCH_PCT" '
+            open && /^SF:/ { open = 0; broken = 1 }
             $0 == ("SF:" file) { open = 1; seen++; next }
             open && /^BRF:/ { found = substr($0, 5) }
             open && /^BRH:/ { hit = substr($0, 5) }
             open && $0 == "end_of_record" { open = 0 }
             END {
-              if (seen != 1 || open || found !~ /^[0-9]+$/ || hit !~ /^[0-9]+$/ || length(found) > 9 || found + 0 == 0 || hit + 0 > found + 0) {
+              if (seen != 1 || open || broken || found !~ /^[0-9]+$/ || hit !~ /^[0-9]+$/ || length(found) > 9 || found + 0 == 0 || hit + 0 > found + 0) {
                 print file ": missing or malformed branch coverage record"; exit 1
               }
               pct = 100 * hit / found
