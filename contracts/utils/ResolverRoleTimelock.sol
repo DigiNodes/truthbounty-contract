@@ -148,13 +148,21 @@ abstract contract ResolverRoleTimelock is AccessControl {
         operationId = _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
-    function _executeResolverRoleChange(address account, bool grant) internal {
-        bytes32 operationId = resolverRoleChangeId(account, grant);
-        uint256 readyAt = resolverRoleChangeReadyAt[operationId];
-        if (readyAt == 0) revert ResolverRoleChangeNotPending();
-        if (block.timestamp < readyAt) revert ResolverRoleChangeNotReady(readyAt);
+    function _executeResolverRoleChange(bytes32 operationId, address account, bool grant) internal {
+        PendingRoleChange storage pendingChange = pendingRoleChanges[operationId];
+        if (pendingChange.readyAt == 0) revert ResolverRoleChangeNotPending();
+        if (pendingChange.executed) revert ResolverRoleChangeNoop();
+        if (block.timestamp < pendingChange.readyAt) revert ResolverRoleChangeNotReady(pendingChange.readyAt);
+        if (block.timestamp > pendingChange.expireAt) {
+            // Remove from storage and revert
+            delete pendingRoleChanges[operationId];
+            emit ResolverRoleChangeExpired(operationId, account, grant);
+            revert ResolverRoleChangeExpired();
+        }
 
-        delete resolverRoleChangeReadyAt[operationId];
+        // Mark as executed first (reentrancy protection) and then remove from storage completely
+        pendingChange.executed = true;
+        delete pendingRoleChanges[operationId];
 
         if (grant) {
             if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
