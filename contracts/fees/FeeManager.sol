@@ -509,13 +509,21 @@ contract FeeManager is IFeeManager, ReentrancyGuard, Pausable, GovernanceOwnable
         }
 
         uint256 totalBps = 0;
+        bool hasTreasuryReserve = false;
         for (uint256 i = 0; i < targets.length; i++) {
             if (targets[i].active) {
                 if (targets[i].recipient == address(0)) {
                     revert AllocationRecipientZero(targets[i].name);
                 }
+                if (targets[i].name == ALLOC_TREASURY_RESERVE) {
+                    hasTreasuryReserve = true;
+                }
                 totalBps += targets[i].basisPoints;
             }
+        }
+
+        if (!hasTreasuryReserve) {
+            revert InvalidBasisPoints(0); // Treasury reserve must always be present
         }
 
         if (totalBps != BASIS_POINTS_DENOMINATOR) {
