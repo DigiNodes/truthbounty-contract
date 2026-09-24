@@ -80,7 +80,7 @@ contract GasBoundedExecutionTest is Test {
     }
 
     function test_LoopCatalogDocumentsBounds() public view {
-        assertEq(catalog.catalogSize(), 12);
+        assertEq(catalog.catalogSize(), 14);
         LoopBoundsCatalog.LoopBound memory first = catalog.getLoopBound(0);
         assertEq(first.maxIterations, ProtocolExecutionBounds.MAX_VERIFIERS_PER_CLAIM);
     }
