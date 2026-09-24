@@ -13,6 +13,7 @@ import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title StakeVault
 /// @notice Canonical V2 custody module with typed locks, exact-balance accounting, and pull-based withdrawals.
@@ -46,6 +47,9 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     /// @notice Records the finalized settlement outcome per (claimId, round) to enforce idempotency.
     mapping(uint256 => mapping(uint256 => IV2Types.SettlementOutcome)) private _settlementOutcome;
 
+    /// @notice Minimum accepted verifier stake; rejects dust griefing (V2-SC-105).
+    uint256 public minStakeAmount;
+
     event VaultDeposited(address indexed asset, address indexed account, uint256 amount);
     event VaultLocked(
         address indexed asset,
@@ -65,6 +69,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     );
     event VaultWithdrawn(address indexed asset, address indexed account, uint256 amount);
     event ProtocolAllocationIncreased(address indexed asset, uint256 amount, bytes32 indexed reason);
+    event MinStakeAmountUpdated(uint256 previousAmount, uint256 newAmount);
 
     /// @param registry Canonical module registry used to authorize lock mutations.
     /// @param token Primary staking asset for the `IStakeCustody` surface.
@@ -79,6 +84,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _grantRole(ADMIN_ROLE, admin);
 
         supportedAssets[token] = true;
+        minStakeAmount = ProtocolExecutionBounds.DEFAULT_MIN_STAKE_AMOUNT;
     }
 
     function protocolVersion() external pure override returns (uint16 major, uint16 minor) {
@@ -101,6 +107,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
 
     /// @inheritdoc IStakeCustody
     function depositStake(uint256 claimId, uint256 amount) external override nonReentrant {
+        if (amount < minStakeAmount) revert V2Errors.DustStake(amount, minStakeAmount);
         address asset = address(stakingToken);
         address account = msg.sender;
         _deposit(account, asset, amount);
@@ -323,6 +330,14 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
     // Administration
     // -------------------------------------------------------------------------
+
+    /// @notice Updates the anti-dust stake floor. Admin only; zero is rejected.
+    function setMinStakeAmount(uint256 newMinimum) external onlyRole(ADMIN_ROLE) {
+        if (newMinimum == 0) revert V2Errors.ZeroAmount();
+        uint256 previous = minStakeAmount;
+        minStakeAmount = newMinimum;
+        emit MinStakeAmountUpdated(previous, newMinimum);
+    }
 
     /// @notice Enables or disables an asset for custody operations.
     function setSupportedAsset(address asset, bool enabled) external onlyRole(ADMIN_ROLE) {

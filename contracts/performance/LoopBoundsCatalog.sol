@@ -17,7 +17,7 @@ contract LoopBoundsCatalog {
     }
 
     function catalogSize() external pure returns (uint256) {
-        return 12;
+        return 14;
     }
 
     function getLoopBound(uint256 index) external pure returns (LoopBound memory) {
@@ -127,6 +127,24 @@ contract LoopBoundsCatalog {
                 loopVariable: "page length",
                 maxIterations: 200,
                 mitigation: "Fixed page size in view pagination"
+            });
+        }
+        if (index == 12) {
+            return LoopBound({
+                module: "Claims",
+                functionName: "createClaim",
+                loopVariable: "claimsInWindow",
+                maxIterations: ProtocolExecutionBounds.MAX_CLAIMS_PER_ACCOUNT_WINDOW,
+                mitigation: "AntiGriefing per-account sliding window (V2-SC-105)"
+            });
+        }
+        if (index == 13) {
+            return LoopBound({
+                module: "ClaimRegistry",
+                functionName: "createClaim",
+                loopVariable: "openClaimCount",
+                maxIterations: ProtocolExecutionBounds.MAX_OPEN_CLAIMS_PER_CREATOR,
+                mitigation: "Open-claim inventory cap frees on terminal status (V2-SC-105)"
             });
         }
         revert("IndexOutOfBounds");
