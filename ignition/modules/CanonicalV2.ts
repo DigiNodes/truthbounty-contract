@@ -1,11 +1,14 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import { ethers } from "ethers";
+import { validateCanonicalV2Parameters } from "../../scripts/validateDeploymentConfig";
 
 /**
  * @title CanonicalV2DeploymentModule (SC-031)
  * @notice Canonical Hardhat Ignition deployment composition for TruthBounty Protocol V2.
  * @dev Deploys, configures, and wires the approved canonical V2 suite in strict dependency order.
  *      Excludes legacy contracts (e.g. TruthBountyClaims) and ensures deployer roles are finalized.
+ *      Deployment parameters are validated against the canonical configuration bounds (SC-068)
+ *      before any Ignition transaction is submitted.
  */
 const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   // Account parameter defaults
@@ -26,6 +29,21 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   const appealBondEscalationBps = m.getParameter("appealBondEscalationBps", 15000n);
   const maxAppealBond = m.getParameter("maxAppealBond", ethers.parseEther("5000").toString());
   const maxVotersPerRound = m.getParameter("maxVotersPerRound", 200n);
+
+  // Ignition parameters are unresolved deployment futures here. Validate their safe defaults;
+  // callers supplying overrides must use the preflighted deployCanonicalV2 script.
+  validateCanonicalV2Parameters({
+    initialSupply: ethers.parseEther("10000000"),
+    minVerificationCount: 1n,
+    minTotalWeight: 0n,
+    minConfidenceBps: 0n,
+    challengeWindowDuration: 3 * 24 * 3600,
+    appealDuration: 3 * 24 * 3600,
+    minAppealStake: ethers.parseEther("200"),
+    appealMultiplierBps: 15000,
+    maxWeightCap: ethers.parseEther("100000"),
+    parameterVersion: 1n,
+  });
 
   // 1. Deploy Governance Controller
   const governanceController = m.contract("GovernanceController", [deployer]);

@@ -2,11 +2,11 @@ import { network } from "hardhat";
 import type { Signer } from "ethers";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateCanonicalV2Parameters } from "./validateDeploymentConfig";
 
 export type DeploymentSigner = Signer & {
   address: string;
 };
-
 export interface CanonicalV2Suite {
   deployer: DeploymentSigner;
   governanceController: any;
@@ -63,6 +63,19 @@ export async function deployCanonicalV2(
   const maxAppealBond = options.maxAppealBond ?? ethers.parseEther("5000");
   const maxVotersPerRound = options.maxVotersPerRound ?? 200n;
   const finalizeDeployerRoles = options.finalizeDeployerRoles ?? false;
+
+  validateCanonicalV2Parameters({
+    initialSupply,
+    minVerificationCount,
+    minTotalWeight,
+    minConfidenceBps,
+    challengeWindowDuration,
+    appealDuration,
+    minAppealStake,
+    appealMultiplierBps,
+    maxWeightCap,
+  });
+  console.log("Deployment config validated:", deployer.address);
 
   // 1. Governance Controller
   const GovFactory = await ethers.getContractFactory("GovernanceController", deployer);
