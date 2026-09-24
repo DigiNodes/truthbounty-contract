@@ -132,6 +132,9 @@ contract ParameterVersionRegistry is
         
         // Default staking/reputation parameters
         genesisParams.minStakeAmount = 1e18;
+        genesisParams.maxStakeAmount = type(uint256).max;
+        genesisParams.minBountyAmount = 1e18;
+        genesisParams.maxBountyAmount = type(uint256).max;
         genesisParams.minReputationScore = 0;
         genesisParams.maxReputationScore = 10000;
         genesisParams.defaultReputationScore = 5000;
@@ -172,6 +175,14 @@ contract ParameterVersionRegistry is
 
         // Validate staking bounds
         if (parameters.minStakeAmount == 0) revert InvalidStakeAmount();
+        if (parameters.maxStakeAmount != 0 && parameters.minStakeAmount > parameters.maxStakeAmount) {
+            revert InvalidStakeAmount();
+        }
+        // Validate bounty floors used by anti-dust claim creation (V2-SC-105)
+        if (parameters.minBountyAmount == 0) revert InvalidBountyBounds();
+        if (parameters.maxBountyAmount != 0 && parameters.minBountyAmount > parameters.maxBountyAmount) {
+            revert InvalidBountyBounds();
+        }
 
         // Validate reputation bounds
         if (parameters.minReputationScore > parameters.maxReputationScore) revert InvalidReputationRange();

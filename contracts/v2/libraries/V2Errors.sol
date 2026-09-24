@@ -19,6 +19,16 @@ library V2Errors {
     /// @notice Attempted action with zero amount.
     error ZeroAmount();
 
+    /// @notice Stake amount is below the configured anti-dust floor (V2-SC-105).
+    error DustStake(uint256 provided, uint256 minimum);
+
+    /// @notice Claim creation exceeded the per-account anti-spam budget (V2-SC-105).
+    error ClaimSpamRateExceeded(address account, uint256 count, uint256 limit);
+
+    /// @notice Creator holds too many non-terminal claims (V2-SC-105).
+    error TooManyOpenClaims(address account, uint256 count, uint256 limit);
+
+
     /// @notice Attempted action by an unregistered or unauthorized module.
     error UnauthorizedModule(address caller);
 
