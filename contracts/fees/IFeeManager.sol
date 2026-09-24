@@ -88,6 +88,16 @@ interface IFeeManager {
         address indexed newToken
     );
 
+    event ReservedFeesAdded(
+        uint256 amount,
+        uint256 newTotalReserved
+    );
+
+    event FeesDistributedDeterministically(
+        uint256 totalDistributed,
+        uint256 remainingReserved
+    );
+
     // ============ Fee Calculation & Collection ============
 
     /**

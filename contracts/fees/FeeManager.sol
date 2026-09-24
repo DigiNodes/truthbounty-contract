@@ -90,6 +90,9 @@ contract FeeManager is IFeeManager, ReentrancyGuard, Pausable, GovernanceOwnable
     /// @notice Cumulative fees collected per fee type
     mapping(bytes32 => uint256) private _feesByType;
 
+    /// @notice Reserved fees awaiting distribution (per token)
+    uint256 private _reservedFees;
+
     /// @notice Cumulative amounts distributed per allocation name
     mapping(bytes32 => uint256) private _totalByAllocation;
 
@@ -130,6 +133,9 @@ contract FeeManager is IFeeManager, ReentrancyGuard, Pausable, GovernanceOwnable
     error DuplicateFeeRecord(bytes32 recordId);
     error PageLimitExceeded(uint256 limit, uint256 max);
     error AllocationTransferFailed(bytes32 allocation);
+    error NoReservedFees();
+    error DistributionInProgress();
+    error InsufficientReservedFees(uint256 requested, uint256 available);
 
     // ============ Constructor ============
 
