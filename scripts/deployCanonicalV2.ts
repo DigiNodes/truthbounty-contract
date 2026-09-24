@@ -1,5 +1,6 @@
 import { ethers } from "hardhat";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { validateCanonicalV2Parameters } from "./validateDeploymentConfig";
 
 export interface CanonicalV2Suite {
   deployer: SignerWithAddress;
@@ -45,6 +46,19 @@ export async function deployCanonicalV2(
   const appealMultiplierBps = options.appealMultiplierBps ?? 15000;
   const maxWeightCap = options.maxWeightCap ?? ethers.parseEther("100000");
   const finalizeDeployerRoles = options.finalizeDeployerRoles ?? false;
+
+  validateCanonicalV2Parameters({
+    initialSupply,
+    minVerificationCount,
+    minTotalWeight,
+    minConfidenceBps,
+    challengeWindowDuration,
+    appealDuration,
+    minAppealStake,
+    appealMultiplierBps,
+    maxWeightCap,
+  });
+  console.log("Deployment config validated:", deployer.address);
 
   // 1. Governance Controller
   const GovFactory = await ethers.getContractFactory("GovernanceController", deployer);
