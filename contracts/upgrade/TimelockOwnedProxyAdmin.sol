@@ -92,28 +92,61 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     /**
      * @dev Schedule an upgrade to be executed after the timelock period
      * Can only be called by the timelock (which means it must go through governance)
+     * @param proxy The proxy contract to upgrade
+     * @param newImplementation The new implementation address
+     * @param data Optional data to call on the proxy after upgrade
+     * @param delay The delay in seconds before the upgrade can be executed
+     * @param predecessorId Optional ID of a prerequisite upgrade that must be executed first
      */
     function scheduleUpgrade(
         address proxy,
         address newImplementation,
-        bytes calldata data
+        bytes calldata data,
+        uint256 delay,
+        bytes32 predecessorId
     ) external onlyTimelockController returns (bytes32 upgradeId) {
+        // Validate delay is within bounds
+        if (delay < MIN_UPGRADE_DELAY || delay > MAX_UPGRADE_DELAY) {
+            revert InvalidDelay(delay);
+        }
+        
         // Validate the new implementation before scheduling
         _validateImplementation(proxy, newImplementation);
         
-        upgradeId = keccak256(abi.encodePacked(proxy, newImplementation, block.timestamp));
-        uint256 executeAfter = block.timestamp + UPGRADE_DELAY;
+        // Generate unique operation ID using nonce to prevent collisions even in same block
+        unchecked {
+            _operationNonce++;
+        }
+        upgradeId = keccak256(abi.encodePacked(proxy, newImplementation, block.timestamp, _operationNonce));
+        
+        // Ensure operation ID is unique (defense in depth)
+        if (pendingUpgrades[upgradeId].proxy != address(0)) {
+            revert OperationIdCollision(upgradeId);
+        }
+        
+        uint256 executeAfter = block.timestamp + delay;
+        uint256 expireAt = block.timestamp + MAX_UPGRADE_DELAY; // Upgrades must be executed within 30 days
+        
+        // Validate predecessor if specified
+        if (predecessorId != bytes32(0)) {
+            PendingUpgrade storage predecessor = pendingUpgrades[predecessorId];
+            if (predecessor.proxy == address(0) || !predecessor.executed) {
+                revert PredecessorNotCompleted(predecessorId);
+            }
+        }
         
         pendingUpgrades[upgradeId] = PendingUpgrade({
             proxy: proxy,
             implementation: newImplementation,
             data: data,
             executeAfter: executeAfter,
+            expireAt: expireAt,
+            predecessorId: predecessorId,
             executed: false,
             cancelled: false
         });
         
-        emit UpgradeScheduled(upgradeId, proxy, newImplementation, executeAfter);
+        emit UpgradeScheduled(upgradeId, proxy, newImplementation, executeAfter, expireAt, predecessorId);
     }
     
     /**
