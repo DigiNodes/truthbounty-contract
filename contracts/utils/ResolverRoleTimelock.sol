@@ -92,14 +92,54 @@ abstract contract ResolverRoleTimelock is AccessControl {
         operationId = _scheduleResolverRoleChange(account, false);
     }
 
-    function _scheduleResolverRoleChange(address account, bool grant) internal returns (bytes32 operationId) {
-        operationId = resolverRoleChangeId(account, grant);
-        if (resolverRoleChangeReadyAt[operationId] != 0) revert ResolverRoleChangeAlreadyPending();
+    function scheduleResolverRoleGrantWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
+        operationId = _scheduleResolverRoleChange(account, true, delay);
+    }
 
-        uint256 readyAt = block.timestamp + RESOLVER_ROLE_CHANGE_DELAY;
-        resolverRoleChangeReadyAt[operationId] = readyAt;
+    function scheduleResolverRoleRevokeWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
+        operationId = _scheduleResolverRoleChange(account, false, delay);
+    }
 
-        emit ResolverRoleChangeScheduled(operationId, account, grant, readyAt);
+    function _scheduleResolverRoleChange(address account, bool grant, uint256 delay) internal returns (bytes32 operationId) {
+        // Validate delay is within bounds
+        if (delay < MIN_RESOLVER_ROLE_CHANGE_DELAY || delay > MAX_RESOLVER_ROLE_CHANGE_DELAY) {
+            revert InvalidDelay(delay);
+        }
+        
+        // Generate unique operation ID using nonce to prevent collisions
+        unchecked {
+            _operationNonce++;
+        }
+        operationId = keccak256(abi.encodePacked(address(this), _resolverRole(), account, grant, block.timestamp, _operationNonce));
+        
+        // Ensure operation ID is unique (defense in depth)
+        if (pendingRoleChanges[operationId].readyAt != 0) {
+            revert OperationIdCollision(operationId);
+        }
+
+        uint256 readyAt = block.timestamp + delay;
+        uint256 expireAt = block.timestamp + MAX_RESOLVER_ROLE_CHANGE_DELAY;
+
+        pendingRoleChanges[operationId] = PendingRoleChange({
+            readyAt: readyAt,
+            expireAt: expireAt,
+            executed: false
+        });
+
+        emit ResolverRoleChangeScheduled(operationId, account, grant, readyAt, expireAt);
+    }
+
+    // Keep original functions for backward compatibility with default delay
+    function scheduleResolverRoleGrant(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
+        operationId = _scheduleResolverRoleChange(account, true, MIN_RESOLVER_ROLE_CHANGE_DELAY);
+    }
+
+    function scheduleResolverRoleRevoke(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
+        operationId = _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function _executeResolverRoleChange(address account, bool grant) internal {
