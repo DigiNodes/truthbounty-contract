@@ -10,24 +10,37 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
  *      RESOLVER_ROLE changes must be scheduled, wait for RESOLVER_ROLE_CHANGE_DELAY, then executed.
  */
 abstract contract ResolverRoleTimelock is AccessControl {
-    uint256 public constant RESOLVER_ROLE_CHANGE_DELAY = 2 days;
+    uint256 public constant MIN_RESOLVER_ROLE_CHANGE_DELAY = 2 days;
+    uint256 public constant MAX_RESOLVER_ROLE_CHANGE_DELAY = 14 days; // Max 14 days for role changes
 
-    mapping(bytes32 => uint256) public resolverRoleChangeReadyAt;
+    struct PendingRoleChange {
+        uint256 readyAt;
+        uint256 expireAt;
+        bool executed;
+    }
+
+    mapping(bytes32 => PendingRoleChange) public pendingRoleChanges;
+    uint256 private _operationNonce; // Nonce for unique operation IDs
 
     event ResolverRoleChangeScheduled(
         bytes32 indexed operationId,
         address indexed account,
         bool grant,
-        uint256 readyAt
+        uint256 readyAt,
+        uint256 expireAt
     );
     event ResolverRoleChangeCancelled(bytes32 indexed operationId, address indexed account, bool grant);
     event ResolverRoleChangeExecuted(bytes32 indexed operationId, address indexed account, bool grant);
+    event ResolverRoleChangeExpired(bytes32 indexed operationId, address indexed account, bool grant);
 
     error ResolverRoleChangeRequiresTimelock();
     error ResolverRoleChangeAlreadyPending();
     error ResolverRoleChangeNotPending();
     error ResolverRoleChangeNotReady(uint256 readyAt);
+    error ResolverRoleChangeExpired();
     error ResolverRoleChangeNoop();
+    error InvalidDelay(uint256 delay);
+    error OperationIdCollision(bytes32 operationId);
 
     function _resolverRole() internal pure virtual returns (bytes32);
 

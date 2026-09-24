@@ -189,6 +189,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     /**
      * @dev Cancel a pending upgrade
      * Can only be called by the timelock
+     * @param upgradeId The ID of the upgrade to cancel
      */
     function cancelUpgrade(bytes32 upgradeId) external onlyTimelockController {
         PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
@@ -196,8 +197,23 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         if (upgrade.executed) revert UpgradeAlreadyExecuted();
         if (upgrade.cancelled) revert UpgradeAlreadyCancelled();
         
-        upgrade.cancelled = true;
+        // Remove from storage completely to prevent any future execution
+        delete pendingUpgrades[upgradeId];
         emit UpgradeCancelled(upgradeId);
+    }
+    
+    /**
+     * @dev Clean up an expired upgrade. Anyone can call this to free up storage.
+     * @param upgradeId The ID of the expired upgrade to clean up
+     */
+    function cleanupExpiredUpgrade(bytes32 upgradeId) external {
+        PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
+        if (upgrade.proxy == address(0)) revert UpgradeNotScheduled();
+        if (block.timestamp <= upgrade.expireAt) revert UpgradeExpired(); // Only allow cleanup if actually expired
+        
+        // Remove from storage
+        delete pendingUpgrades[upgradeId];
+        emit UpgradeExpired(upgradeId);
     }
     
     /**
