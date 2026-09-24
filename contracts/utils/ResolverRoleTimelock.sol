@@ -54,24 +54,38 @@ abstract contract ResolverRoleTimelock is AccessControl {
         operationId = _scheduleResolverRoleChange(account, false);
     }
 
-    function cancelResolverRoleChange(address account, bool grant) external onlyRole(getRoleAdmin(_resolverRole())) {
-        bytes32 operationId = resolverRoleChangeId(account, grant);
-        if (resolverRoleChangeReadyAt[operationId] == 0) revert ResolverRoleChangeNotPending();
+    function cancelResolverRoleChange(bytes32 operationId, address account, bool grant) external onlyRole(getRoleAdmin(_resolverRole())) {
+        PendingRoleChange storage pendingChange = pendingRoleChanges[operationId];
+        if (pendingChange.readyAt == 0) revert ResolverRoleChangeNotPending();
+        if (pendingChange.executed) revert ResolverRoleChangeNoop();
 
-        delete resolverRoleChangeReadyAt[operationId];
+        // Remove from storage completely to prevent any future execution
+        delete pendingRoleChanges[operationId];
         emit ResolverRoleChangeCancelled(operationId, account, grant);
     }
 
-    function executeResolverRoleGrant(address account) external {
-        _executeResolverRoleChange(account, true);
+    function executeResolverRoleGrant(bytes32 operationId, address account) external {
+        _executeResolverRoleChange(operationId, account, true);
     }
 
-    function executeResolverRoleRevoke(address account) external {
-        _executeResolverRoleChange(account, false);
+    function executeResolverRoleRevoke(bytes32 operationId, address account) external {
+        _executeResolverRoleChange(operationId, account, false);
     }
 
-    function resolverRoleChangeId(address account, bool grant) public view returns (bytes32) {
-        return keccak256(abi.encode(address(this), _resolverRole(), account, grant));
+    /**
+     * @dev Clean up an expired role change. Anyone can call this to free up storage.
+     * @param operationId The ID of the expired role change to clean up
+     * @param account The account associated with the role change
+     * @param grant Whether it was a grant or revoke operation
+     */
+    function cleanupExpiredRoleChange(bytes32 operationId, address account, bool grant) external {
+        PendingRoleChange storage pendingChange = pendingRoleChanges[operationId];
+        if (pendingChange.readyAt == 0) revert ResolverRoleChangeNotPending();
+        if (block.timestamp <= pendingChange.expireAt) revert ResolverRoleChangeExpired();
+        
+        // Remove from storage
+        delete pendingRoleChanges[operationId];
+        emit ResolverRoleChangeExpired(operationId, account, grant);
     }
 
     function grantRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
@@ -82,14 +96,6 @@ abstract contract ResolverRoleTimelock is AccessControl {
     function revokeRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
         if (role == _resolverRole()) revert ResolverRoleChangeRequiresTimelock();
         super.revokeRole(role, account);
-    }
-
-    function _scheduleResolverRoleGrant(address account) internal returns (bytes32 operationId) {
-        operationId = _scheduleResolverRoleChange(account, true);
-    }
-
-    function _scheduleResolverRoleRevoke(address account) internal returns (bytes32 operationId) {
-        operationId = _scheduleResolverRoleChange(account, false);
     }
 
     function scheduleResolverRoleGrantWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
