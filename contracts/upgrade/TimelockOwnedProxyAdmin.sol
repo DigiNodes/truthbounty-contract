@@ -151,6 +151,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     
     /**
      * @dev Execute a scheduled upgrade after the timelock has elapsed
+     * @param upgradeId The ID of the upgrade to execute
      */
     function executeUpgrade(bytes32 upgradeId) external {
         PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
@@ -158,12 +159,31 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         if (upgrade.executed) revert UpgradeAlreadyExecuted();
         if (upgrade.cancelled) revert UpgradeAlreadyCancelled();
         if (block.timestamp < upgrade.executeAfter) revert TimelockNotElapsed();
+        if (block.timestamp > upgrade.expireAt) {
+            // Mark as expired and clean up
+            delete pendingUpgrades[upgradeId];
+            emit UpgradeExpired(upgradeId);
+            revert UpgradeExpired();
+        }
         
+        // Validate predecessor if specified
+        if (upgrade.predecessorId != bytes32(0)) {
+            PendingUpgrade storage predecessor = pendingUpgrades[upgrade.predecessorId];
+            if (predecessor.proxy == address(0) || !predecessor.executed) {
+                revert PredecessorNotCompleted(upgrade.predecessorId);
+            }
+        }
+        
+        // Mark as executed first (reentrancy protection) and then remove from storage completely
+        // to prevent any replay attacks - one-time execution guaranteed
         upgrade.executed = true;
+        delete pendingUpgrades[upgradeId];
         
         // Perform the upgrade (OZ v5 ProxyAdmin exposes upgradeAndCall only).
         ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(upgrade.proxy);
         upgradeAndCall(proxy, upgrade.implementation, upgrade.data);
+        
+        emit UpgradeExecuted(upgradeId);
     }
     
     /**
