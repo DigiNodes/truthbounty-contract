@@ -22,7 +22,10 @@
     "deploy:mainnet": "npx hardhat ignition deploy ignition/modules/FullDeploy.ts --network optimism --parameters ignition/parameters/optimism_mainnet.json",
     "deploy:token": "npx hardhat ignition deploy ignition/modules/TruthBounty.ts --network optimism_sepolia",
     "deploy:staking": "npx hardhat ignition deploy ignition/modules/Staking.ts --network optimism_sepolia",
-    "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia"
+    "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia",
+    "check:boundaries": "node scripts/check-dependency-boundaries.mjs",
+    "test:boundaries": "node --test test/scripts/check-dependency-boundaries.test.mjs",
+    "lint": "npm run check:boundaries && npm run test:boundaries"
   },
   "keywords": [
     "blockchain",
