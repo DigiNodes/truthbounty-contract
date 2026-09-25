@@ -10,6 +10,7 @@ import {ITruthBountyEvents} from "../interfaces/ITruthBountyEvents.sol";
 import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title EvidenceRegistry
 /// @notice Content-addressed V2 evidence commitment registry.
@@ -21,6 +22,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
+    uint256 public constant MAX_EVIDENCE_PER_CLAIM = ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM;
 
     IClaimRegistry public immutable claimRegistry;
 
@@ -50,6 +52,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     error DuplicateEvidence(bytes32 commitmentKey);
     error EvidenceNotFound(uint256 evidenceId);
     error InvalidPageLimit(uint256 limit);
+    error EvidenceLimitReached(uint256 claimId, uint256 max);
 
     event EvidenceCommitted(
         uint256 indexed claimId,
@@ -119,6 +122,9 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         bytes32 commitmentKey = keccak256(abi.encode(claimId, msg.sender, contentDigest, metadataDigest));
         if (_commitmentExists[commitmentKey]) revert DuplicateEvidence(commitmentKey);
+        if (_claimEvidenceIds[claimId].length >= MAX_EVIDENCE_PER_CLAIM) {
+            revert EvidenceLimitReached(claimId, MAX_EVIDENCE_PER_CLAIM);
+        }
 
         evidenceId = computeEvidenceId(claimId, msg.sender, contentDigest, metadataDigest, nonce);
         _commitmentExists[commitmentKey] = true;
@@ -136,7 +142,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         });
         _claimEvidenceIds[claimId].push(evidenceId);
 
-        emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest);
+        emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest, uint64(block.timestamp), 1);
         emit EvidenceSubmittedV1(claimId, evidenceId, msg.sender, contentDigest, now_, EVENT_SCHEMA_VERSION);
         emit EvidenceCommitted(
             claimId,
@@ -161,7 +167,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         IV2Types.EvidenceStatus previous = evidence.status;
         evidence.status = status;
-        emit EvidenceStatusChanged(evidenceId, previous, status, msg.sender);
+        emit EvidenceStatusChanged(evidenceId, previous, status, msg.sender, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IEvidence

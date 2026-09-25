@@ -145,6 +145,9 @@ library V2Errors {
     /// @notice Recorded obligations exceed on-chain custody for an asset.
     error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
+    /// @notice Canonical asset conservation invariant is violated; on-chain balance and accounting buckets must match exactly.
+    error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
+
     /// @notice Settlement outcome already recorded for this claim-round; repeated or conflicting instructions revert.
     error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
 

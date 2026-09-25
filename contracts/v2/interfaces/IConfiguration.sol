@@ -23,7 +23,7 @@ interface IConfiguration is IV2Module {
         uint256 pauseCooldown;
     }
 
-    event ParameterSetPublished(uint256 indexed versionId, address indexed actor);
+    event ParameterSetPublished(uint256 indexed versionId, address indexed actor, uint64 timestamp, uint16 version);
 
     error InvalidParameterSet(bytes32 reason);
 

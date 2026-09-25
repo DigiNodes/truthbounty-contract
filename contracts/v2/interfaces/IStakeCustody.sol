@@ -3,9 +3,9 @@ pragma solidity ^0.8.20;
 import {IV2Module} from "./IV2Module.sol";
 import {IV2Types} from "./IV2Types.sol";
 interface IStakeCustody is IV2Module {
-    event StakeDeposited(address indexed account, uint256 indexed claimId, uint256 amount);
-    event StakeReleased(address indexed account, uint256 indexed claimId, uint256 amount);
-    event StakeSlashed(address indexed account, uint256 indexed claimId, uint256 amount, bytes32 indexed reason);
+    event StakeDeposited(address indexed account, uint256 indexed claimId, uint256 amount, uint64 timestamp, uint16 version);
+    event StakeReleased(address indexed account, uint256 indexed claimId, uint256 amount, uint64 timestamp, uint16 version);
+    event StakeSlashed(address indexed account, uint256 indexed claimId, uint256 amount, bytes32 indexed reason, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when a conclusive settlement converts frozen principal into claimable principal and reward.
     event VaultSettledConclusive(
@@ -15,7 +15,7 @@ interface IStakeCustody is IV2Module {
         uint256 round,
         uint256 principalAmount,
         uint256 rewardAmount
-    );
+    , uint64 timestamp, uint16 version);
     /// @notice Emitted when an inconclusive round refunds frozen principal back to the account.
     event VaultRefundedInconclusive(
         address indexed asset,
@@ -23,7 +23,7 @@ interface IStakeCustody is IV2Module {
         uint256 indexed claimId,
         uint256 round,
         uint256 amount
-    );
+    , uint64 timestamp, uint16 version);
     /// @notice Emitted when an appeal carries a lock forward to the next round.
     event VaultCarriedForward(
         address indexed asset,
@@ -32,7 +32,7 @@ interface IStakeCustody is IV2Module {
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    );
+    , uint64 timestamp, uint16 version);
     /// @notice Emitted when a round rolls a lock forward without settlement.
     event VaultRolledOver(
         address indexed asset,
@@ -41,7 +41,7 @@ interface IStakeCustody is IV2Module {
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    );
+    , uint64 timestamp, uint16 version);
     /// @notice Emitted when a lock is finally unlocked to claimable balance.
     event VaultFinalUnlocked(
         address indexed asset,
@@ -49,7 +49,7 @@ interface IStakeCustody is IV2Module {
         uint256 indexed claimId,
         uint256 round,
         uint256 amount
-    );
+    , uint64 timestamp, uint16 version);
 
     function depositStake(uint256 claimId, uint256 amount) external;
     function releaseStake(uint256 claimId, address account, uint256 amount) external;
