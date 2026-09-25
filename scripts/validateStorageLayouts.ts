@@ -1,38 +1,30 @@
-export async function validateStorageLayouts() {
-    console.log("==================================================");
-    console.log("Automated Storage Layout & Upgrade Safety Validator");
-    console.log("==================================================");
+/**
+ * Legacy storage-layout validation entry point (V2-SC-040 compatibility shim).
+ *
+ * The original implementation compared hardcoded slot *counts* that were never
+ * derived from the compiler, so it validated nothing. Since V2-SC-121 the
+ * canonical check is the reviewed storage-layout manifest:
+ *
+ *   npm run test:layouts   (scripts/generateStorageLayouts.ts --check)
+ *
+ * This shim delegates to that check so existing callers
+ * (test/ReleaseReadiness.test.ts) exercise the real freeze.
+ */
 
-    const modules = [
-        { name: "TruthBounty", currentSlots: 50, newSlots: 50 },
-        { name: "ClaimRegistry", currentSlots: 20, newSlots: 20 },
-        { name: "VerificationSubmission", currentSlots: 15, newSlots: 15 },
-        { name: "ProtocolUpgradeManager", currentSlots: 30, newSlots: 30 }
-    ];
-
-    let allValid = true;
-
-    for (const mod of modules) {
-        if (mod.newSlots < mod.currentSlots) {
-            console.error(`❌ Layout validation failed for ${mod.name}: new slots (${mod.newSlots}) < current slots (${mod.currentSlots})`);
-            allValid = false;
-        } else {
-            console.log(`✅ Layout validated for ${mod.name}: ${mod.currentSlots} slots preserved`);
-        }
-    }
-
-    if (!allValid) {
-        throw new Error("Storage layout validation failed.");
-    }
-
-    console.log("All storage layouts verified successfully.");
+export async function validateStorageLayouts(): Promise<void> {
+  // Lazy import keeps the solc compile out of unrelated tooling import paths.
+  const cli = await import("./generateStorageLayouts");
+  const ok = cli.checkStorageLayouts();
+  if (!ok) {
+    throw new Error("Storage layout validation failed (see storage-layouts check output).");
+  }
 }
 
 if (require.main === module) {
-    validateStorageLayouts()
-        .then(() => process.exit(0))
-        .catch((error) => {
-            console.error(error);
-            process.exit(1);
-        });
+  validateStorageLayouts()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
 }
