@@ -225,6 +225,23 @@ contract StakeVaultTest is Test {
         assertEq(custody, obligations);
     }
 
+    function test_unexplainedBalanceDeltaReverts() public {
+        vm.prank(verifier);
+        token.transfer(address(vault), STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                V2Errors.ConservationInvariantViolation.selector,
+                address(token),
+                0,
+                0,
+                STAKE
+            )
+        );
+        vault.depositStake(CLAIM_A, STAKE);
+    }
+
     function test_invariant_obligationsNeverExceedCustody() public {
         vm.prank(verifier);
         vault.depositStake(CLAIM_A, STAKE);
