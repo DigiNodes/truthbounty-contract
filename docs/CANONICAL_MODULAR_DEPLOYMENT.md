@@ -73,3 +73,31 @@ import { deployCanonicalV2 } from "./scripts/deployCanonicalV2";
 
 const suite = await deployCanonicalV2(deployer);
 ```
+
+## 5. Deterministic Deployment Manifest (`V2-SC-125`)
+
+The canonical manifest is generated from versioned inputs and compiled artifacts:
+
+```bash
+DEPLOYER_ADDRESS=0x... \
+DEPLOYMENT_STARTING_NONCE=0 \
+RELEASE_VERSION=2.0.0 \
+npm run manifest:canonical-v2
+```
+
+The generator writes `deployments/<DEPLOY_ENV>/canonical-v2-manifest.json` and
+prints its Keccak-256 digest. The manifest records:
+
+- compiler version, EVM target, optimizer, and IR settings;
+- canonical contract order, constructor references, explicit library addresses,
+   bytecode hashes, and deployed-bytecode hashes;
+- versioned step salts, transaction indexes/nonces, dependency edges, and
+   CREATE addresses derived from the deployer and starting nonce; and
+- the post-deployment `REGISTRY_UPDATER_ROLE` wiring call.
+
+The manifest contains no timestamp, private key, RPC URL, or launch address. A
+fresh deployment account and the same starting nonce are required for address
+reproduction. The recorded salts identify versioned deployment steps; the
+current Ignition module uses ordinary CREATE transactions, not a CREATE2 factory.
+Released legacy Foundry manifests remain compatible and are not rewritten by
+this generator.
