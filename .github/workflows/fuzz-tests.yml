@@ -45,7 +45,7 @@ jobs:
       run: forge coverage --ir-minimum --report lcov --skip script
       
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v7
       with:
         file: ./lcov.info
         flags: fuzz-tests
