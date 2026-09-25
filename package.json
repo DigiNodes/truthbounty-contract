@@ -31,7 +31,7 @@
     "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia",
     "check:boundaries": "node scripts/check-dependency-boundaries.mjs",
     "test:boundaries": "node --test test/scripts/check-dependency-boundaries.test.mjs",
-    "lint": "npm run check:boundaries && npm run test:boundaries"
+    "lint": "npm run check:boundaries && npm run test:boundaries",
     "sbom:release": "ts-node scripts/generateContractReleaseSbom.ts",
     "test:sbom": "hardhat test test/ContractReleaseSbom.test.ts"
   },

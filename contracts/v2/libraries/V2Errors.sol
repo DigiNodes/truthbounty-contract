@@ -213,4 +213,23 @@ library V2Errors {
 
     /// @notice Reentrancy guard detected.
     error ReentrancyDetected();
+
+    // =========================================================================
+    // Supply-Chain Attestation Errors (V2-SC-138)
+    // =========================================================================
+
+    /// @notice Invalid attestation schema version.
+    error InvalidAttestationSchemaVersion();
+
+    /// @notice Empty protocol name in attestation.
+    error EmptyProtocolName();
+
+    /// @notice Empty release version in attestation.
+    error EmptyReleaseVersion();
+
+    /// @notice Invalid source commit format (must be 40-char lowercase hex).
+    error InvalidSourceCommit();
+
+    /// @notice Invalid checksum (zero or malformed).
+    error InvalidChecksum();
 }
