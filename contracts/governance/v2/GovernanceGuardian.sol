@@ -30,8 +30,13 @@ contract GovernanceGuardian is AccessControl, Pausable {
     }
 
     /**
-     * @notice Cancel a governance proposal. Delegates to the governor cancel path.
-     * @dev Guardian cancellation is authorized inside {TruthBountyGovernor._validateCancel}.
+     * @notice Cancel (veto) a governance proposal. Delegates to the governor cancel path.
+     * @dev Authorization is enforced by the governor: the call only succeeds while the proposal is
+     *      in a non-terminal state and is attributed {TruthBountyGovernor.CancelAuthority-GUARDIAN}
+     *      by {TruthBountyGovernor-cancellationAuthority}; any other outcome reverts with
+     *      {TruthBountyGovernor-ProposalCancellationUnauthorized} (V2-SC-066). Re-cancelling an
+     *      already-cancelled proposal always reverts, so a veto cannot be replayed.
+     * @param proposalId The proposal to veto.
      */
     function vetoProposal(uint256 proposalId) external onlyRole(GUARDIAN_ROLE) {
         governor.cancel(proposalId);
