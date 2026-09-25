@@ -101,6 +101,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
 
     /// @inheritdoc IStakeCustody
     function depositStake(uint256 claimId, uint256 amount) external override nonReentrant {
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         address account = msg.sender;
         _deposit(account, asset, amount);
@@ -111,6 +112,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     /// @inheritdoc IStakeCustody
     function releaseStake(uint256 claimId, address account, uint256 amount) external override nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _unlock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
         emit StakeReleased(account, claimId, amount, uint64(block.timestamp), 1);
@@ -119,6 +121,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     /// @inheritdoc IStakeCustody
     function slashStake(uint256 claimId, address account, uint256 amount, bytes32 reason) external override nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _slash(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount, reason);
         emit StakeSlashed(account, claimId, amount, reason, uint64(block.timestamp), 1);
@@ -153,6 +156,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _lock(asset, account, claimId, round, category, amount);
     }
 
@@ -166,6 +170,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _unlock(asset, account, claimId, round, category, amount);
     }
 
@@ -180,6 +185,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         bytes32 reason
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _slash(asset, account, claimId, round, category, amount, reason);
     }
 
