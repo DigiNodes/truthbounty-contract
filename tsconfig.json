@@ -6,6 +6,17 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
-  }
+    "resolveJsonModule": true,
+    "typeRoots": ["./node_modules/@types"]
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "hardhat.config.ts",
+    "scripts/**/*",
+    "test/storageLayoutManifest.test.ts",
+    "test/ReleaseReadiness.test.ts"
+  ],
+  "exclude": [
+    "types/ethers-contracts/**/*"
+  ]
 }

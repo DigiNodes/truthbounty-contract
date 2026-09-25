@@ -8,7 +8,7 @@ import "@openzeppelin/hardhat-upgrades";
 dotenv.config();
 
 const config: HardhatUserConfig = {
-solidity: {
+  solidity: {
     version: "0.8.28",
     settings: {
       evmVersion: "cancun",
