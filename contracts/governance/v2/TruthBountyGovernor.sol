@@ -11,6 +11,7 @@ import {GovernorVotesQuorumFraction} from "@openzeppelin/contracts/governance/ex
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
 import {IGovernedModuleRegistry} from "./IGovernedModuleRegistry.sol";
+import {IGovernanceSnapshot} from "./IGovernanceSnapshot.sol";
 import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol";
 
 /**
@@ -18,6 +19,19 @@ import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol
  * @notice GovernorBravo-compatible OpenZeppelin governor integrated with {TimelockController}.
  * @dev Proposals may only target registered governed modules and are blocked from claim-outcome calls.
  *      Guardian cancellation is separate from timelock execution authority.
+ *
+ *      ## Canonical Snapshot Integration (V2-SC-063)
+ *
+ *      At proposal creation, `_propose` calls `governanceSnapshot.registerSnapshot(proposalId)`,
+ *      recording the exact `block.timestamp` at which the proposal was created as the
+ *      canonical voting-power freeze point. This timestamp is identical to
+ *      `proposalSnapshot(proposalId)` used by {GovernorVotes._getVotes} and ensures that
+ *      voting-power queries cannot be influenced by token transfers, delegations, or
+ *      stake changes that occur after proposal creation.
+ *
+ *      If `governanceSnapshot` is set (non-zero), snapshot registration is mandatory: a
+ *      failed call reverts the entire `_propose` call, preventing proposals from existing
+ *      without a canonical snapshot entry (fail-closed).
  */
 contract TruthBountyGovernor is
     Governor,
@@ -51,6 +65,7 @@ contract TruthBountyGovernor is
         address indexed timelock,
         address indexed token,
         address moduleRegistry,
+        address governanceSnapshot,
         uint256 votingDelay,
         uint256 votingPeriod,
         uint256 proposalThreshold,
@@ -79,9 +94,10 @@ contract TruthBountyGovernor is
     /// @param proposalThreshold_ Minimum token weight required to propose.
     /// @param quorumNumerator_ Fraction numerator for quorum, measured against total voting weight.
     constructor(
-        IVotes token,
-        TimelockController timelock,
-        IGovernedModuleRegistry registry,
+        IVotes token_,
+        TimelockController timelock_,
+        IGovernedModuleRegistry registry_,
+        IGovernanceSnapshot snapshot_,
         address guardian_,
         uint48 votingDelay_,
         uint32 votingPeriod_,
@@ -90,12 +106,13 @@ contract TruthBountyGovernor is
     )
         Governor("TruthBountyGovernor")
         GovernorSettings(votingDelay_, votingPeriod_, proposalThreshold_)
-        GovernorVotes(token)
+        GovernorVotes(token_)
         GovernorVotesQuorumFraction(quorumNumerator_)
-        GovernorTimelockControl(timelock)
+        GovernorTimelockControl(timelock_)
     {
         if (guardian_ == address(0)) revert ZeroGuardianAddress();
-        moduleRegistry = registry;
+        moduleRegistry = registry_;
+        governanceSnapshot = snapshot_;
         guardian = guardian_;
     }
 
@@ -109,6 +126,7 @@ contract TruthBountyGovernor is
             timelock(),
             address(token()),
             address(moduleRegistry),
+            address(governanceSnapshot),
             votingDelay(),
             votingPeriod(),
             proposalThreshold(),
@@ -163,7 +181,19 @@ contract TruthBountyGovernor is
         address proposer
     ) internal override(Governor, GovernorStorage) returns (uint256) {
         _validateProposalOperations(targets, calldatas);
-        return super._propose(targets, values, calldatas, description, proposer);
+        uint256 proposalId = super._propose(targets, values, calldatas, description, proposer);
+
+        // Register the canonical snapshot timestamp for this proposal.
+        // proposalSnapshot(proposalId) == clock() + votingDelay() at proposal creation —
+        // this is the exact timepoint that GovernorVotes uses for all getPastVotes queries.
+        // If governanceSnapshot is configured, registration is mandatory: a revert here
+        // propagates upward and prevents the proposal from existing without a snapshot.
+        if (address(governanceSnapshot) != address(0)) {
+            uint48 snapTs = uint48(proposalSnapshot(proposalId));
+            governanceSnapshot.registerSnapshot(proposalId, snapTs);
+        }
+
+        return proposalId;
     }
 
     /// @inheritdoc Governor

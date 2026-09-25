@@ -141,27 +141,30 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
 
     /// @inheritdoc IStakeCustody
     function depositStake(uint256 claimId, uint256 amount) external override nonReentrant {
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         address account = msg.sender;
         _deposit(account, asset, amount);
         _lock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit StakeDeposited(account, claimId, amount);
+        emit StakeDeposited(account, claimId, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
     function releaseStake(uint256 claimId, address account, uint256 amount) external override nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _unlock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit StakeReleased(account, claimId, amount);
+        emit StakeReleased(account, claimId, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
     function slashStake(uint256 claimId, address account, uint256 amount, bytes32 reason) external override nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _slash(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount, reason);
-        emit StakeSlashed(account, claimId, amount, reason);
+        emit StakeSlashed(account, claimId, amount, reason, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -203,6 +206,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _lock(asset, account, claimId, round, category, amount);
     }
 
@@ -223,6 +227,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _unlock(asset, account, claimId, round, category, amount);
     }
 
@@ -245,6 +250,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         bytes32 reason
     ) external nonReentrant {
         _onlyAuthorizedMutator();
+        _assertSettlementNotFinalized(claimId, round);
         _slash(asset, account, claimId, round, category, amount, reason);
     }
 
@@ -271,7 +277,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         if (rewardAmount > 0) {
             _creditReward(asset, account, rewardAmount);
         }
-        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount);
+        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -287,7 +293,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.REFUNDED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultRefundedInconclusive(asset, account, claimId, round, amount);
+        emit VaultRefundedInconclusive(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -304,7 +310,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.CARRIED_FORWARD;
 
         _moveLock(asset, account, claimId, fromRound, toRound, amount);
-        emit VaultCarriedForward(asset, account, claimId, fromRound, toRound, amount);
+        emit VaultCarriedForward(asset, account, claimId, fromRound, toRound, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -321,7 +327,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.ROLLED_OVER;
 
         _moveLock(asset, account, claimId, fromRound, toRound, amount);
-        emit VaultRolledOver(asset, account, claimId, fromRound, toRound, amount);
+        emit VaultRolledOver(asset, account, claimId, fromRound, toRound, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -337,7 +343,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.UNLOCKED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultFinalUnlocked(asset, account, claimId, round, amount);
+        emit VaultFinalUnlocked(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -403,6 +409,17 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     /// @return obligations Sum of protocol allocation, locked, and claimable balances.
     function reconcile(address asset) external view returns (uint256 custody, uint256 obligations) {
         return _reconcile(asset);
+    }
+
+    /// @notice Returns the canonical conservation terms including the raw on-chain balance for debugging and invariant checks.
+    function conservation(address asset)
+        external
+        view
+        returns (uint256 custody, uint256 obligations, uint256 actualBalance)
+    {
+        custody = _totalCustody[asset];
+        obligations = _protocolAllocation[asset] + _assetTotalLocked[asset] + _assetTotalClaimable[asset];
+        actualBalance = IERC20(asset).balanceOf(address(this));
     }
 
     // -------------------------------------------------------------------------
@@ -642,7 +659,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
 
     function _assertReconciliation(address asset) internal view {
         (uint256 custody, uint256 obligations) = _reconcile(asset);
+        uint256 actualBalance = IERC20(asset).balanceOf(address(this));
+
         if (obligations > custody) revert V2Errors.ObligationsExceedCustody(asset, custody, obligations);
+        if (custody != obligations || actualBalance != custody) {
+            revert V2Errors.ConservationInvariantViolation(asset, custody, obligations, actualBalance);
+        }
     }
 
     function _reconcile(address asset) internal view returns (uint256 custody, uint256 obligations) {

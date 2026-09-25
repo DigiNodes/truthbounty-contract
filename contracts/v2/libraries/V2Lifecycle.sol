@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IV2Types} from "../interfaces/IV2Types.sol";
 import {V2Errors} from "./V2Errors.sol";
+import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
 
 /// @title V2Lifecycle
 /// @notice Shared lifecycle and state machine logic for the TruthBounty V2 protocol.
@@ -152,6 +153,12 @@ library V2Lifecycle {
     /// @param params Parameter snapshot to validate.
     function validateParameterSet(ParameterSet memory params) internal pure {
         if (params.supportedAssets.length == 0) revert InvalidSupportedAssets(0);
+        if (params.supportedAssets.length > ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS) {
+            revert SupportedAssetLimitExceeded(
+                params.supportedAssets.length,
+                ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS
+            );
+        }
         for (uint256 i = 0; i < params.supportedAssets.length; ++i) {
             if (params.supportedAssets[i] == address(0)) {
                 revert UnsupportedAsset(params.supportedAssets[i]);
