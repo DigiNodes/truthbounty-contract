@@ -33,14 +33,19 @@ flowchart TD
 - **Actors:** `EMERGENCY_COUNCIL` (or `TIMELOCK_CONTROLLER` for Level 1).
 - **Actions:**
   1. Detect simulated anomaly (e.g. invalid claims flood or oracle divergence).
-  2. Call `EmergencyController.activatePause(level, reason, proposalRef)` or `EmergencyControls.pause(scope)`.
-  3. Escalate to Level 2 (Financial) or Level 3 (Shutdown) if asset loss risk is detected.
+  2. **Path A — Multi-Level Circuit Breaker:** Call `EmergencyController.activatePause(level, reason, proposalRef)`. Escalate to Level 2 (Financial) or Level 3 (Shutdown) if asset loss risk is detected.
+  3. **Path B — Canonical V2 Scoped Control:** Call `EmergencyControls.pause(scope)` (e.g. `SCOPE_CLAIMS`, `SCOPE_TREASURY`, or `SCOPE_ALL`).
 - **Verification Invariants:**
-  - `EmergencyPauseActivated` event emitted with caller, level, reason, and proposal reference.
-  - `EmergencyActionRecorded` event emitted with unique action hash.
-  - `currentPauseLevel` matches target level.
-  - `recoveryComplete` is set to `false`.
-  - Non-authorized accounts (and council attempts to unpause) revert with strict error selectors.
+  - **Path A Invariants:**
+    - `EmergencyPauseActivated` event emitted with caller, level, reason, and proposal reference.
+    - `EmergencyActionRecorded` event emitted with unique action hash.
+    - `currentPauseLevel` matches target level and `recoveryComplete` is set to `false`.
+    - Non-authorized accounts (and council attempts to unpause) revert with `NotAuthorizedForLevel` / `"Only DAO governance can lift pause"`.
+  - **Path B Invariants:**
+    - `EmergencyPaused` event emitted with `(bytes32 indexed scope, address indexed actor, uint64 timestamp, uint16 version)`.
+    - `paused(scope)` evaluates to `true` on `EmergencyControls`.
+    - Mutation calls to modules gated by `whenNotPaused(scope)` revert with `V2Errors.ProtocolPaused()`.
+    - Non-governance accounts (including emergency council and default admin) attempting to unpause revert with `UnauthorizedToUnpause`.
 
 ### Stage 2: Diagnosis & State Freezing
 

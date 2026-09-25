@@ -87,6 +87,12 @@ contract EmergencyRecoveryDrillsTest is Test {
     bytes32 public constant PROPOSAL_REF = keccak256("GOV-PROPOSAL-V2-EMERGENCY-DRILL-001");
     bytes32 public constant REPAIR_PROPOSAL_REF = keccak256("GOV-PROPOSAL-V2-PARAM-REPAIR-002");
 
+    uint8 internal constant LEVEL_NORMAL = 0;
+    uint8 internal constant LEVEL_HIGH_RISK = 1;
+    uint8 internal constant LEVEL_FINANCIAL = 2;
+    uint8 internal constant LEVEL_SHUTDOWN = 3;
+    bytes32 internal constant RECOVERY_EXECUTOR_ROLE = keccak256("RECOVERY_EXECUTOR");
+
     event EmergencyPauseActivated(
         uint8 indexed level,
         address indexed executor,
@@ -133,9 +139,9 @@ contract EmergencyRecoveryDrillsTest is Test {
 
         vm.stopPrank();
 
-        // Authorize recovery executor in EmergencyController
+        // Authorize recovery executor in EmergencyController using pre-cached constant
         vm.prank(daoGovernance);
-        controller.grantRole(controller.RECOVERY_EXECUTOR(), recoveryExecutor);
+        controller.grantRole(RECOVERY_EXECUTOR_ROLE, recoveryExecutor);
     }
 
     // =========================================================================
@@ -143,27 +149,27 @@ contract EmergencyRecoveryDrillsTest is Test {
     // =========================================================================
 
     function test_Stage1_EmergencyCouncil_Activates_Level1_HighRisk() public {
-        vm.prank(emergencyCouncil);
         vm.expectEmit(true, true, true, true);
         emit EmergencyPauseActivated(
-            controller.LEVEL_HIGH_RISK(),
+            LEVEL_HIGH_RISK,
             emergencyCouncil,
             "Exploit detected: abnormal claim flood",
             PROPOSAL_REF
         );
 
+        vm.prank(emergencyCouncil);
         controller.activatePause(
-            controller.LEVEL_HIGH_RISK(),
+            LEVEL_HIGH_RISK,
             "Exploit detected: abnormal claim flood",
             PROPOSAL_REF
         );
 
-        assertEq(controller.currentPauseLevel(), controller.LEVEL_HIGH_RISK());
+        assertEq(controller.currentPauseLevel(), LEVEL_HIGH_RISK);
         assertFalse(controller.recoveryComplete());
         assertEq(controller.getEmergencyHistoryCount(), 1);
 
         EmergencyController.EmergencyRecord[] memory history = controller.getEmergencyHistory(0, 1);
-        assertEq(history[0].level, controller.LEVEL_HIGH_RISK());
+        assertEq(history[0].level, LEVEL_HIGH_RISK);
         assertEq(history[0].initiator, emergencyCouncil);
         assertEq(history[0].reason, "Exploit detected: abnormal claim flood");
         assertEq(history[0].proposalRef, PROPOSAL_REF);
@@ -171,92 +177,94 @@ contract EmergencyRecoveryDrillsTest is Test {
 
     function test_Stage1_EmergencyCouncil_Escalates_To_Level2_Financial() public {
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Initial risk", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Initial risk", PROPOSAL_REF);
 
-        vm.prank(emergencyCouncil);
         vm.expectEmit(true, true, true, true);
         emit EmergencyPauseActivated(
-            controller.LEVEL_FINANCIAL(),
+            LEVEL_FINANCIAL,
             emergencyCouncil,
             "Escalation: drain pattern detected on payouts",
             PROPOSAL_REF
         );
 
+        vm.prank(emergencyCouncil);
         controller.activatePause(
-            controller.LEVEL_FINANCIAL(),
+            LEVEL_FINANCIAL,
             "Escalation: drain pattern detected on payouts",
             PROPOSAL_REF
         );
 
-        assertEq(controller.currentPauseLevel(), controller.LEVEL_FINANCIAL());
+        assertEq(controller.currentPauseLevel(), LEVEL_FINANCIAL);
         assertEq(controller.getEmergencyHistoryCount(), 2);
     }
 
     function test_Stage1_EmergencyCouncil_Escalates_To_Level3_Shutdown() public {
         vm.prank(emergencyCouncil);
         controller.activatePause(
-            controller.LEVEL_SHUTDOWN(),
+            LEVEL_SHUTDOWN,
             "Catastrophic failure: global protocol shutdown",
             PROPOSAL_REF
         );
 
-        assertEq(controller.currentPauseLevel(), controller.LEVEL_SHUTDOWN());
+        assertEq(controller.currentPauseLevel(), LEVEL_SHUTDOWN);
     }
 
     function test_Stage1_Rejects_Unauthorized_Callers() public {
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                EmergencyController.NotAuthorizedForLevel.selector,
-                attacker,
-                controller.LEVEL_HIGH_RISK()
-            )
+        bytes memory expectedErr = abi.encodeWithSelector(
+            EmergencyController.NotAuthorizedForLevel.selector,
+            attacker,
+            LEVEL_HIGH_RISK
         );
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Malicious pause", bytes32(0));
+
+        vm.expectRevert(expectedErr);
+        vm.prank(attacker);
+        controller.activatePause(LEVEL_HIGH_RISK, "Malicious pause", bytes32(0));
     }
 
     function test_Stage1_SeparationOfPowers_CouncilCannotUnpause() public {
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Security threat", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Security threat", PROPOSAL_REF);
 
         // Emergency Council attempts to unilaterally lift the pause
-        vm.prank(emergencyCouncil);
         vm.expectRevert("Only DAO governance can lift pause");
+        vm.prank(emergencyCouncil);
         controller.liftPause(PROPOSAL_REF);
     }
 
     function test_Stage1_CannotActivateLowerOrSameLevel() public {
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_FINANCIAL(), "Financial pause", PROPOSAL_REF);
+        controller.activatePause(LEVEL_FINANCIAL, "Financial pause", PROPOSAL_REF);
 
-        vm.prank(emergencyCouncil);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                EmergencyController.AlreadyAtLevel.selector,
-                controller.LEVEL_FINANCIAL()
-            )
+        bytes memory expectedErr = abi.encodeWithSelector(
+            EmergencyController.AlreadyAtLevel.selector,
+            LEVEL_FINANCIAL
         );
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Attempting downgrade", PROPOSAL_REF);
+
+        vm.expectRevert(expectedErr);
+        vm.prank(emergencyCouncil);
+        controller.activatePause(LEVEL_HIGH_RISK, "Attempting downgrade", PROPOSAL_REF);
     }
 
     function test_Stage1_TimelockController_CooldownEnforced() public {
+        uint256 cooldown = controller.timelockCooldown();
+
         vm.prank(timelockController);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Timelock pause", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Timelock pause", PROPOSAL_REF);
 
         // Governance lifts
         vm.prank(daoGovernance);
         controller.liftPause(PROPOSAL_REF);
 
         // Immediate reactivation by timelock must revert
-        vm.prank(timelockController);
         vm.expectRevert("Timelock cooldown not elapsed");
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Immediate replay", PROPOSAL_REF);
+        vm.prank(timelockController);
+        controller.activatePause(LEVEL_HIGH_RISK, "Immediate replay", PROPOSAL_REF);
 
         // Elapse cooldown
-        vm.warp(block.timestamp + controller.timelockCooldown() + 1);
+        vm.warp(block.timestamp + cooldown + 1);
         vm.prank(timelockController);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Post cooldown", PROPOSAL_REF);
-        assertEq(controller.currentPauseLevel(), controller.LEVEL_HIGH_RISK());
+        controller.activatePause(LEVEL_HIGH_RISK, "Post cooldown", PROPOSAL_REF);
+        assertEq(controller.currentPauseLevel(), LEVEL_HIGH_RISK);
     }
 
     // =========================================================================
@@ -272,7 +280,7 @@ contract EmergencyRecoveryDrillsTest is Test {
 
         // Pause Level 1
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Incident L1", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Incident L1", PROPOSAL_REF);
 
         // High-risk operations must revert
         vm.expectRevert(
@@ -294,13 +302,13 @@ contract EmergencyRecoveryDrillsTest is Test {
         module.withdraw(5 ether);
         assertEq(module.totalWithdrawn(), 15 ether);
         assertEq(module.activeClaimsCount(), 1);
-        assertEq(controller.getPauseLevel(), controller.LEVEL_HIGH_RISK());
+        assertEq(controller.getPauseLevel(), LEVEL_HIGH_RISK);
     }
 
     function test_Stage2_StateFreezing_Level2_BlocksHighRiskAndFinancial() public {
         // Pause Level 2
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_FINANCIAL(), "Incident L2", PROPOSAL_REF);
+        controller.activatePause(LEVEL_FINANCIAL, "Incident L2", PROPOSAL_REF);
 
         // High-risk blocked
         vm.expectRevert(
@@ -328,7 +336,7 @@ contract EmergencyRecoveryDrillsTest is Test {
     function test_Stage2_StateFreezing_Level3_BlocksAllExceptGovernanceRecovery() public {
         // Pause Level 3
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_SHUTDOWN(), "Incident L3 Shutdown", PROPOSAL_REF);
+        controller.activatePause(LEVEL_SHUTDOWN, "Incident L3 Shutdown", PROPOSAL_REF);
 
         // All standard operations blocked
         assertFalse(controller.isOperationAllowed(keccak256("claim_creation")));
@@ -354,7 +362,7 @@ contract EmergencyRecoveryDrillsTest is Test {
 
         // Activate L2 pause to freeze financial/risk state during repair
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_FINANCIAL(), "Diagnosing parameter defect", PROPOSAL_REF);
+        controller.activatePause(LEVEL_FINANCIAL, "Diagnosing parameter defect", PROPOSAL_REF);
 
         // Prepare repaired economic parameters
         IParameterVersionRegistry.EconomicParameters memory repairedParams;
@@ -384,8 +392,8 @@ contract EmergencyRecoveryDrillsTest is Test {
         assertEq(repairedVersionId, 2);
 
         // Attempt early activation before timelock elapses (MIN_ECONOMIC_PARAMETER_TIMELOCK = 2 days)
-        vm.prank(daoGovernance);
         vm.expectRevert();
+        vm.prank(daoGovernance);
         paramRegistry.activateVersion(repairedVersionId);
 
         // Fast forward 2 days to satisfy timelock delay
@@ -410,7 +418,7 @@ contract EmergencyRecoveryDrillsTest is Test {
 
         // Trigger pause
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Pause for reconciliation", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Pause for reconciliation", PROPOSAL_REF);
 
         // Activate new version 2 (after warp)
         IParameterVersionRegistry.EconomicParameters memory repairedParams;
@@ -455,52 +463,52 @@ contract EmergencyRecoveryDrillsTest is Test {
     function test_Stage5_StepwiseRecovery_SequentialExecution() public {
         // Trigger pause
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_HIGH_RISK(), "Incident active", PROPOSAL_REF);
+        controller.activatePause(LEVEL_HIGH_RISK, "Incident active", PROPOSAL_REF);
 
         // Step 1 before liftPause must revert (protocol must be unpaused first)
-        vm.prank(recoveryExecutor);
         vm.expectRevert("Protocol is still paused");
+        vm.prank(recoveryExecutor);
         controller.completeRecoveryStep("Diagnosis complete");
 
         // DAO Governance formally lifts the pause
-        vm.prank(daoGovernance);
         vm.expectEmit(true, true, true, true);
-        emit EmergencyPauseLifted(controller.LEVEL_HIGH_RISK(), daoGovernance, PROPOSAL_REF);
+        emit EmergencyPauseLifted(LEVEL_HIGH_RISK, daoGovernance, PROPOSAL_REF);
+        vm.prank(daoGovernance);
         controller.liftPause(PROPOSAL_REF);
 
-        assertEq(controller.currentPauseLevel(), controller.LEVEL_NORMAL());
+        assertEq(controller.currentPauseLevel(), LEVEL_NORMAL);
         assertFalse(controller.recoveryComplete());
         assertEq(controller.recoveryStep(), 0);
 
         // Step 1: Health check & configuration repair verification
-        vm.prank(recoveryExecutor);
         vm.expectEmit(true, true, false, true);
         emit RecoveryStepCompleted(1, recoveryExecutor, "Step 1: Configuration repair verified");
+        vm.prank(recoveryExecutor);
         controller.completeRecoveryStep("Step 1: Configuration repair verified");
 
         assertEq(controller.recoveryStep(), 1);
         assertFalse(controller.recoveryComplete());
 
         // Unauthorized caller attempts Step 2
-        vm.prank(attacker);
         vm.expectRevert("Not authorised for recovery");
+        vm.prank(attacker);
         controller.completeRecoveryStep("Malicious step");
 
         // Step 2: State reconciliation & invariant verification
-        vm.prank(recoveryExecutor);
         vm.expectEmit(true, true, false, true);
         emit RecoveryStepCompleted(2, recoveryExecutor, "Step 2: Balance invariants reconciled");
+        vm.prank(recoveryExecutor);
         controller.completeRecoveryStep("Step 2: Balance invariants reconciled");
 
         assertEq(controller.recoveryStep(), 2);
         assertFalse(controller.recoveryComplete());
 
         // Step 3: Operational sign-off & recovery finalization
-        vm.prank(recoveryExecutor);
         vm.expectEmit(true, true, false, true);
         emit RecoveryStepCompleted(3, recoveryExecutor, "Step 3: All systems operational");
         vm.expectEmit(true, false, false, true);
         emit RecoveryFinalised(recoveryExecutor, block.timestamp);
+        vm.prank(recoveryExecutor);
         controller.completeRecoveryStep("Step 3: All systems operational");
 
         // Verification of complete recovery
@@ -508,11 +516,11 @@ contract EmergencyRecoveryDrillsTest is Test {
         assertTrue(complete);
         assertEq(step, 0);
         assertFalse(paused);
-        assertEq(level, controller.LEVEL_NORMAL());
+        assertEq(level, LEVEL_NORMAL);
 
         // Calling completeRecoveryStep after full recovery must revert
-        vm.prank(recoveryExecutor);
         vm.expectRevert("Recovery already complete");
+        vm.prank(recoveryExecutor);
         controller.completeRecoveryStep("Extra step");
     }
 
@@ -523,7 +531,7 @@ contract EmergencyRecoveryDrillsTest is Test {
     function test_Stage6_PostUnpause_ResumesFullProtocolOperations() public {
         // 1. Initial incident & pause
         vm.prank(emergencyCouncil);
-        controller.activatePause(controller.LEVEL_SHUTDOWN(), "Critical incident", PROPOSAL_REF);
+        controller.activatePause(LEVEL_SHUTDOWN, "Critical incident", PROPOSAL_REF);
 
         // 2. Lift pause by governance
         vm.prank(daoGovernance);
@@ -570,9 +578,9 @@ contract EmergencyRecoveryDrillsTest is Test {
         assertEq(claimId, 1);
 
         // 1. Emergency role pauses claims scope with 4-arg event
-        vm.prank(emergencyCouncil);
         vm.expectEmit(true, true, false, true);
         emit IEmergencyControls.EmergencyPaused(claimsScope, emergencyCouncil, uint64(block.timestamp), 1);
+        vm.prank(emergencyCouncil);
         v2EmergencyControls.pause(claimsScope);
 
         assertTrue(v2EmergencyControls.paused(claimsScope));
@@ -589,23 +597,27 @@ contract EmergencyRecoveryDrillsTest is Test {
         assertEq(v2Fixture.getClaim(claimId).claimId, 1);
 
         // 3. Emergency role CANNOT unpause
-        vm.prank(emergencyCouncil);
-        vm.expectRevert(
-            abi.encodeWithSelector(EmergencyControls.UnauthorizedToUnpause.selector, emergencyCouncil)
+        bytes memory unauthorizedUnpause = abi.encodeWithSelector(
+            EmergencyControls.UnauthorizedToUnpause.selector,
+            emergencyCouncil
         );
+        vm.expectRevert(unauthorizedUnpause);
+        vm.prank(emergencyCouncil);
         v2EmergencyControls.unpause(claimsScope);
 
         // 4. Admin cannot bypass governance to unpause
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(EmergencyControls.UnauthorizedToUnpause.selector, admin)
+        bytes memory adminUnauthorizedUnpause = abi.encodeWithSelector(
+            EmergencyControls.UnauthorizedToUnpause.selector,
+            admin
         );
+        vm.expectRevert(adminUnauthorizedUnpause);
+        vm.prank(admin);
         v2EmergencyControls.unpause(claimsScope);
 
         // 5. Governance unpauses claims scope with 4-arg event
-        vm.prank(daoGovernance);
         vm.expectEmit(true, true, false, true);
         emit IEmergencyControls.EmergencyUnpaused(claimsScope, daoGovernance, uint64(block.timestamp), 1);
+        vm.prank(daoGovernance);
         v2EmergencyControls.unpause(claimsScope);
         assertFalse(v2EmergencyControls.paused(claimsScope));
 
