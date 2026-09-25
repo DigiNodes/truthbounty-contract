@@ -6,9 +6,11 @@ import "../../contracts/governance/EmergencyController.sol";
 import "../../contracts/governance/EmergencyProtected.sol";
 import "../../contracts/governance/ParameterVersionRegistry.sol";
 import "../../contracts/v2/EmergencyControls.sol";
+import "../../contracts/v2/interfaces/V2EmergencyProtectedFixture.sol";
 import {IEmergencyControls} from "../../contracts/v2/interfaces/IEmergencyControls.sol";
 import {IV2Module} from "../../contracts/v2/interfaces/IV2Module.sol";
 import {IParameterVersionRegistry} from "../../contracts/interfaces/IParameterVersionRegistry.sol";
+import {V2Errors} from "../../contracts/v2/libraries/V2Errors.sol";
 
 /**
  * @title MockProtectedProtocolModule
@@ -65,12 +67,14 @@ contract MockProtectedProtocolModule is EmergencyProtected {
  *      4. Reconciliation of Balances & Active-State Invariants
  *      5. Stepwise Recovery Execution (Steps 1 -> 2 -> 3) and Formal Unpause
  *      6. Post-Unpause Resumption of Normal Protocol Operations
+ *      Plus direct V2 mutation path gating drills with V2EmergencyProtectedFixture and EmergencyControls.
  */
 contract EmergencyRecoveryDrillsTest is Test {
     EmergencyController public controller;
     MockProtectedProtocolModule public module;
     ParameterVersionRegistry public paramRegistry;
     EmergencyControls public v2EmergencyControls;
+    V2EmergencyProtectedFixture public v2Fixture;
 
     address public admin = makeAddr("admin");
     address public emergencyCouncil = makeAddr("emergencyCouncil");
@@ -120,6 +124,12 @@ contract EmergencyRecoveryDrillsTest is Test {
         paramRegistry = new ParameterVersionRegistry(admin, daoGovernance);
 
         v2EmergencyControls = new EmergencyControls(admin, emergencyCouncil, daoGovernance);
+
+        v2Fixture = new V2EmergencyProtectedFixture(address(v2EmergencyControls));
+
+        // Grant version proposer and executor roles to daoGovernance
+        paramRegistry.grantRole(paramRegistry.VERSION_PROPOSER_ROLE(), daoGovernance);
+        paramRegistry.grantRole(paramRegistry.VERSION_EXECUTOR_ROLE(), daoGovernance);
 
         vm.stopPrank();
 
@@ -368,21 +378,21 @@ contract EmergencyRecoveryDrillsTest is Test {
         repairedParams.slashPercentageBPS = 1500;
         repairedParams.maxSlashPercentageBPS = 5000;
 
-        // Propose repaired parameter version via governance
-        vm.prank(admin);
+        // Propose repaired parameter version via DAO governance actor
+        vm.prank(daoGovernance);
         uint256 repairedVersionId = paramRegistry.proposeNewVersion(repairedParams);
         assertEq(repairedVersionId, 2);
 
         // Attempt early activation before timelock elapses (MIN_ECONOMIC_PARAMETER_TIMELOCK = 2 days)
-        vm.prank(admin);
+        vm.prank(daoGovernance);
         vm.expectRevert();
         paramRegistry.activateVersion(repairedVersionId);
 
-        // Fast forward 2 days to satisfy timelock
+        // Fast forward 2 days to satisfy timelock delay
         vm.warp(block.timestamp + 2 days + 1);
 
-        // Execute activation
-        vm.prank(admin);
+        // Execute activation via DAO governance actor
+        vm.prank(daoGovernance);
         paramRegistry.activateVersion(repairedVersionId);
 
         // Verify configuration repair active
@@ -424,10 +434,10 @@ contract EmergencyRecoveryDrillsTest is Test {
         repairedParams.slashPercentageBPS = 1500;
         repairedParams.maxSlashPercentageBPS = 5000;
 
-        vm.prank(admin);
+        vm.prank(daoGovernance);
         uint256 v2Id = paramRegistry.proposeNewVersion(repairedParams);
         vm.warp(block.timestamp + 2 days + 1);
-        vm.prank(admin);
+        vm.prank(daoGovernance);
         paramRegistry.activateVersion(v2Id);
 
         // Immutability Invariant: existing claim 101 still uses version 1!
@@ -547,7 +557,7 @@ contract EmergencyRecoveryDrillsTest is Test {
     }
 
     // =========================================================================
-    // V2 CANONICAL EMERGENCY CONTROLS (IEmergencyControls) DRILLS
+    // V2 CANONICAL EMERGENCY CONTROLS (IEmergencyControls) & FIXTURE DRILLS
     // =========================================================================
 
     function test_V2_EmergencyControls_ScopedPause_Drills() public {
@@ -555,33 +565,55 @@ contract EmergencyRecoveryDrillsTest is Test {
         bytes32 treasuryScope = v2EmergencyControls.SCOPE_TREASURY();
         bytes32 globalScope = v2EmergencyControls.SCOPE_ALL();
 
-        // 1. Emergency role pauses claims scope
+        // Baseline: V2 mutation path succeeds when not paused
+        uint256 claimId = v2Fixture.createClaim(bytes32("v2-subject"), 100 ether, "");
+        assertEq(claimId, 1);
+
+        // 1. Emergency role pauses claims scope with 4-arg event
         vm.prank(emergencyCouncil);
+        vm.expectEmit(true, true, false, true);
+        emit IEmergencyControls.EmergencyPaused(claimsScope, emergencyCouncil, uint64(block.timestamp), 1);
         v2EmergencyControls.pause(claimsScope);
 
         assertTrue(v2EmergencyControls.paused(claimsScope));
         assertFalse(v2EmergencyControls.paused(treasuryScope));
 
-        // 2. Emergency role CANNOT unpause
+        // 2. V2 mutation path fails closed when paused
+        vm.expectRevert(V2Errors.ProtocolPaused.selector);
+        v2Fixture.createClaim(bytes32("v2-blocked"), 50 ether, "");
+
+        vm.expectRevert(V2Errors.ProtocolPaused.selector);
+        v2Fixture.cancelClaim(claimId);
+
+        // Read operations remain unblocked
+        assertEq(v2Fixture.getClaim(claimId).claimId, 1);
+
+        // 3. Emergency role CANNOT unpause
         vm.prank(emergencyCouncil);
         vm.expectRevert(
             abi.encodeWithSelector(EmergencyControls.UnauthorizedToUnpause.selector, emergencyCouncil)
         );
         v2EmergencyControls.unpause(claimsScope);
 
-        // 3. Unauthorized user cannot pause or unpause
-        vm.prank(attacker);
+        // 4. Admin cannot bypass governance to unpause
+        vm.prank(admin);
         vm.expectRevert(
-            abi.encodeWithSelector(EmergencyControls.UnauthorizedToPause.selector, attacker)
+            abi.encodeWithSelector(EmergencyControls.UnauthorizedToUnpause.selector, admin)
         );
-        v2EmergencyControls.pause(treasuryScope);
+        v2EmergencyControls.unpause(claimsScope);
 
-        // 4. Governance unpauses claims scope
+        // 5. Governance unpauses claims scope with 4-arg event
         vm.prank(daoGovernance);
+        vm.expectEmit(true, true, false, true);
+        emit IEmergencyControls.EmergencyUnpaused(claimsScope, daoGovernance, uint64(block.timestamp), 1);
         v2EmergencyControls.unpause(claimsScope);
         assertFalse(v2EmergencyControls.paused(claimsScope));
 
-        // 5. Global pause halts all scopes
+        // Mutation resumes post-unpause
+        uint256 nextClaimId = v2Fixture.createClaim(bytes32("v2-resumed"), 150 ether, "");
+        assertEq(nextClaimId, 2);
+
+        // 6. Global pause halts all scopes
         vm.prank(emergencyCouncil);
         v2EmergencyControls.pause(globalScope);
 
@@ -590,12 +622,14 @@ contract EmergencyRecoveryDrillsTest is Test {
         assertTrue(v2EmergencyControls.paused(treasuryScope));
         assertTrue(v2EmergencyControls.paused(keccak256("RANDOM_MODULE")));
 
-        // 6. Governance lifts global pause
+        vm.expectRevert(V2Errors.ProtocolPaused.selector);
+        v2Fixture.createClaim(bytes32("v2-global-blocked"), 10 ether, "");
+
+        // 7. Governance lifts global pause
         vm.prank(daoGovernance);
         v2EmergencyControls.unpause(globalScope);
 
         assertFalse(v2EmergencyControls.paused(globalScope));
         assertFalse(v2EmergencyControls.paused(claimsScope));
-        assertFalse(v2EmergencyControls.paused(treasuryScope));
     }
 }

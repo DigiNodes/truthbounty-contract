@@ -4,10 +4,10 @@ pragma solidity ^0.8.20;
 import {Test} from "forge-std/Test.sol";
 import "../../contracts/governance/EmergencyController.sol";
 import "../../contracts/v2/EmergencyControls.sol";
+import "../../contracts/v2/interfaces/V2EmergencyProtectedFixture.sol";
 import {IEmergencyControls} from "../../contracts/v2/interfaces/IEmergencyControls.sol";
 import {IV2Module} from "../../contracts/v2/interfaces/IV2Module.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {V2Errors} from "../../contracts/v2/libraries/V2Errors.sol";
 
 /**
  * @title EmergencyRecoveryFuzzTest
@@ -15,13 +15,14 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
  * @dev Enforces state-invariants across arbitrary inputs:
  *      - Monotonicity of operation restriction across pause levels
  *      - Fail-closed authorization: no unauthorized caller can pause or unpause
- *      - Strict separation of powers: emergency council can never lift pause
+ *      - Strict separation of powers: emergency council and admin can never unpause
  *      - Global scope dominance in V2 scoped emergency controls
- *      - Sequential recovery step integrity
+ *      - V2 mutation path fail-closed property via V2EmergencyProtectedFixture
  */
 contract EmergencyRecoveryFuzzTest is Test {
     EmergencyController internal controller;
     EmergencyControls internal controls;
+    V2EmergencyProtectedFixture internal fixture;
 
     address internal admin = makeAddr("admin");
     address internal emergencyCouncil = makeAddr("emergencyCouncil");
@@ -40,6 +41,8 @@ contract EmergencyRecoveryFuzzTest is Test {
             emergencyCouncil,
             daoGovernance
         );
+
+        fixture = new V2EmergencyProtectedFixture(address(controls));
     }
 
     /// @dev Property: Emergency council can pause, but can NEVER lift pause regardless of proposal reference.
@@ -121,7 +124,7 @@ contract EmergencyRecoveryFuzzTest is Test {
         assertTrue(controls.paused(arbitraryScope));
     }
 
-    /// @dev Property: In V2 EmergencyControls, only GOVERNANCE_ROLE can unpause.
+    /// @dev Property: In V2 EmergencyControls, non-governance callers (including admin) cannot unpause.
     function testFuzz_v2EmergencyControls_unauthorized_unpause(address caller, bytes32 scope) public {
         vm.assume(caller != daoGovernance);
 
@@ -133,5 +136,15 @@ contract EmergencyRecoveryFuzzTest is Test {
             abi.encodeWithSelector(EmergencyControls.UnauthorizedToUnpause.selector, caller)
         );
         controls.unpause(scope);
+    }
+
+    /// @dev Property: V2 mutation path fails closed when paused under arbitrary inputs.
+    function testFuzz_v2MutationPath_failsClosed_whenPaused(bytes32 subject, uint256 reward) public {
+        vm.prank(emergencyCouncil);
+        controls.pause(controls.SCOPE_CLAIMS());
+
+        // Invariant: mutation attempts revert with ProtocolPaused
+        vm.expectRevert(V2Errors.ProtocolPaused.selector);
+        fixture.createClaim(subject, reward, "");
     }
 }

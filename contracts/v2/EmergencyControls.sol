@@ -14,11 +14,17 @@ import {V2Errors} from "./libraries/V2Errors.sol";
  * @notice Canonical TruthBounty V2 emergency pause and circuit-breaker module.
  * @dev Implements scoped protocol pausing with strict separation of powers:
  *      - EMERGENCY_ROLE can pause scopes rapidly in response to detected incidents.
- *      - GOVERNANCE_ROLE is required to unpause (emergency role cannot lift pauses).
+ *      - GOVERNANCE_ROLE is strictly required to unpause (emergency role cannot lift pauses).
  *      - Global pause (SCOPE_ALL = bytes32(0)) halts all scopes.
+ *      - All administrative roles are subordinated to GOVERNANCE_ROLE to prevent admin privilege escalation.
  *      - Conforms to IEmergencyControls, IV2Module, and ERC-165 standards.
  */
 contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
+    // ─── Constants ────────────────────────────────────────────────────
+
+    /// @notice Canonical event schema version for V2 event logging
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
+
     // ─── Roles ────────────────────────────────────────────────────────
 
     /// @notice Rapid emergency responder role (can pause, cannot unpause)
@@ -83,13 +89,19 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
             revert V2Errors.ZeroAddress();
         }
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(EMERGENCY_ROLE, emergencyCouncil);
+        // Subordinate all role administration under GOVERNANCE_ROLE
+        // to prevent DEFAULT_ADMIN_ROLE from escalating privileges or granting unpause powers
+        _grantRole(DEFAULT_ADMIN_ROLE, governance);
         _grantRole(GOVERNANCE_ROLE, governance);
+        _grantRole(EMERGENCY_ROLE, emergencyCouncil);
 
-        // Governance can manage roles as well
+        if (admin != governance) {
+            _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        }
+
+        _setRoleAdmin(DEFAULT_ADMIN_ROLE, GOVERNANCE_ROLE);
+        _setRoleAdmin(GOVERNANCE_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(EMERGENCY_ROLE, GOVERNANCE_ROLE);
-        _setRoleAdmin(GOVERNANCE_ROLE, DEFAULT_ADMIN_ROLE);
     }
 
     // ─── IV2Module ────────────────────────────────────────────────────
@@ -131,7 +143,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         pausedAt[scope] = block.timestamp;
         pauseCount[scope]++;
 
-        emit EmergencyPaused(scope, msg.sender);
+        emit EmergencyPaused(scope, msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     /**
@@ -149,7 +161,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _pausedScopes[scope] = false;
         pausedAt[scope] = 0;
 
-        emit EmergencyUnpaused(scope, msg.sender);
+        emit EmergencyUnpaused(scope, msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     /**
