@@ -8,12 +8,12 @@ interface IGovernanceHooks is IV2Module {
         bytes32 indexed actionId,
         address indexed target,
         bytes4 indexed selector
-    );
+    , uint64 timestamp, uint16 version);
     event GovernanceActionConsumed(
         bytes32 indexed actionId,
         address indexed target,
         bytes4 indexed selector
-    );
+    , uint64 timestamp, uint16 version);
 
     function authorize(
         bytes32 actionId,

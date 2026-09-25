@@ -11,6 +11,7 @@ import {GovernorVotesQuorumFraction} from "@openzeppelin/contracts/governance/ex
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
 import {IGovernedModuleRegistry} from "./IGovernedModuleRegistry.sol";
+import {IGovernanceSnapshot} from "./IGovernanceSnapshot.sol";
 import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol";
 
 /**
@@ -26,6 +27,18 @@ import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol
  *      with {ProposalCancellationUnauthorized}. Cancellation decisions are evaluated freshly on
  *      every call against canonical state, so no authorisation can be stored, replayed, or reused
  *      after the proposal it was granted for has left the cancelable window.
+ *      ## Canonical Snapshot Integration (V2-SC-063)
+ *
+ *      At proposal creation, `_propose` calls `governanceSnapshot.registerSnapshot(proposalId)`,
+ *      recording the exact `block.timestamp` at which the proposal was created as the
+ *      canonical voting-power freeze point. This timestamp is identical to
+ *      `proposalSnapshot(proposalId)` used by {GovernorVotes._getVotes} and ensures that
+ *      voting-power queries cannot be influenced by token transfers, delegations, or
+ *      stake changes that occur after proposal creation.
+ *
+ *      If `governanceSnapshot` is set (non-zero), snapshot registration is mandatory: a
+ *      failed call reverts the entire `_propose` call, preventing proposals from existing
+ *      without a canonical snapshot entry (fail-closed).
  */
 contract TruthBountyGovernor is
     Governor,
@@ -56,6 +69,15 @@ contract TruthBountyGovernor is
     }
 
     IGovernedModuleRegistry public immutable moduleRegistry;
+
+    /**
+     * @notice Canonical governance snapshot registry.
+     * @dev Set at construction and immutable thereafter. A non-zero address activates
+     *      mandatory snapshot registration on every proposal. Zero address disables
+     *      the hook (legacy / migration path only; not recommended for production).
+     */
+    IGovernanceSnapshot public immutable governanceSnapshot;
+
     address public guardian;
     address public governanceGuardianModule;
 
@@ -73,6 +95,7 @@ contract TruthBountyGovernor is
         address indexed timelock,
         address indexed token,
         address moduleRegistry,
+        address governanceSnapshot,
         uint256 votingDelay,
         uint256 votingPeriod,
         uint256 proposalThreshold,
@@ -87,10 +110,22 @@ contract TruthBountyGovernor is
     /// @dev Thrown when a cancel attempt satisfies none of the explicit {CancelAuthority} conditions.
     error ProposalCancellationUnauthorized(uint256 proposalId, address caller);
 
+    /**
+     * @param token_             ERC20Votes governance token (timestamp clock).
+     * @param timelock_          Timelock controller for execution delay.
+     * @param registry_          Registry of allowed proposal targets.
+     * @param snapshot_          Canonical snapshot registry; `address(0)` disables the hook.
+     * @param guardian_          Initial guardian address; cannot be `address(0)`.
+     * @param votingDelay_       Blocks/seconds before voting opens after proposal.
+     * @param votingPeriod_      Duration of the voting window.
+     * @param proposalThreshold_ Minimum token balance to submit a proposal.
+     * @param quorumNumerator_   Percentage (of total supply) required for quorum.
+     */
     constructor(
-        IVotes token,
-        TimelockController timelock,
-        IGovernedModuleRegistry registry,
+        IVotes token_,
+        TimelockController timelock_,
+        IGovernedModuleRegistry registry_,
+        IGovernanceSnapshot snapshot_,
         address guardian_,
         uint48 votingDelay_,
         uint32 votingPeriod_,
@@ -99,17 +134,20 @@ contract TruthBountyGovernor is
     )
         Governor("TruthBountyGovernor")
         GovernorSettings(votingDelay_, votingPeriod_, proposalThreshold_)
-        GovernorVotes(token)
+        GovernorVotes(token_)
         GovernorVotesQuorumFraction(quorumNumerator_)
-        GovernorTimelockControl(timelock)
+        GovernorTimelockControl(timelock_)
     {
         if (guardian_ == address(0)) revert ZeroGuardianAddress();
-        moduleRegistry = registry;
+        moduleRegistry = registry_;
+        governanceSnapshot = snapshot_;
         guardian = guardian_;
     }
 
     /**
      * @notice Publish canonical governance configuration for manifest generation and indexers.
+     * @dev Includes the `governanceSnapshot` address so off-chain systems can derive the
+     *      canonical snapshot timestamp for any proposal.
      */
     function publishManifest() external {
         emit GovernanceManifestPublished(
@@ -117,6 +155,7 @@ contract TruthBountyGovernor is
             timelock(),
             address(token()),
             address(moduleRegistry),
+            address(governanceSnapshot),
             votingDelay(),
             votingPeriod(),
             proposalThreshold(),
@@ -169,7 +208,19 @@ contract TruthBountyGovernor is
         address proposer
     ) internal override(Governor, GovernorStorage) returns (uint256) {
         _validateProposalOperations(targets, calldatas);
-        return super._propose(targets, values, calldatas, description, proposer);
+        uint256 proposalId = super._propose(targets, values, calldatas, description, proposer);
+
+        // Register the canonical snapshot timestamp for this proposal.
+        // proposalSnapshot(proposalId) == clock() + votingDelay() at proposal creation —
+        // this is the exact timepoint that GovernorVotes uses for all getPastVotes queries.
+        // If governanceSnapshot is configured, registration is mandatory: a revert here
+        // propagates upward and prevents the proposal from existing without a snapshot.
+        if (address(governanceSnapshot) != address(0)) {
+            uint48 snapTs = uint48(proposalSnapshot(proposalId));
+            governanceSnapshot.registerSnapshot(proposalId, snapTs);
+        }
+
+        return proposalId;
     }
 
     /**
