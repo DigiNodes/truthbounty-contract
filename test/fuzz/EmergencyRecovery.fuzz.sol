@@ -29,6 +29,9 @@ contract EmergencyRecoveryFuzzTest is Test {
     address internal daoGovernance = makeAddr("daoGovernance");
     address internal timelockController = makeAddr("timelockController");
 
+    bytes32 internal constant SCOPE_ALL = bytes32(0);
+    bytes32 internal constant SCOPE_CLAIMS = keccak256("CLAIMS");
+
     function setUp() public {
         controller = new EmergencyController(
             emergencyCouncil,
@@ -118,7 +121,7 @@ contract EmergencyRecoveryFuzzTest is Test {
     /// @dev Property: In V2 EmergencyControls, global pause halts all arbitrary scopes.
     function testFuzz_v2EmergencyControls_globalScope_dominance(bytes32 arbitraryScope) public {
         vm.prank(emergencyCouncil);
-        controls.pause(controls.SCOPE_ALL());
+        controls.pause(SCOPE_ALL);
 
         // Invariant: any scope is paused when global scope is paused
         assertTrue(controls.paused(arbitraryScope));
@@ -141,7 +144,7 @@ contract EmergencyRecoveryFuzzTest is Test {
     /// @dev Property: V2 mutation path fails closed when paused under arbitrary inputs.
     function testFuzz_v2MutationPath_failsClosed_whenPaused(bytes32 subject, uint256 reward) public {
         vm.prank(emergencyCouncil);
-        controls.pause(controls.SCOPE_CLAIMS());
+        controls.pause(SCOPE_CLAIMS);
 
         // Invariant: mutation attempts revert with ProtocolPaused
         vm.expectRevert(V2Errors.ProtocolPaused.selector);

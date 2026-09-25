@@ -85,9 +85,7 @@ The protocol supports four tiered operational levels:
 
 ---
 
-## Verification & Monitoring
-
-Immediately following pause activation, on-call operators must execute the following checks:
+### A. Multi-Level Controller Verification (`$EMERGENCY_CONTROLLER`)
 
 1. **Verify On-Chain Pause Level:**
    ```bash
@@ -108,6 +106,26 @@ Immediately following pause activation, on-call operators must execute the follo
 
 4. **Confirm Read Integrity:**
    Ensure read calls (e.g. balance queries, claim state, parameter queries) succeed without disruption.
+
+### B. V2 Scoped Emergency Controls Verification (`$EMERGENCY_CONTROLS`)
+
+1. **Verify Target Scope Pause Status:**
+   ```bash
+   cast call $EMERGENCY_CONTROLS "paused(bytes32)(bool)" $SCOPE
+   ```
+   *Expected:* Returns `true` for paused scope (or all scopes if `SCOPE_ALL` was paused).
+
+2. **Verify Pause Metadata:**
+   ```bash
+   cast call $EMERGENCY_CONTROLS "pausedAt(bytes32)(uint256)" $SCOPE
+   cast call $EMERGENCY_CONTROLS "pauseCount(bytes32)(uint256)" $SCOPE
+   ```
+
+3. **Verify Event Emission:**
+   Check event logs for `EmergencyPaused(bytes32 indexed scope, address indexed actor, uint64 timestamp, uint16 version)` confirming actor, timestamp, and version `1`.
+
+4. **Verify Gated Module Mutation Rejection:**
+   Verify that calls to modules implementing `IEmergencyControls` checks revert with `V2Errors.ProtocolPaused()`.
 
 ---
 
