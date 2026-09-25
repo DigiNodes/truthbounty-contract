@@ -19,6 +19,8 @@ remappings = [
     "../contracts/=contracts/",
 ]
 
+fs_permissions = [{ access = "read", path = "./deployments" }]
+
 [profile.default.model_checker]
 contracts = { "contracts/WeightedStaking.sol" = [ "WeightedStaking" ], "contracts/staking.sol" = [ "Staking" ] }
 engine = "chc"
