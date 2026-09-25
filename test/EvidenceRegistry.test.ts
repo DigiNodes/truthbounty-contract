@@ -161,6 +161,32 @@ describe("EvidenceRegistry", function () {
     expect(secondPage.nextCursor).to.equal(3n);
   });
 
+  it("bounds per-claim evidence storage", async function () {
+    const { evidence, contributor } = await loadFixture(deployFixture);
+    const maxEvidence = Number(await evidence.MAX_EVIDENCE_PER_CLAIM());
+
+    for (let i = 0; i < maxEvidence; i++) {
+      await evidence.connect(contributor).commitEvidence(
+        CLAIM_ID,
+        ethers.id(`bounded-content-${i}`),
+        ethers.id(`bounded-metadata-${i}`),
+        i,
+      );
+    }
+
+    expect(await evidence.evidenceCount(CLAIM_ID)).to.equal(BigInt(maxEvidence));
+    await expect(
+      evidence.connect(contributor).commitEvidence(
+        CLAIM_ID,
+        ethers.id("bounded-content-over-limit"),
+        ethers.id("bounded-metadata-over-limit"),
+        maxEvidence,
+      ),
+    )
+      .to.be.revertedWithCustomError(evidence, "EvidenceLimitReached")
+      .withArgs(CLAIM_ID, maxEvidence);
+  });
+
   it("submitEvidence hashes metadata bytes and advances the contributor nonce", async function () {
     const { evidence, contributor } = await loadFixture(deployFixture);
 
