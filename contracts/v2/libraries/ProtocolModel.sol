@@ -11,7 +11,57 @@ import {IV2Types} from "../interfaces/IV2Types.sol";
 library ProtocolModel {
     uint256 internal constant BPS_SCALE = 10_000;
 
+    enum ClaimOutcome {
+        VERIFIED_TRUE,
+        VERIFIED_FALSE,
+        INCONCLUSIVE
+    }
+
     error InvalidRoundingPolicy(uint8 roundingPolicy);
+
+    function calculateWeights(bool[] memory voted, bool[] memory support, uint256[] memory effectiveStake)
+        internal
+        pure
+        returns (uint256 trueWeight, uint256 falseWeight, uint256 count)
+    {
+        for (uint256 i = 0; i < voted.length; ++i) {
+            if (!voted[i]) continue;
+
+            if (support[i]) {
+                trueWeight += effectiveStake[i];
+            } else {
+                falseWeight += effectiveStake[i];
+            }
+            count++;
+        }
+    }
+
+    function calculateConfidence(uint256 winningWeight, uint256 totalWeight)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (totalWeight == 0) return 0;
+        return (winningWeight * BPS_SCALE) / totalWeight;
+    }
+
+    function resolveOutcome(uint256 trueWeight, uint256 falseWeight, uint256 totalWeight)
+        internal
+        pure
+        returns (ClaimOutcome outcome, uint256 confidence)
+    {
+        if (totalWeight == 0 || trueWeight == falseWeight) {
+            return (ClaimOutcome.INCONCLUSIVE, 0);
+        }
+
+        if (trueWeight > falseWeight) {
+            confidence = calculateConfidence(trueWeight, totalWeight);
+            return (ClaimOutcome.VERIFIED_TRUE, confidence);
+        }
+
+        confidence = calculateConfidence(falseWeight, totalWeight);
+        return (ClaimOutcome.VERIFIED_FALSE, confidence);
+    }
 
     function isValidClaimTransition(IV2Types.ClaimState currentState, IV2Types.ClaimState nextState)
         internal
