@@ -12,6 +12,7 @@ import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnap
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
+import {DeploymentPreflight} from "./DeploymentPreflight.sol";
 
 /**
  * @title DeployGovernanceV2
@@ -59,39 +60,62 @@ contract DeployGovernanceV2 is Script {
             tokenSupply: vm.envOr("GOV_TOKEN_SUPPLY", uint256(1_000_000_000 ether))
         });
 
+        uint256 expectedChainId = vm.envOr("EXPECTED_CHAIN_ID", uint256(0));
+        if (expectedChainId != 0) DeploymentPreflight.requireExpectedChainId(expectedChainId);
+
+        DeploymentPreflight.requireNonZeroAddress(cfg.admin, "admin");
+        DeploymentPreflight.requireNonZeroAddress(cfg.guardian, "guardian");
+
+        address expectedDeployer = vm.envOr("EXPECTED_DEPLOYER", address(0));
+        if (expectedDeployer != address(0)) {
+            DeploymentPreflight.requireDeployer(expectedDeployer, msg.sender);
+        }
+
+        uint256 minBalance = vm.envOr("MIN_GAS_BALANCE", uint256(0.05 ether));
+        if (minBalance != 0) DeploymentPreflight.requireSufficientBalance(msg.sender, minBalance);
+
         vm.startBroadcast(cfg.admin);
 
         GovernedModuleRegistry registry = new GovernedModuleRegistry(cfg.admin);
         TruthBountyGovernanceToken token = new TruthBountyGovernanceToken(cfg.admin, cfg.tokenSupply);
 
-        address[] memory proposers = new address[](0);
-        address[] memory executors = new address[](0);
-        TimelockController timelock = new TimelockController(cfg.timelockMinDelay, proposers, executors, cfg.admin);
+address[] memory proposers = new address[](0);
+address[] memory executors = new address[](0);
+TimelockController timelock = new TimelockController(cfg.timelockMinDelay, proposers, executors, cfg.admin);
 
-        // Deploy snapshot registry with admin as temporary registrar so we can
-        // grant the role to the governor after it is deployed.
-        GovernanceSnapshot snapshot = new GovernanceSnapshot(cfg.admin, cfg.admin);
+// From `Deployment`: preflight check on the timelock.
+DeploymentPreflight.requireTimelock(address(timelock), "governance timelock");
 
-        TruthBountyGovernor governor = new TruthBountyGovernor(
-            token,
-            timelock,
-            registry,
-            IGovernanceSnapshot(address(snapshot)),
-            cfg.guardian,
-            cfg.votingDelay,
-            cfg.votingPeriod,
-            cfg.proposalThreshold,
-            cfg.quorumNumerator
-        );
+// From `main`: deploy snapshot registry with admin as temporary registrar
+// so we can grant the role to the governor after it is deployed.
+GovernanceSnapshot snapshot = new GovernanceSnapshot(cfg.admin, cfg.admin);
 
-        // Transfer SNAPSHOT_REGISTRAR_ROLE to governor and revoke from admin.
-        snapshot.grantRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), address(governor));
-        snapshot.revokeRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), cfg.admin);
+TruthBountyGovernor governor = new TruthBountyGovernor(
+    token,
+    timelock,
+    registry,
+    IGovernanceSnapshot(address(snapshot)),
+    cfg.guardian,
+    cfg.votingDelay,
+    cfg.votingPeriod,
+    cfg.proposalThreshold,
+    cfg.quorumNumerator
+);
 
-        GovernanceGuardian guardianContract =
-            new GovernanceGuardian(cfg.admin, cfg.guardian, ITruthBountyGovernor(address(governor)));
+// From `Deployment`: preflight check that registry/governor/timelock are compatible.
+DeploymentPreflight.requireCompatibleModules(address(registry), address(governor), address(timelock));
 
-        vm.stopBroadcast();
+// From `main`: transfer SNAPSHOT_REGISTRAR_ROLE to governor and revoke from admin.
+snapshot.grantRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), address(governor));
+snapshot.revokeRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), cfg.admin);
+
+GovernanceGuardian guardianContract = new GovernanceGuardian(
+    cfg.admin,
+    cfg.guardian,
+    ITruthBountyGovernor(address(governor))
+);
+
+vm.stopBroadcast();
         vm.startBroadcast(cfg.guardian);
         governor.setGovernanceGuardianModule(address(guardianContract));
         vm.stopBroadcast();
