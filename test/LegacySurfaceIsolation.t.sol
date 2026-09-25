@@ -28,8 +28,10 @@ contract LegacySurfaceIsolationTest is Test {
 
         bytes[] memory legacyCalls = new bytes[](4);
         legacyCalls[0] = abi.encodeWithSignature("settleClaim(address,uint256)", verifier, uint256(amount));
-        legacyCalls[1] = abi.encodeWithSignature("settleClaimsBatch(address[],uint256[])", new address[](0), new uint256[](0));
-        legacyCalls[2] = abi.encodeWithSignature("rescueTokens(address,address,uint256)", address(token), caller, uint256(amount));
+        legacyCalls[1] =
+            abi.encodeWithSignature("settleClaimsBatch(address[],uint256[])", new address[](0), new uint256[](0));
+        legacyCalls[2] =
+            abi.encodeWithSignature("rescueTokens(address,address,uint256)", address(token), caller, uint256(amount));
         legacyCalls[3] = abi.encodeWithSignature("TREASURY_ROLE()");
 
         uint256 custodyBefore = vault.totalCustody(address(token));
