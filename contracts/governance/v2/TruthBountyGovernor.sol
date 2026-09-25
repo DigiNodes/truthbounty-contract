@@ -44,20 +44,21 @@ contract TruthBountyGovernor is
 {
     using GovernanceForbiddenCalls for bytes;
 
+    /// @notice Registry consulted for every proposal target; unregistered targets revert.
     IGovernedModuleRegistry public immutable moduleRegistry;
-
-    /**
-     * @notice Canonical governance snapshot registry.
-     * @dev Set at construction and immutable thereafter. A non-zero address activates
-     *      mandatory snapshot registration on every proposal. Zero address disables
-     *      the hook (legacy / migration path only; not recommended for production).
-     */
-    IGovernanceSnapshot public immutable governanceSnapshot;
-
+    /// @notice Address currently authorized to cancel proposals.
     address public guardian;
+    /// @notice Optional bootstrap guardian module authorized to cancel proposals.
     address public governanceGuardianModule;
 
+    /// @notice Emitted when the governor guardian is rotated by governance.
+    /// @param oldGuardian Previous guardian.
+    /// @param newGuardian New guardian.
     event GuardianUpdated(address indexed oldGuardian, address indexed newGuardian);
+
+    /// @notice Emitted when the optional guardian module is initialized.
+    /// @param oldModule Previous module, zero during bootstrap.
+    /// @param newModule New module.
     event GovernanceGuardianModuleUpdated(address indexed oldModule, address indexed newModule);
     event GovernanceManifestPublished(
         address indexed governor,
@@ -72,22 +73,26 @@ contract TruthBountyGovernor is
         uint256 timelockMinDelay
     );
 
+    /// @notice Guardian address must not be zero.
     error ZeroGuardianAddress();
+    /// @notice Proposal target is not in the governed module allowlist.
+    /// @param target Rejected target address.
     error TargetNotGovernedModule(address target);
+    /// @notice Guardian module can only be initialized once.
+    /// @param existingModule Already configured module.
     error GovernanceGuardianModuleAlreadySet(address existingModule);
+    /// @notice Caller is not the bootstrap guardian.
+    /// @param caller Unauthorized caller.
     error UnauthorizedGuardianModuleSetter(address caller);
 
-    /**
-     * @param token_             ERC20Votes governance token (timestamp clock).
-     * @param timelock_          Timelock controller for execution delay.
-     * @param registry_          Registry of allowed proposal targets.
-     * @param snapshot_          Canonical snapshot registry; `address(0)` disables the hook.
-     * @param guardian_          Initial guardian address; cannot be `address(0)`.
-     * @param votingDelay_       Blocks/seconds before voting opens after proposal.
-     * @param votingPeriod_      Duration of the voting window.
-     * @param proposalThreshold_ Minimum token balance to submit a proposal.
-     * @param quorumNumerator_   Percentage (of total supply) required for quorum.
-     */
+    /// @param token ERC20Votes token used to calculate voting power.
+    /// @param timelock Timelock that queues and executes proposals.
+    /// @param registry Allowlist of modules that proposals may target.
+    /// @param guardian_ Initial proposal-cancellation guardian.
+    /// @param votingDelay_ Delay between proposal creation and voting, in seconds.
+    /// @param votingPeriod_ Voting duration in seconds.
+    /// @param proposalThreshold_ Minimum token weight required to propose.
+    /// @param quorumNumerator_ Fraction numerator for quorum, measured against total voting weight.
     constructor(
         IVotes token_,
         TimelockController timelock_,
@@ -113,8 +118,7 @@ contract TruthBountyGovernor is
 
     /**
      * @notice Publish canonical governance configuration for manifest generation and indexers.
-     * @dev Includes the `governanceSnapshot` address so off-chain systems can derive the
-     *      canonical snapshot timestamp for any proposal.
+     * @dev Permissionless read-only manifest emission; it does not mutate governance state or grant authority.
      */
     function publishManifest() external {
         emit GovernanceManifestPublished(
@@ -133,6 +137,7 @@ contract TruthBountyGovernor is
 
     /**
      * @notice Rotate the guardian address. Callable only through a successful governance proposal.
+     * @param newGuardian Non-zero guardian authorized for proposal cancellation.
      */
     function setGuardian(address newGuardian) external onlyGovernance {
         if (newGuardian == address(0)) revert ZeroGuardianAddress();
@@ -143,7 +148,8 @@ contract TruthBountyGovernor is
 
     /**
      * @notice Wire the external guardian module once after deployment.
-     * @dev Callable once by the guardian EOA during bootstrap.
+     * @dev Callable once by the current guardian address during bootstrap; this one-time exception cannot be repeated or used to execute calls.
+     * @param module Non-zero module authorized to cancel proposals after bootstrap.
      */
     function setGovernanceGuardianModule(address module) external {
         if (module == address(0)) revert ZeroGuardianAddress();
@@ -195,14 +201,22 @@ contract TruthBountyGovernor is
         return super._validateCancel(proposalId, caller) || caller == guardian || caller == governanceGuardianModule;
     }
 
-    function proposalThreshold() public view override(Governor, GovernorSettings) returns (uint256) {
+    /// @notice Returns the current token weight required to create a proposal.
+    /// @return threshold Required voting weight in token base units.
+    function proposalThreshold() public view override(Governor, GovernorSettings) returns (uint256 threshold) {
         return super.proposalThreshold();
     }
 
-    function quorum(uint256 timepoint) public view override(Governor, GovernorVotesQuorumFraction) returns (uint256) {
+    /// @notice Returns the quorum weight at a voting timepoint.
+    /// @param timepoint Unix timestamp for which quorum is queried.
+    /// @return quorumWeight Required participating voting weight.
+    function quorum(uint256 timepoint) public view override(Governor, GovernorVotesQuorumFraction) returns (uint256 quorumWeight) {
         return super.quorum(timepoint);
     }
 
+    /// @notice Returns the governor lifecycle state for a proposal.
+    /// @param proposalId Proposal to inspect.
+    /// @return proposalState Current proposal state.
     function state(uint256 proposalId)
         public
         view
@@ -212,6 +226,9 @@ contract TruthBountyGovernor is
         return super.state(proposalId);
     }
 
+    /// @notice Reports whether a successful proposal must be queued in the timelock.
+    /// @param proposalId Proposal to inspect.
+    /// @return needsQueueing True when the proposal must be queued before execution.
     function proposalNeedsQueuing(uint256 proposalId)
         public
         view
