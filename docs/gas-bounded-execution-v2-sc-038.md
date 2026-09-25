@@ -37,6 +37,10 @@ Budgets must remain below `RECOMMENDED_TX_GAS_CEILING` (12M) and reference block
 - **Pull settlement**: `PullSettlementLedger` credits off-chain finalization; token transfer
   occurs only on recipient-initiated `withdraw()`. Hostile recipients cannot block others.
 - **Evidence cap**: `EvidenceManager.MAX_EVIDENCE_PER_CLAIM = 100` bounds storage growth per claim.
+- **Appeal voter cap (V2-SC-059)**: `AppealVerificationRound.MAX_VOTERS_PER_ROUND = 200` bounds
+  per-round appeal voters, so downstream appeal aggregation stays O(n) with `n <= 200` — the
+  invariant that keeps the `APPEAL_SETTLEMENT = 650,000` budget reachable. Bond-gated, bounded
+  appeal ladders also cap griefing (per-round escalating bond with `maxAppealBond` ceiling).
 - **Batch caps**: Settlement, reward, tokenomics, and insurance modules retain hard batch limits
   aligned with `ProtocolExecutionBounds`.
 
