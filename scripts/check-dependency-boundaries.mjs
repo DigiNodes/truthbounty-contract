@@ -233,6 +233,9 @@ export async function checkRepositoryBoundaries({
   const allFiles = [];
 
   for (const root of allowedRoots) {
+    if (!existsSync(root)) {
+      throw new Error(`Configured contract root does not exist: ${root}`);
+    }
     const files = await findSolidityFiles(root);
     allFiles.push(...files);
   }

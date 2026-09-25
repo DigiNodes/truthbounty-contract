@@ -166,5 +166,16 @@ describe("Dependency & Import Boundary Enforcement", () => {
       assert.equal(result.violations.length, 0);
       assert.ok(result.filesChecked > 0, "Should have scanned production contracts");
     });
+
+    it("fails when a configured contract root is missing", async () => {
+      await assert.rejects(
+        () =>
+          checkRepositoryBoundaries({
+            rootDir: REPO_ROOT,
+            contractDirs: ["contracts", "non-existent-contract-dir-xyz"]
+          }),
+        /Configured contract root does not exist/
+      );
+    });
   });
 });
