@@ -10,6 +10,7 @@ import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGove
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
+import {DeploymentPreflight} from "./DeploymentPreflight.sol";
 
 /**
  * @title DeployGovernanceV2
@@ -39,6 +40,20 @@ contract DeployGovernanceV2 is Script {
             tokenSupply: vm.envOr("GOV_TOKEN_SUPPLY", uint256(1_000_000_000 ether))
         });
 
+        uint256 expectedChainId = vm.envOr("EXPECTED_CHAIN_ID", uint256(0));
+        if (expectedChainId != 0) DeploymentPreflight.requireExpectedChainId(expectedChainId);
+
+        DeploymentPreflight.requireNonZeroAddress(cfg.admin, "admin");
+        DeploymentPreflight.requireNonZeroAddress(cfg.guardian, "guardian");
+
+        address expectedDeployer = vm.envOr("EXPECTED_DEPLOYER", address(0));
+        if (expectedDeployer != address(0)) {
+            DeploymentPreflight.requireDeployer(expectedDeployer, msg.sender);
+        }
+
+        uint256 minBalance = vm.envOr("MIN_GAS_BALANCE", uint256(0.05 ether));
+        if (minBalance != 0) DeploymentPreflight.requireSufficientBalance(msg.sender, minBalance);
+
         vm.startBroadcast(cfg.admin);
 
         GovernedModuleRegistry registry = new GovernedModuleRegistry(cfg.admin);
@@ -47,6 +62,8 @@ contract DeployGovernanceV2 is Script {
         address[] memory proposers = new address[](0);
         address[] memory executors = new address[](0);
         TimelockController timelock = new TimelockController(cfg.timelockMinDelay, proposers, executors, cfg.admin);
+
+        DeploymentPreflight.requireTimelock(address(timelock), "governance timelock");
 
         TruthBountyGovernor governor = new TruthBountyGovernor(
             token,
@@ -58,6 +75,8 @@ contract DeployGovernanceV2 is Script {
             cfg.proposalThreshold,
             cfg.quorumNumerator
         );
+
+        DeploymentPreflight.requireCompatibleModules(address(registry), address(governor), address(timelock));
 
         GovernanceGuardian guardianContract = new GovernanceGuardian(cfg.admin, cfg.guardian, ITruthBountyGovernor(address(governor)));
 
