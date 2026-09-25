@@ -15,6 +15,9 @@ library ProtocolExecutionBounds {
     /// @notice Maximum evidence attachments per claim (EvidenceManager).
     uint256 internal constant MAX_EVIDENCE_PER_CLAIM = 100;
 
+    /// @notice Maximum assets allowed in one published parameter version.
+    uint256 internal constant MAX_SUPPORTED_ASSETS = 16;
+
     /// @notice Maximum treasury batch payout rows (TruthBountyClaims).
     uint256 internal constant MAX_SETTLEMENT_BATCH_SIZE = 200;
 
