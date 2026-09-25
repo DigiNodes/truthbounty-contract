@@ -3,13 +3,14 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {EmergencyPauseOrdering} from "./libraries/EmergencyPauseOrdering.sol";
 
 /**
  * @title EmergencyController
  * @notice Emergency Pause & Circuit Breaker Framework for TruthBounty Protocol
  * @dev Implements multi-level protocol pause with governance-controlled recovery.
  *
- * ## Pause Levels
+ * \## Pause Levels
  *
  * | Level | Name     | Effect |
  * |-------|----------|--------|
@@ -18,7 +19,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * | 2     | Financial| Pause reward distribution, treasury transfers, withdrawals. Read-only + governance still active. |
  * | 3     | Shutdown | Global emergency shutdown. Only governance recovery operations remain. |
  *
- * ## Roles
+ * \## Roles
  *
  * | Role                 | Can Activate | Can Lift | Notes |
  * |----------------------|-------------|----------|-------|
@@ -26,13 +27,14 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * | DAO_GOVERNANCE       | Yes (L1-L2) | Yes      | Full governance control |
  * | TIMELOCK_CONTROLLER  | Yes (L1)    | No       | Narrow scope, time-delayed |
  *
- * ## Security Properties
+ * \## Security Properties
  *
  * - Emergency Council can pause but CANNOT unpause (separation of powers)
  * - DAO Governance is required for recovery (no unilateral unpause)
  * - All emergency actions emit immutable audit events
  * - Protected functions query this contract's pause state
  * - Read operations remain available at all levels
+ * - Operation allow/deny matrix: EmergencyPauseOrdering (V2-SC-117)
  */
 contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     // ─── Custom Errors ────────────────────────────────────────────────
@@ -263,6 +265,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
      * @notice Complete a step of the staged recovery procedure.
      * @dev Recovery must be performed sequentially (step 1 → 2 → 3).
      *      Protocol must be at LEVEL_NORMAL before recovery begins.
+     *      Step bounds enforced by EmergencyPauseOrdering (V2-SC-117).
      * @param description Description of the recovery action taken
      */
     function completeRecoveryStep(string calldata description) external {
@@ -273,7 +276,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
         }
 
         uint8 nextStep = recoveryStep + 1;
-        if (nextStep > MAX_RECOVERY_STEP) revert InvalidRecoveryStep(nextStep);
+        EmergencyPauseOrdering.requireValidRecoveryStep(nextStep);
 
         recoveryStep = nextStep;
 
@@ -292,38 +295,13 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     /**
      * @notice Check if a specific operation type is currently allowed.
      * @dev Called by protocol modules before executing restricted operations.
+     *      Authoritative matrix: EmergencyPauseOrdering (V2-SC-117 / #503).
+     *      Operation id hashes are unchanged vs the prior inline implementation.
      * @param operationType The operation category to check
      * @return True if the operation is allowed at the current pause level
      */
     function isOperationAllowed(bytes32 operationType) external view returns (bool) {
-        uint8 level = currentPauseLevel;
-
-        if (level == LEVEL_NORMAL) return true;
-        if (level == LEVEL_SHUTDOWN) {
-            // Only governance recovery operations are allowed at shutdown
-            return operationType == keccak256("governance_recovery");
-        }
-
-        if (level == LEVEL_FINANCIAL) {
-            // Financial operations are blocked at L2+
-            if (
-                operationType == keccak256("reward_distribution") ||
-                operationType == keccak256("treasury_transfer") ||
-                operationType == keccak256("withdrawal")
-            ) return false;
-        }
-
-        if (level >= LEVEL_HIGH_RISK) {
-            // High-risk operations are blocked at L1+
-            if (
-                operationType == keccak256("claim_creation") ||
-                operationType == keccak256("staking") ||
-                operationType == keccak256("verification_submission")
-            ) return false;
-        }
-
-        // Read operations and governance are always allowed
-        return true;
+        return EmergencyPauseOrdering.isOperationAllowed(currentPauseLevel, operationType);
     }
 
     /**

@@ -1,5 +1,9 @@
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export interface AuditResult {
     passed: boolean;
@@ -70,7 +74,10 @@ export async function auditReleaseReadiness(): Promise<AuditResult> {
     };
 }
 
-if (require.main === module) {
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (invokedDirectly) {
     auditReleaseReadiness()
         .then((result) => {
             if (!result.passed) {
