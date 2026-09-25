@@ -60,6 +60,18 @@ describe("Dependency & Import Boundary Enforcement", () => {
       assert.equal(imports[0].lineNumber, 1);
     });
 
+    it("extracts star-alias and direct alias imports", () => {
+      const source = `import * as Core from "./ClaimRegistry.sol";\nimport "./ClaimRegistry.sol" as Registry;\nimport * as OZ from "@openzeppelin/contracts/access/AccessControl.sol";`;
+      const imports = extractImports(source);
+      assert.equal(imports.length, 3);
+      assert.equal(imports[0].importPath, "./ClaimRegistry.sol");
+      assert.equal(imports[0].lineNumber, 1);
+      assert.equal(imports[1].importPath, "./ClaimRegistry.sol");
+      assert.equal(imports[1].lineNumber, 2);
+      assert.equal(imports[2].importPath, "@openzeppelin/contracts/access/AccessControl.sol");
+      assert.equal(imports[2].lineNumber, 3);
+    });
+
     it("ignores imports located inside comments", () => {
       const source = `// import "frontend/App.sol";\n/*\nimport "@stellar/freighter";\n*/\nimport "./Valid.sol";`;
       const imports = extractImports(source);
@@ -132,6 +144,15 @@ describe("Dependency & Import Boundary Enforcement", () => {
       const violations = checkFileBoundaries(dummyContractPath, invalidCode, allowedRoots);
       const rules = violations.map((v) => v.rule);
       assert.ok(rules.includes("rule-unresolved-import"));
+    });
+
+    it("rejects alias imports that target forbidden paths", () => {
+      const invalidCode = `import * as BadFrontend from "../frontend/App.sol";\nimport "unapproved-pkg/Lib.sol" as BadLib;\nimport * as Alternate from "@stellar/freighter";`;
+      const violations = checkFileBoundaries(dummyContractPath, invalidCode, allowedRoots);
+      const rules = violations.map((v) => v.rule);
+      assert.ok(rules.includes("rule-no-frontend-api"));
+      assert.ok(rules.includes("rule-unapproved-vendor-boundary"));
+      assert.ok(rules.includes("rule-no-alternate-chain"));
     });
   });
 

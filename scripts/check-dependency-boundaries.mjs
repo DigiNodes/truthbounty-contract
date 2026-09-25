@@ -85,12 +85,18 @@ export function stripCommentsPreservingLines(source) {
  */
 export function extractImports(source) {
   const cleaned = stripCommentsPreservingLines(source);
-  // Matches all variations of Solidity imports
-  const importRegex = /import\s+(?:(?:\*|\{[^}]*\}|[\w\s,]+)\s+from\s+)?["']([^"']+)["']\s*;/gs;
+  // Matches all variations of Solidity imports including:
+  // 1. import "path";
+  // 2. import "path" as Alias;
+  // 3. import * as Alias from "path";
+  // 4. import { A, B as C } from "path";
+  // 5. import Symbol from "path";
+  const importRegex =
+    /import\s+(?:(?:\*(?:\s+as\s+[a-zA-Z_$][\w$]*)?|\{[^}]*\}|[a-zA-Z_$][\w$,\s]*)\s+from\s+["']([^"']+)["']|["']([^"']+)["'](?:\s+as\s+[a-zA-Z_$][\w$]*)?)\s*;/gs;
   const results = [];
   let match;
   while ((match = importRegex.exec(cleaned)) !== null) {
-    const importPath = match[1];
+    const importPath = match[1] || match[2];
     const textBefore = source.slice(0, match.index);
     const lineNumber = textBefore.split(/\r\n|\r|\n/).length;
     results.push({ importPath, lineNumber });
