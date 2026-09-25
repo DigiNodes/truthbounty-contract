@@ -130,7 +130,7 @@ contract TruthBountyGovernor is
 
     /**
      * @notice Wire the external guardian module once after deployment.
-     * @dev Callable once by the guardian EOA during bootstrap; this one-time exception cannot be repeated or used to execute calls.
+     * @dev Callable once by the current guardian address during bootstrap; this one-time exception cannot be repeated or used to execute calls.
      * @param module Non-zero module authorized to cancel proposals after bootstrap.
      */
     function setGovernanceGuardianModule(address module) external {
@@ -198,7 +198,7 @@ contract TruthBountyGovernor is
 
     /// @notice Reports whether a successful proposal must be queued in the timelock.
     /// @param proposalId Proposal to inspect.
-    /// @return needsQueueing True when the proposal is eligible but not yet queued.
+    /// @return needsQueueing True when the proposal must be queued before execution.
     function proposalNeedsQueuing(uint256 proposalId)
         public
         view

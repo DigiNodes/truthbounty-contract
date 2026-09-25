@@ -259,7 +259,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     }
 
     /// @notice Computes the deterministic identifier for a commitment without storing it.
-    /// @dev The result is a uint256 truncation of a domain-separated keccak256 digest; callers must not use it as proof of commitment existence.
+    /// @dev The result is a same-width conversion of the domain-separated keccak256 digest; callers must not use it as proof of commitment existence.
     /// @param claimId Claim identifier.
     /// @param contributor Contributor address.
     /// @param contentDigest Content digest.

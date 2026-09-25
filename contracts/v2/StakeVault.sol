@@ -31,7 +31,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     /// @notice Module identifier authorized to manage verification stake.
     bytes32 public constant MODULE_VERIFICATION = keccak256("VERIFICATION");
 
-    /// @notice Registry queried to resolve module authority; registry failure denies lock mutation.
+    /// @notice Registry queried to resolve registry-derived module authority; registry failure denies only that authority, not authority granted through explicit `lockMutators`.
     IModuleRegistry public immutable moduleRegistry;
     /// @notice Primary ERC-20 asset used by the `IStakeCustody` verifier-stake surface.
     IERC20 public immutable stakingToken;
@@ -179,7 +179,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
 
     /// @notice Deposits a supported asset into the caller's claimable balance.
-    /// @dev The transfer must deliver exactly `amount`; fee-on-transfer and rebasing tokens are rejected so accounting remains conservative.
+    /// @dev Deposits verify that the vault's balance increases by exactly `amount`; supported assets must have compatible balance and transfer behavior.
     /// @param asset ERC-20 asset address.
     /// @param amount Requested amount in asset base units.
     function deposit(address asset, uint256 amount) external nonReentrant {
@@ -187,7 +187,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     }
 
     /// @notice Locks claimable balance into a typed lock cell. Authorized modules only.
-    /// @dev The caller's module status is resolved through the canonical registry; registry failure or insufficient claimable balance reverts without partial accounting.
+    /// @dev Authorization accepts explicit `lockMutators` or a registered supported module; registry failure reverts only registry-derived authorization checks, while explicit mutator authority remains available. An insufficient claimable balance reverts without partial accounting.
     /// @param asset ERC-20 asset address.
     /// @param account Account whose balance is locked.
     /// @param claimId Claim associated with the lock.
@@ -410,7 +410,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
 
     /// @notice Enables or disables an asset for custody operations.
-    /// @dev Disabling prevents new deposits and all subsequent accounting operations for the asset; it does not confiscate existing custody.
+    /// @dev Disabling blocks new deposits through `_deposit` but leaves `lock`, `unlock`, `allocateLocked`, and `withdraw` available for existing balances; it does not confiscate existing custody.
     /// @param asset ERC-20 asset address to configure.
     /// @param enabled Whether custody operations are enabled.
     function setSupportedAsset(address asset, bool enabled) external onlyRole(ADMIN_ROLE) {
@@ -612,7 +612,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     }
 
     /// @notice Moves a VERIFIER_PRINCIPAL lock from one round to another without changing custody totals.
-    /// @dev The source and destination round must differ; no rounding or external transfer occurs in this transition.
+    /// @dev The destination round must be later than the source and must not have a recorded settlement outcome; no rounding or external transfer occurs in this transition.
     function _moveLock(
         address asset,
         address account,
@@ -622,7 +622,11 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) internal {
         if (amount == 0) revert V2Errors.ZeroAmount();
-        if (fromRound == toRound) revert V2Errors.InvalidArgument("same round");
+        if (toRound < fromRound) revert V2Errors.InvalidArgument("destination round must be later");
+        if (toRound == fromRound) revert V2Errors.InvalidArgument("same round");
+        if (_settlementOutcome[claimId][toRound] != IV2Types.SettlementOutcome.NONE) {
+            revert V2Errors.SettlementAlreadyFinalized(claimId, toRound);
+        }
 
         bytes32 fromKey = _lockKey(asset, account, claimId, fromRound, IV2Types.LockCategory.VERIFIER_PRINCIPAL);
         uint256 locked = _locks[fromKey];

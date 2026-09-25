@@ -83,7 +83,7 @@ interface IStakeCustody is IV2Module {
     function releaseStake(uint256 claimId, address account, uint256 amount) external;
 
     /// @notice Slashes authorized verifier principal into protocol allocation.
-    /// @dev Only the registered slashing module or explicit governance mutator may call; the operation is bounded by the account's locked balance and remains fail-closed.
+    /// @dev Only the registered slashing, settlement, or verification module (or an explicit governance mutator) may call; the operation is bounded by the account's locked balance and remains fail-closed.
     /// @param claimId Claim whose stake is slashed.
     /// @param account Account whose lock is reduced.
     /// @param amount Amount in staking-token base units.
@@ -121,7 +121,7 @@ interface IStakeCustody is IV2Module {
     function refundInconclusive(address asset, address account, uint256 claimId, uint256 round, uint256 amount) external;
 
     /// @notice Moves locked principal to a later round for an appeal.
-    /// @dev Registered settlement module only. Idempotent per `(claimId, fromRound)`; source and destination rounds must differ and total custody is unchanged.
+    /// @dev Registered settlement module only. Idempotent per `(claimId, fromRound)`; the destination round must be later than the source and must not have a recorded settlement outcome, while total custody is unchanged.
     /// @param asset ERC-20 settlement asset.
     /// @param account Account retaining the lock.
     /// @param claimId Claim under appeal.
@@ -131,7 +131,7 @@ interface IStakeCustody is IV2Module {
     function carryForwardAppeal(address asset, address account, uint256 claimId, uint256 fromRound, uint256 toRound, uint256 amount) external;
 
     /// @notice Moves locked principal to the next round without settlement.
-    /// @dev Registered settlement module only. Idempotent per `(claimId, fromRound)`; total custody and protocol allocation are unchanged.
+    /// @dev Registered settlement module only. Idempotent per `(claimId, fromRound)`; the destination round must be later than the source and must not have a recorded settlement outcome, while total custody and protocol allocation are unchanged.
     /// @param asset ERC-20 settlement asset.
     /// @param account Account retaining the lock.
     /// @param claimId Claim being rolled.

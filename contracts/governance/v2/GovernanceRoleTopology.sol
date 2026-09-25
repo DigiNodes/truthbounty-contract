@@ -7,8 +7,7 @@ import {TruthBountyGovernor} from "./TruthBountyGovernor.sol";
 /**
  * @title GovernanceRoleTopology
  * @notice Wires production role topology between governor and timelock (V2-SC-026 dependency).
- * @dev Guardian receives canceller rights on the timelock only; it cannot propose or execute.
- *      The governor is the sole proposer. Execution is permissionless after the timelock delay.
+ * @dev Guardian receives an individual canceller role grant on the timelock; the governor is the sole proposer. Execution is permissionless after the timelock delay.
  */
 library GovernanceRoleTopology {
     bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
@@ -32,7 +31,7 @@ library GovernanceRoleTopology {
      * @dev Assign canonical timelock roles after governor deployment.
      * @param timelock Timelock receiving the role topology.
      * @param governor Governor receiving proposer and canceller rights.
-     * @param guardian Guardian receiving canceller rights only.
+     * @param guardian Guardian receiving an individual canceller-only role grant.
      * @param minDelay Configured minimum execution delay in seconds.
      */
     function configure(

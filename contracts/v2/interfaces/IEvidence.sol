@@ -30,7 +30,7 @@ interface IEvidence is IV2Module {
     function submitEvidence(uint256 claimId, bytes32 contentHash, bytes calldata metadata) external returns (uint256 evidenceId);
 
     /// @notice Sets the evidence acceptance status under the evidence administrator authority.
-    /// @dev Must validate the configured state transition and must not silently treat an unknown ID as `NONE`.
+    /// @dev The current implementation requires the evidence record to exist but does not enforce a state-transition matrix; an authorized administrator can assign any status, including `NONE`, to an existing record.
     /// @param evidenceId Evidence to update.
     /// @param status New evidence status.
     function setEvidenceStatus(uint256 evidenceId, IV2Types.EvidenceStatus status) external;

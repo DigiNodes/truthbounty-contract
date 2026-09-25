@@ -64,7 +64,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
 
     /**
      * @notice Guardian-controlled circuit breaker for the guardian contract itself.
-     * @dev Pausing stops this contract's mutable operations; it is not a module-level pause and does not execute calls.
+     * @dev Pausing this contract does not prevent `vetoProposal()` or `requestModulePause()` from being called; it is not a module-level pause and does not execute calls.
      */
     function guardianPause() external onlyRole(GUARDIAN_ROLE) {
         _pause();

@@ -6,7 +6,7 @@ import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 /**
  * @title ITruthBountyGovernor
  * @notice TruthBounty governor surface including proposal-id helpers from `GovernorStorage`.
- * @dev Proposal creation is restricted to governed modules; queueing and execution are governed by the timelock. The guardian may cancel through the governor's authorized path but cannot execute calls.
+ * @dev Proposal targets must be governed modules; queueing and execution are governed by the timelock. The guardian may cancel through the governor's authorized path but has no special execution privilege.
  */
 interface ITruthBountyGovernor is IGovernor {
     /// @notice Cancels a proposal when the caller is the proposer, guardian, or another governor-authorized actor.
@@ -15,7 +15,7 @@ interface ITruthBountyGovernor is IGovernor {
     function cancel(uint256 proposalId) external;
 
     /// @notice Queues a successful proposal in the timelock.
-    /// @dev Must revert until voting succeeds and the timelock delay permits scheduling; queueing does not execute module calls.
+    /// @dev Must revert until voting succeeds; queueing is permitted then, and the timelock delay must expire before execution. Queueing does not execute module calls.
     /// @param proposalId Proposal to queue.
     function queue(uint256 proposalId) external;
 

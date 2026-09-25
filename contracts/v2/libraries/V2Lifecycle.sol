@@ -109,7 +109,7 @@ library V2Lifecycle {
     /// @param weightCapBps Invalid weight cap.
     error InvalidWeightCap(uint16 weightCapBps);
     /// @notice Participation bounds are invalid.
-    /// @param thresholdBps Invalid maximum participation bound.
+    /// @param thresholdBps Supplied maximum participation bound; an invalid minimum participation bound can also cause the revert.
     error InvalidParticipationThreshold(uint24 thresholdBps);
     /// @notice Confidence threshold exceeds 10,000 basis points.
     /// @param confidenceBps Invalid confidence threshold.
