@@ -125,6 +125,7 @@ The drill procedures are fully implemented as automated, repeatable tests:
 | Test Suite | Path | Description |
 |---|---|---|
 | **Unit & Integration Drill** | `test/governance/EmergencyRecoveryDrills.t.sol` | End-to-end 6-stage lifecycle, separation of powers, and event checks |
+| **V2 Protected Fixture** | `contracts/v2/interfaces/V2EmergencyProtectedFixture.sol` | Reviewable canonical V2 fixture demonstrating mutation path gating via `IEmergencyControls` |
 | **Property Fuzz Tests** | `test/fuzz/EmergencyRecovery.fuzz.sol` | Invariant testing of monotonic restriction, role boundaries, and recovery ordering |
 | **Module Conformance** | `test/v2/V2ModuleConformance.t.sol` | Conformance of V2 `EmergencyControls` with `IEmergencyControls` & ERC-165 |
 | **Conformance Fuzz** | `test/fuzz/V2ConformanceFuzz.t.sol` | Negative-space interface checks for `EmergencyControls` |
