@@ -17,7 +17,7 @@ contract LoopBoundsCatalog {
     }
 
     function catalogSize() external pure returns (uint256) {
-        return 12;
+        return 14;
     }
 
     function getLoopBound(uint256 index) external pure returns (LoopBound memory) {
@@ -127,6 +127,24 @@ contract LoopBoundsCatalog {
                 loopVariable: "page length",
                 maxIterations: 200,
                 mitigation: "Fixed page size in view pagination"
+            });
+        }
+        if (index == 12) {
+            return LoopBound({
+                module: "V2Lifecycle",
+                functionName: "validateParameterSet",
+                loopVariable: "supportedAssets.length",
+                maxIterations: ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS,
+                mitigation: "Hard cap before validation and storage copy"
+            });
+        }
+        if (index == 13) {
+            return LoopBound({
+                module: "EvidenceRegistry",
+                functionName: "commitEvidence",
+                loopVariable: "claimEvidenceIds[claimId].length",
+                maxIterations: ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM,
+                mitigation: "Hard cap with paginated claimEvidence reads"
             });
         }
         revert("IndexOutOfBounds");

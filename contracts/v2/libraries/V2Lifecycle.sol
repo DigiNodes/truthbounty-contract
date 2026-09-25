@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IV2Types} from "../interfaces/IV2Types.sol";
 import {V2Errors} from "./V2Errors.sol";
+import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
 
 /// @title V2Lifecycle
 /// @notice Shared lifecycle and state machine logic for the TruthBounty V2 protocol.
@@ -52,6 +53,7 @@ library V2Lifecycle {
     error InvalidGovernance(address governance);
     error UnsupportedAsset(address asset);
     error InvalidSupportedAssets(uint256 assetCount);
+    error SupportedAssetLimitExceeded(uint256 assetCount, uint256 max);
     error InvalidBountyRange(uint128 minBounty, uint128 maxBounty);
     error InvalidStakeRange(uint128 minStake, uint128 maxStake);
     error InvalidDuration(uint8 field);
@@ -79,6 +81,12 @@ library V2Lifecycle {
     /// @notice Validates every configured bound and invariant for a parameter set.
     function validateParameterSet(ParameterSet memory params) internal pure {
         if (params.supportedAssets.length == 0) revert InvalidSupportedAssets(0);
+        if (params.supportedAssets.length > ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS) {
+            revert SupportedAssetLimitExceeded(
+                params.supportedAssets.length,
+                ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS
+            );
+        }
         for (uint256 i = 0; i < params.supportedAssets.length; ++i) {
             if (params.supportedAssets[i] == address(0)) {
                 revert UnsupportedAsset(params.supportedAssets[i]);
