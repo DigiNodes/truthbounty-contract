@@ -8,6 +8,8 @@ import {GovernanceForbiddenCalls} from "../../contracts/governance/v2/libraries/
 import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import {GovernanceSnapshot} from "../../contracts/governance/v2/GovernanceSnapshot.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
@@ -23,6 +25,7 @@ contract TruthBountyGovernorTest is Test {
     TruthBountyGovernanceToken internal token;
     GovernedModuleRegistry internal registry;
     TimelockController internal timelock;
+    GovernanceSnapshot internal snapshot;
     TruthBountyGovernor internal governor;
     GovernanceGuardian internal guardianContract;
     MockGovernedModule internal module;
@@ -44,10 +47,14 @@ contract TruthBountyGovernorTest is Test {
         address[] memory executors = new address[](0);
         timelock = new TimelockController(TIMELOCK_DELAY, proposers, executors, admin);
 
+        // Deploy snapshot with admin as temporary registrar, then hand off to governor
+        snapshot = new GovernanceSnapshot(admin, admin);
+
         governor = new TruthBountyGovernor(
             token,
             timelock,
             registry,
+            IGovernanceSnapshot(address(snapshot)),
             guardian,
             VOTING_DELAY,
             VOTING_PERIOD,
@@ -55,22 +62,33 @@ contract TruthBountyGovernorTest is Test {
             QUORUM_NUMERATOR
         );
 
+        // Wire the snapshot registrar role to the governor
+        bytes32 registrarRole = snapshot.SNAPSHOT_REGISTRAR_ROLE();
+        snapshot.grantRole(registrarRole, address(governor));
+        snapshot.revokeRole(registrarRole, admin);
+
         guardianContract = new GovernanceGuardian(admin, guardian, ITruthBountyGovernor(address(governor)));
-        vm.prank(guardian);
-        governor.setGovernanceGuardianModule(address(guardianContract));
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
-        timelock.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
+        bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
+        timelock.grantRole(registryAdminRole, address(timelock));
 
         module = new MockGovernedModule();
         registry.registerModule("MOCK_MODULE", address(module));
 
         vm.stopPrank();
 
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+
         vm.prank(proposer);
         token.delegate(proposer);
         vm.prank(voter);
         token.delegate(voter);
+
+        // Warp so delegation checkpoints are in the past — getPastVotes(x, block.timestamp)
+        // requires the timepoint to be strictly before current block.timestamp (OZ Votes invariant).
+        vm.warp(block.timestamp + 2);
     }
 
     function _proposalCalldata(uint256 newValue) internal pure returns (bytes memory) {
@@ -114,6 +132,35 @@ contract TruthBountyGovernorTest is Test {
         uint256 proposalId = _createProposal(7);
         vm.warp(block.timestamp + VOTING_DELAY + VOTING_PERIOD + 1);
         assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Defeated));
+    }
+
+    function test_VotingBeforeDelayReverts() public {
+        uint256 proposalId = _createProposal(8);
+
+        vm.prank(voter);
+        vm.expectRevert();
+        governor.castVote(proposalId, 1);
+    }
+
+    function test_ProposerCanCancelPendingProposal() public {
+        uint256 proposalId = _createProposal(12);
+
+        vm.prank(proposer);
+        governor.cancel(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Canceled));
+        vm.expectRevert();
+        governor.queue(proposalId);
+    }
+
+    function test_CancelledProposalCannotExecute() public {
+        uint256 proposalId = _createProposal(13);
+
+        vm.prank(guardian);
+        guardianContract.vetoProposal(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
     }
 
     function test_CancelledByGuardian() public {
@@ -191,6 +238,7 @@ contract TruthBountyGovernorTest is Test {
             address(timelock),
             address(token),
             address(registry),
+            address(snapshot),
             VOTING_DELAY,
             VOTING_PERIOD,
             100_000 ether,
