@@ -48,6 +48,7 @@ The protocol release process is documented in:
 - docs/release/release-candidate-process.md
 - docs/release/mainnet-readiness-scorecard.md
 - docs/runbooks/
+- [docs/storage-layout-compatibility.md](docs/storage-layout-compatibility.md) — automated upgradeable storage layout gate (V2-SC-046)
 
 ### Core Modules
 
@@ -114,7 +115,7 @@ OPTIMISM_ETHERSCAN_API_KEY=your_optimism_etherscan_api_key
 
 ### Prerequisites
 
-- Node.js v18+
+- Node.js v22+
 - npm or yarn
 - Git
 
