@@ -245,10 +245,16 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         }
 
         if (supported) {
-            if (minBounty == 0 || minBounty > maxBounty) {
+            uint256 safeMin = parameterVersionRegistry.MIN_SAFE_BOND();
+            uint256 safeMax = parameterVersionRegistry.MAX_SAFE_BOND();
+
+            if (
+                minBounty < safeMin ||
+                maxBounty > safeMax ||
+                minBounty > maxBounty
+            ) {
                 revert InvalidBounty(minBounty);
             }
-
             _supportedAssets[asset] = true;
             _assetMinBounty[asset] = minBounty;
             _assetMaxBounty[asset] = maxBounty;
@@ -479,6 +485,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
                 parameterVersion
             );
         }
+
+        uint256 safeMin = parameterVersionRegistry.MIN_SAFE_BOND();
+        uint256 safeMax = parameterVersionRegistry.MAX_SAFE_BOND();
+        if (bounty < safeMin || bounty > safeMax) revert InvalidBounty(bounty);
 
         uint256 minBounty = _assetMinBounty[asset];
         uint256 maxBounty = _assetMaxBounty[asset];

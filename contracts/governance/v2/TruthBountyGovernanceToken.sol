@@ -13,8 +13,11 @@ import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
  *      or another address via {delegate}. Token transfers move voting units 1:1 with balances.
  */
 contract TruthBountyGovernanceToken is ERC20, ERC20Permit, ERC20Votes {
+    /// @notice Recipient address must not be zero.
     error ZeroRecipient();
 
+    /// @param initialHolder Non-zero account receiving the initial supply.
+    /// @param initialSupply Initial token amount in base units.
     constructor(address initialHolder, uint256 initialSupply)
         ERC20("TruthBounty Governance", "TB-GOV")
         ERC20Permit("TruthBounty Governance")
@@ -23,15 +26,22 @@ contract TruthBountyGovernanceToken is ERC20, ERC20Permit, ERC20Votes {
         _mint(initialHolder, initialSupply);
     }
 
-    function clock() public view override returns (uint48) {
+    /// @notice Returns the timestamp-based voting clock.
+    /// @return timestamp Current Unix timestamp truncated to the clock type.
+    function clock() public view override returns (uint48 timestamp) {
         return uint48(block.timestamp);
     }
 
-    function CLOCK_MODE() public pure override returns (string memory) {
+    /// @notice Describes the timestamp clock used by governance voting checkpoints.
+    /// @return mode Clock mode string `mode=timestamp`.
+    function CLOCK_MODE() public pure override returns (string memory mode) {
         return "mode=timestamp";
     }
 
-    function nonces(address owner) public view override(ERC20Permit, Nonces) returns (uint256) {
+    /// @notice Returns the current ERC-20 permit nonce for an owner.
+    /// @param owner Permit owner.
+    /// @return nonce Next permit nonce.
+    function nonces(address owner) public view override(ERC20Permit, Nonces) returns (uint256 nonce) {
         return super.nonces(owner);
     }
 
