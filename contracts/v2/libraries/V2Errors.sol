@@ -260,4 +260,34 @@ library V2Errors {
 
     /// @notice Invalid checksum (zero or malformed).
     error InvalidChecksum();
+
+    // =========================================================================
+    // Precision & Arithmetic Errors (V2-SC-100)
+    // =========================================================================
+
+    /// @notice Division or proportional split attempted with a zero denominator.
+    /// @dev Raised explicitly rather than relying on a division panic, so the
+    ///      revert reason identifies the cause.
+    error ZeroDenominator();
+
+    /// @notice Basis-point value exceeded 10_000 (100%).
+    /// @param bps The offending value.
+    error BpsOutOfRange(uint256 bps);
+
+    /// @notice Percentage value exceeded 100.
+    /// @param percent The offending value.
+    error PercentOutOfRange(uint256 percent);
+
+    /// @notice An allocation's basis-point parts did not sum to exactly 10_000.
+    /// @dev Exact rather than "at most": a split summing to less than 100%
+    ///      silently strands value in the paying contract.
+    /// @param total The sum that was supplied.
+    error BpsSumNotExact(uint256 total);
+
+    /// @notice Index addressed a position outside the supplied array.
+    /// @param index The offending index.
+    error IndexOutOfBounds(uint256 index);
+
+    /// @notice Two arrays that must be index-aligned had different lengths.
+    error LengthMismatch();
 }
