@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IClaimRegistry.sol";
 import "./interfaces/IParameterVersionRegistry.sol";
+import "./performance/ProtocolExecutionBounds.sol";
+import "./v2/libraries/AntiGriefing.sol";
 
 /**
  * @title ClaimRegistry
@@ -45,6 +47,11 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     mapping(address => uint256) private _submitterNonce;
     mapping(bytes32 => CanonicalClaim) private _canonicalClaims;
     mapping(bytes32 => bool) private _canonicalClaimExists;
+
+    /// @dev V2-SC-105 claim spam controls (legacy sequential createClaim path).
+    mapping(address => uint64) private _claimWindowStart;
+    mapping(address => uint256) private _claimsInWindow;
+    mapping(address => uint256) private _openClaimCount;
 
     /**
      * @param initialAdmin Address that receives DEFAULT_ADMIN_ROLE and ADMIN_ROLE.
@@ -108,6 +115,23 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         ) {
             revert InvalidDeadline();
         }
+
+        // V2-SC-105: reject claim spam before allocating storage.
+        AntiGriefing.requireOpenClaimCapacity(
+            msg.sender,
+            _openClaimCount[msg.sender],
+            ProtocolExecutionBounds.MAX_OPEN_CLAIMS_PER_CREATOR
+        );
+        (uint64 newStart, uint256 newCount) = AntiGriefing.nextClaimWindow(
+            msg.sender,
+            now_,
+            _claimWindowStart[msg.sender],
+            _claimsInWindow[msg.sender],
+            ProtocolExecutionBounds.MAX_CLAIMS_PER_ACCOUNT_WINDOW,
+            uint64(ProtocolExecutionBounds.CLAIM_SPAM_WINDOW_SECONDS)
+        );
+        _claimWindowStart[msg.sender] = newStart;
+        _claimsInWindow[msg.sender] = newCount;
 
         claimId = _nextClaimId;
 
