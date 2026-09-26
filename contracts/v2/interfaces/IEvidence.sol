@@ -12,14 +12,18 @@ interface IEvidence is IV2Module {
     /// @param claimId Claim receiving the evidence.
     /// @param submitter Account that supplied the commitment.
     /// @param contentHash Digest of off-chain content.
-    event EvidenceSubmitted(uint256 indexed evidenceId, uint256 indexed claimId, address indexed submitter, bytes32 contentHash);
+    /// @param timestamp Block timestamp the commitment was accepted.
+    /// @param version Event schema version.
+    event EvidenceSubmitted(uint256 indexed evidenceId, uint256 indexed claimId, address indexed submitter, bytes32 contentHash, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when an evidence administrator changes acceptance status.
     /// @param evidenceId Evidence whose status changed.
     /// @param previousStatus Status before the change.
     /// @param newStatus Status after the change.
     /// @param actor Authorized administrator.
-    event EvidenceStatusChanged(uint256 indexed evidenceId, IV2Types.EvidenceStatus previousStatus, IV2Types.EvidenceStatus newStatus, address indexed actor);
+    /// @param timestamp Block timestamp the status change was applied.
+    /// @param version Event schema version.
+    event EvidenceStatusChanged(uint256 indexed evidenceId, IV2Types.EvidenceStatus previousStatus, IV2Types.EvidenceStatus newStatus, address indexed actor, uint64 timestamp, uint16 version);
 
     /// @notice Submits an evidence commitment for an active claim.
     /// @dev Must reject zero digests, duplicate commitments, closed windows, finalized claims, and invalid nonces. Metadata is treated as opaque and should be stored off-chain.
