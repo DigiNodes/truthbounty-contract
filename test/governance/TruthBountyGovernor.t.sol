@@ -145,6 +145,35 @@ contract TruthBountyGovernorTest is Test {
         assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Defeated));
     }
 
+    function test_VotingBeforeDelayReverts() public {
+        uint256 proposalId = _createProposal(8);
+
+        vm.prank(voter);
+        vm.expectRevert();
+        governor.castVote(proposalId, 1);
+    }
+
+    function test_ProposerCanCancelPendingProposal() public {
+        uint256 proposalId = _createProposal(12);
+
+        vm.prank(proposer);
+        governor.cancel(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Canceled));
+        vm.expectRevert();
+        governor.queue(proposalId);
+    }
+
+    function test_CancelledProposalCannotExecute() public {
+        uint256 proposalId = _createProposal(13);
+
+        vm.prank(guardian);
+        guardianContract.vetoProposal(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
+    }
+
     function test_CancelledByGuardian() public {
         uint256 proposalId = _createProposal(11);
         vm.warp(block.timestamp + VOTING_DELAY + 1);

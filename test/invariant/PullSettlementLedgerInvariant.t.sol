@@ -131,7 +131,7 @@ contract LedgerHandler is Test {
 
         // This must always revert.
         try ledger.credit(actor, amount, ref) {
-            revert("replay succeeded — invariant I3 broken");
+            revert("replay succeeded - invariant I3 broken");
         } catch {}
     }
 }

@@ -223,7 +223,7 @@ contract ThreatModelControls is Test {
 
     /// @notice RESOLVER_ROLE_CHANGE_DELAY must be exactly 2 days.
     function test_invariant_resolverRoleChangeDelayIs2Days() public view {
-        assertEq(token.RESOLVER_ROLE_CHANGE_DELAY(), 2 days, "delay must be 2 days per §5.1");
+        assertEq(token.RESOLVER_ROLE_CHANGE_DELAY(), 2 days, "delay must be 2 days per section 5.1");
     }
 
     /// @notice No untrusted address holds RESOLVER_ROLE at deploy time.
@@ -253,6 +253,6 @@ contract ThreatModelControls is Test {
 
         vm.prank(operator);
         vault.lockBond(LOCK_ID + 1, address(mockToken), user, BOND_AMOUNT);
-        assertEq(vault.totalLocked(), BOND_AMOUNT * 2, "totalLocked must be 2× after second lock");
+        assertEq(vault.totalLocked(), BOND_AMOUNT * 2, "totalLocked must be 2x after second lock");
     }
 }

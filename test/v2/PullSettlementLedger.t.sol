@@ -317,7 +317,7 @@ contract PullSettlementLedgerTest is Test {
         ledger.credit(alice, CREDIT, REF_A);
 
         // Balance must not have changed.
-        assertEq(ledger.credited(alice), balanceBefore, "balance inflated by replay — fix missing");
+        assertEq(ledger.credited(alice), balanceBefore, "balance inflated by replay - fix missing");
     }
 
     // =========================================================================
