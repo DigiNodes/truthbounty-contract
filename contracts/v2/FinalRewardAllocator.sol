@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IFinalRewardAllocator} from "./interfaces/IFinalRewardAllocator.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
+import {V2Precision} from "./libraries/V2Precision.sol";
 
 /// @title FinalRewardAllocator
 /// @notice Records pull-based reward entitlements from one immutable final outcome.
@@ -143,7 +144,19 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
 
         uint256 distributed;
         for (uint256 i; i < count; ++i) {
-            uint256 share = allocation.amount * allocation.effectiveWeights[i] / totalWeight;
+            // Rounding is pro-rata and truncating, via V2Precision (V2-SC-100).
+            //
+            // Down is the correct direction for a payout: every recipient is
+            // paid no more than their exact entitlement, so the parts can only
+            // sum to at most `allocation.amount` and the shortfall is dust that
+            // `remainderRecipient` receives below. Rounding up here would let
+            // the sum of shares exceed the funded amount.
+            //
+            // mulDivDown also computes the product over 512 bits. The previous
+            // inline form multiplied before dividing, so a large amount times a
+            // large effective weight could overflow and revert a settlement that
+            // is arithmetically valid.
+            uint256 share = V2Precision.mulDivDown(allocation.amount, allocation.effectiveWeights[i], totalWeight);
             distributed += share;
             if (share != 0) {
                 _claimable[asset][allocation.accounts[i]] += share;
