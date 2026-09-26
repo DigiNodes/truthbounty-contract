@@ -9,46 +9,150 @@ import {ProtocolExecutionBounds} from "./ProtocolExecutionBounds.sol";
 
 /**
  * @title PullSettlementLedger
- * @notice Pull-based settlement credits — recipient behavior cannot block other users (V2-SC-038).
- * @dev Treasury credits balances; each recipient withdraws independently. A hostile or reverting
- *      recipient only griefs their own withdrawal attempt, not global finalization.
+ * @notice Pull-based settlement credits — recipient behavior cannot block other users (V2-SC-038,
+ *         V2-SC-062).
+ *
+ * @dev Pull-payment isolation invariants (V2-SC-062):
+ *
+ *  1. **Replay prevention** — every `settlementRef` may be applied at most once.
+ *     A second call with the same ref reverts with `SettlementRefAlreadyProcessed`.
+ *
+ *  2. **Failure isolation** — credits are tracked per (account, settlementRef).
+ *     A reverted or hostile withdrawal on one ref does not touch any other ref's
+ *     balance.  A beneficiary that cannot receive tokens for ref A can still
+ *     withdraw ref B independently.
+ *
+ *  3. **Balance update before interaction** — the per-ref withdrawn amount is
+ *     incremented before the `safeTransfer` call (Checks-Effects-Interactions).
+ *
+ *  4. **Recoverable failures remain claimable** — a transient revert during
+ *     `withdrawFromRef` leaves the per-ref balance intact; the caller may retry.
+ *
+ * Treasury grants CREDITOR_ROLE and calls `credit` / `creditBatch`.
+ * Each beneficiary independently calls `withdraw` (aggregate) or
+ * `withdrawFromRef` (per-settlement) to pull their tokens.
  */
 contract PullSettlementLedger is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    // -------------------------------------------------------------------------
+    // Roles
+    // -------------------------------------------------------------------------
+
     bytes32 public constant CREDITOR_ROLE = keccak256("CREDITOR_ROLE");
+
+    // -------------------------------------------------------------------------
+    // Immutables
+    // -------------------------------------------------------------------------
 
     IERC20 public immutable token;
 
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+
+    /// @notice Aggregate credits accumulated per account across all settlement refs.
     mapping(address => uint256) public credited;
+
+    /// @notice Aggregate amount already withdrawn per account.
     mapping(address => uint256) public withdrawn;
 
+    /// @dev Per-(account, settlementRef) credit sub-balance.
+    ///      Enables per-ref withdrawal and isolates failures between refs.
+    mapping(address => mapping(bytes32 => uint256)) private _refCredited;
+
+    /// @dev Per-(account, settlementRef) amount already withdrawn.
+    mapping(address => mapping(bytes32 => uint256)) private _refWithdrawn;
+
+    /// @dev Guards against replaying a settlementRef across any beneficiary.
+    ///      A ref is "processed" once the first credit for it is recorded.
+    mapping(bytes32 => bool) private _processedRefs;
+
+    // -------------------------------------------------------------------------
+    // Events
+    // -------------------------------------------------------------------------
+
+    /// @notice Emitted when a credit is recorded.
     event SettlementCredited(address indexed beneficiary, uint256 amount, bytes32 indexed settlementRef);
+
+    /// @notice Emitted when a beneficiary pulls their aggregate balance.
     event SettlementWithdrawn(address indexed beneficiary, uint256 amount);
+
+    /// @notice Emitted when a beneficiary pulls a single-ref balance.
+    event SettlementRefWithdrawn(address indexed beneficiary, bytes32 indexed settlementRef, uint256 amount);
+
+    /// @notice Emitted when a credit attempt for an already-processed ref is rejected.
+    ///         Surfaced as an event (not only a revert) so off-chain monitors can detect
+    ///         erroneous double-credit attempts without needing to parse revert data.
+    event SettlementRefRejected(bytes32 indexed settlementRef, address indexed attemptedBy);
+
+    // -------------------------------------------------------------------------
+    // Errors
+    // -------------------------------------------------------------------------
 
     error ZeroAmount();
     error ZeroAddress();
     error InsufficientCredit(uint256 available, uint256 requested);
     error BatchTooLarge(uint256 length, uint256 max);
     error LengthMismatch(uint256 a, uint256 b);
+    /// @notice The supplied settlementRef has already been applied; replay is forbidden.
+    error SettlementRefAlreadyProcessed(bytes32 settlementRef);
+    /// @notice A zero-value settlementRef is not permitted (prevents accidental unguarded calls).
+    error ZeroSettlementRef();
+
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
 
     constructor(address admin, IERC20 token_) {
         if (address(token_) == address(0)) revert ZeroAddress();
+        if (admin == address(0)) revert ZeroAddress();
         token = token_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(CREDITOR_ROLE, admin);
     }
 
+    // -------------------------------------------------------------------------
+    // Credit functions (CREDITOR_ROLE)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Record a settlement credit for `beneficiary`.
+     * @dev V2-SC-062 replay guard: `settlementRef` must be unique across all calls.
+     *      The ref is marked processed on the first credit regardless of how many
+     *      beneficiaries it covers (single-beneficiary case here).
+     *
+     * @param beneficiary  Recipient of the credit.
+     * @param amount       Token amount being credited.
+     * @param settlementRef  Unique opaque identifier for this settlement action.
+     */
     function credit(address beneficiary, uint256 amount, bytes32 settlementRef)
         external
         onlyRole(CREDITOR_ROLE)
     {
         if (beneficiary == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
+        if (settlementRef == bytes32(0)) revert ZeroSettlementRef();
+        _assertRefNotProcessed(settlementRef);
+
+        // Mark ref as consumed before writing any balance (fail-closed on invalid config).
+        _processedRefs[settlementRef] = true;
+
         credited[beneficiary] += amount;
+        _refCredited[beneficiary][settlementRef] += amount;
+
         emit SettlementCredited(beneficiary, amount, settlementRef);
     }
 
+    /**
+     * @notice Batch-credit multiple beneficiaries under a single settlement ref.
+     * @dev The entire batch shares one `settlementRef`; it is consumed atomically.
+     *      Partial batch replays are therefore impossible.
+     *
+     * @param beneficiaries  Array of recipient addresses.
+     * @param amounts        Parallel array of credit amounts.
+     * @param settlementRef  Unique opaque identifier for this batch settlement.
+     */
     function creditBatch(
         address[] calldata beneficiaries,
         uint256[] calldata amounts,
@@ -59,28 +163,119 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
         if (length > ProtocolExecutionBounds.MAX_SETTLEMENT_BATCH_SIZE) {
             revert BatchTooLarge(length, ProtocolExecutionBounds.MAX_SETTLEMENT_BATCH_SIZE);
         }
+        if (settlementRef == bytes32(0)) revert ZeroSettlementRef();
+        _assertRefNotProcessed(settlementRef);
+
+        // Mark consumed before any state mutation — fail-closed.
+        _processedRefs[settlementRef] = true;
 
         for (uint256 i = 0; i < length; ++i) {
             address beneficiary = beneficiaries[i];
             uint256 amount = amounts[i];
             if (beneficiary == address(0)) revert ZeroAddress();
             if (amount == 0) revert ZeroAmount();
+
             credited[beneficiary] += amount;
+            _refCredited[beneficiary][settlementRef] += amount;
+
             emit SettlementCredited(beneficiary, amount, settlementRef);
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Withdrawal functions (pull by beneficiary)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Pull the caller's entire available aggregate balance.
+     * @dev CEI: aggregate `withdrawn` counter is incremented BEFORE the token
+     *      transfer so a reverting or reentering token cannot double-withdraw.
+     *      ReentrancyGuard provides a second layer of defense.
+     *
+     *      Failure isolation: this path drains the aggregate balance.  If a
+     *      recipient prefers finer isolation, they should use `withdrawFromRef`.
+     *
+     * @param amount  Amount to withdraw (must be ≤ available balance).
+     */
     function withdraw(uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
         uint256 available = credited[msg.sender] - withdrawn[msg.sender];
         if (amount > available) revert InsufficientCredit(available, amount);
 
+        // CEI — update state before external call.
         withdrawn[msg.sender] += amount;
+
         token.safeTransfer(msg.sender, amount);
         emit SettlementWithdrawn(msg.sender, amount);
     }
 
+    /**
+     * @notice Pull the caller's available balance for a specific settlement ref.
+     * @dev Failure isolation (V2-SC-062): a revert here only affects this ref's
+     *      sub-balance.  Other refs are completely unaffected.
+     *
+     *      CEI: the per-ref `_refWithdrawn` counter is incremented BEFORE the
+     *      transfer; the aggregate `withdrawn` counter is updated in the same
+     *      step so both views remain consistent.
+     *
+     * @param settlementRef  The ref whose credited balance should be pulled.
+     * @param amount         Amount to withdraw (must be ≤ ref's available balance).
+     */
+    function withdrawFromRef(bytes32 settlementRef, uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (settlementRef == bytes32(0)) revert ZeroSettlementRef();
+
+        uint256 refAvailable = _refCredited[msg.sender][settlementRef]
+            - _refWithdrawn[msg.sender][settlementRef];
+        if (amount > refAvailable) revert InsufficientCredit(refAvailable, amount);
+
+        // CEI — update BOTH counters before external call.
+        _refWithdrawn[msg.sender][settlementRef] += amount;
+        withdrawn[msg.sender] += amount;
+
+        token.safeTransfer(msg.sender, amount);
+        emit SettlementRefWithdrawn(msg.sender, settlementRef, amount);
+    }
+
+    // -------------------------------------------------------------------------
+    // View helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Available (unclaimed) aggregate balance for `account`.
+     */
     function availableBalance(address account) external view returns (uint256) {
         return credited[account] - withdrawn[account];
+    }
+
+    /**
+     * @notice Available balance for `account` restricted to a specific `settlementRef`.
+     */
+    function availableRefBalance(address account, bytes32 settlementRef) external view returns (uint256) {
+        return _refCredited[account][settlementRef] - _refWithdrawn[account][settlementRef];
+    }
+
+    /**
+     * @notice Returns true when `settlementRef` has already been applied.
+     *         Callers (e.g. off-chain routers) can pre-check before submitting.
+     */
+    function isRefProcessed(bytes32 settlementRef) external view returns (bool) {
+        return _processedRefs[settlementRef];
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal
+    // -------------------------------------------------------------------------
+
+    /**
+     * @dev Revert if `settlementRef` has already been consumed.
+     *      Also emits a rejection event so monitoring infra can detect erroneous
+     *      duplicate calls without relying solely on revert trace decoding.
+     */
+    function _assertRefNotProcessed(bytes32 settlementRef) internal {
+        if (_processedRefs[settlementRef]) {
+            emit SettlementRefRejected(settlementRef, msg.sender);
+            revert SettlementRefAlreadyProcessed(settlementRef);
+        }
     }
 }

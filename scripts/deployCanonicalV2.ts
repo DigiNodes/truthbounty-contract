@@ -11,6 +11,7 @@ export interface CanonicalV2Suite {
   aggregator: any;
   provisionalSettlementEngine: any;
   appealVerificationRound: any;
+  bondVault: any;
 }
 
 export interface DeploymentOptions {
@@ -23,6 +24,11 @@ export interface DeploymentOptions {
   minAppealStake?: bigint;
   appealMultiplierBps?: number;
   maxWeightCap?: bigint;
+  maxAppealRounds?: bigint;
+  appealBond?: bigint;
+  appealBondEscalationBps?: bigint;
+  maxAppealBond?: bigint;
+  maxVotersPerRound?: bigint;
   finalizeDeployerRoles?: boolean;
 }
 
@@ -44,6 +50,11 @@ export async function deployCanonicalV2(
   const minAppealStake = options.minAppealStake ?? ethers.parseEther("200");
   const appealMultiplierBps = options.appealMultiplierBps ?? 15000;
   const maxWeightCap = options.maxWeightCap ?? ethers.parseEther("100000");
+  const maxAppealRounds = options.maxAppealRounds ?? 1n;
+  const appealBond = options.appealBond ?? ethers.parseEther("1000");
+  const appealBondEscalationBps = options.appealBondEscalationBps ?? 15000;
+  const maxAppealBond = options.maxAppealBond ?? ethers.parseEther("5000");
+  const maxVotersPerRound = options.maxVotersPerRound ?? 200n;
   const finalizeDeployerRoles = options.finalizeDeployerRoles ?? false;
 
   // 1. Governance Controller
@@ -55,6 +66,11 @@ export async function deployCanonicalV2(
   const TokenFactory = await ethers.getContractFactory("RewardToken", deployer);
   const token = await TokenFactory.deploy(deployer.address, initialSupply);
   await token.waitForDeployment();
+
+  // 2b. Bond-Custody StakeVault (V2-SC-016/059 appeal bonds live here, never in the module)
+  const StakeVaultFactory = await ethers.getContractFactory("contracts/StakeVault.sol:StakeVault", deployer);
+  const bondVault = await StakeVaultFactory.deploy(deployer.address, await token.getAddress());
+  await bondVault.waitForDeployment();
 
   // 3. Reputation Oracle
   const OracleFactory = await ethers.getContractFactory("MockReputationOracle", deployer);
@@ -113,11 +129,17 @@ export async function deployCanonicalV2(
     stakeMultiplierBps: appealMultiplierBps,
     maxWeightCap: maxWeightCap,
     parameterVersion: 1n,
+    maxAppealRounds: maxAppealRounds,
+    appealBond: appealBond,
+    appealBondEscalationBps: appealBondEscalationBps,
+    maxAppealBond: maxAppealBond,
+    maxVotersPerRound: maxVotersPerRound,
   };
   const appealVerificationRound = await AppealFactory.deploy(
     await token.getAddress(),
     await claimRegistry.getAddress(),
     await oracle.getAddress(),
+    await bondVault.getAddress(),
     initialAppealConfig,
     await governanceController.getAddress(),
     deployer.address
@@ -127,6 +149,10 @@ export async function deployCanonicalV2(
   // 9. Wire Roles & Permissions
   const REGISTRY_UPDATER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRY_UPDATER_ROLE"));
   await claimRegistry.grantRole(REGISTRY_UPDATER_ROLE, await provisionalSettlementEngine.getAddress());
+
+  // Authorise the appeal module to lock appeal bonds in the vault
+  const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
+  await bondVault.grantRole(OPERATOR_ROLE, await appealVerificationRound.getAddress());
 
   // 10. Role finalization if requested
   if (finalizeDeployerRoles) {
@@ -146,6 +172,7 @@ export async function deployCanonicalV2(
     aggregator,
     provisionalSettlementEngine,
     appealVerificationRound,
+    bondVault,
   };
 }
 
@@ -162,9 +189,13 @@ async function main() {
   console.log("- VerificationAggregator:", await suite.aggregator.getAddress());
   console.log("- ProvisionalSettlementEngine:", await suite.provisionalSettlementEngine.getAddress());
   console.log("- AppealVerificationRound:", await suite.appealVerificationRound.getAddress());
+  console.log("- BondVault:", await suite.bondVault.getAddress());
 }
 
-if (require.main === module) {
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (invokedDirectly) {
   main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
