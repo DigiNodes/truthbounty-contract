@@ -1,6 +1,7 @@
 {
   "name": "truth_bounty_contracts",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "hardhat test",
@@ -55,6 +56,7 @@
     "@nomicfoundation/hardhat-keystore": "^3.1.0",
     "@nomicfoundation/hardhat-mocha": "^3.1.0",
     "@nomicfoundation/hardhat-network-helpers": "^3.0.11",
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",
     "@nomicfoundation/hardhat-typechain": "^3.1.1",
     "@nomicfoundation/hardhat-verify": "^3.1.0",
@@ -66,9 +68,11 @@
     "@types/node": "^26.6.1",
     "chai": "^6.2.2",
     "hardhat": "^3.16.0",
+    "hardhat-gas-reporter": "^2.3.0",
     "mocha": "^11.8.0",
     "solidity-coverage": "^0.8.17",
     "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
     "typechain": "^8.3.2",
     "typescript": "^5.6.3"
   },
