@@ -1,3 +1,11 @@
+import { defineConfig } from "hardhat/config";
+import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
+import upgrades from "@openzeppelin/hardhat-upgrades";
+import * as dotenv from "dotenv";
+
+dotenv.config();
+
+const config = defineConfig({
 import { HardhatUserConfig } from "hardhat/config";
 import hardhatToolboxMochaEthers from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import hardhatIgnitionEthers from "@nomicfoundation/hardhat-ignition-ethers";
@@ -26,6 +34,7 @@ const config: HardhatUserConfig = {
       },
     },
   },
+  plugins: [hardhatToolboxMochaEthers, upgrades],
   networks: {
     hardhat: {
       type: "edr-simulated",
@@ -34,6 +43,9 @@ const config: HardhatUserConfig = {
     },
     optimismSepolia: {
       type: "http",
+      url:
+        process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       url: process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
       accounts: process.env.PRIVATE_KEY
         ? [process.env.PRIVATE_KEY]
@@ -46,6 +58,9 @@ const config: HardhatUserConfig = {
     },
     optimismMainnet: {
       type: "http",
+      url:
+        process.env.OPTIMISM_MAINNET_RPC_URL || "https://mainnet.optimism.io",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       url: process.env.OPTIMISM_MAINNET_RPC_URL || "https://mainnet.optimism.io",
       accounts: process.env.PRIVATE_KEY
         ? [process.env.PRIVATE_KEY]
@@ -57,6 +72,14 @@ const config: HardhatUserConfig = {
         : undefined,
     },
   },
+  etherscan: {
+    apiKey: {
+      mainnet: process.env.ETHERSCAN_API_KEY || "",
+      optimisticEthereum: process.env.OPTIMISM_ETHERSCAN_API_KEY || "",
+      optimisticSepolia: process.env.OPTIMISM_ETHERSCAN_API_KEY || "",
+    },
+  },
+});
   verify: {
     etherscan: {
       apiKey: process.env.ETHERSCAN_API_KEY || "",

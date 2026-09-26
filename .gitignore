@@ -27,4 +27,6 @@ lcov.info
 create_issues_contract.sh
 issues_to_created_contract.md
 
+
+# HH3 typechain output
 /types
