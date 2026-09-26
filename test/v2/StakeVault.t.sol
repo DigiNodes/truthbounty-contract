@@ -225,6 +225,23 @@ contract StakeVaultTest is Test {
         assertEq(custody, obligations);
     }
 
+    function test_unexplainedBalanceDeltaReverts() public {
+        vm.prank(verifier);
+        token.transfer(address(vault), STAKE);
+
+        vm.prank(verifier);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                V2Errors.ConservationInvariantViolation.selector,
+                address(token),
+                0,
+                0,
+                STAKE
+            )
+        );
+        vault.depositStake(CLAIM_A, STAKE);
+    }
+
     function test_invariant_obligationsNeverExceedCustody() public {
         vm.prank(verifier);
         vault.depositStake(CLAIM_A, STAKE);
@@ -388,6 +405,42 @@ contract StakeVaultTest is Test {
         vm.prank(settlement);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
         vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+    }
+
+    function test_allAlternateEntryPointsRevertAfterSettlement() public {
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.prank(settlement);
+        vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+
+        uint256 verifierBalanceBefore = token.balanceOf(verifier);
+        vm.prank(verifier);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.depositStake(CLAIM_A, STAKE);
+        assertEq(token.balanceOf(verifier), verifierBalanceBefore);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.unlock(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.releaseStake(CLAIM_A, verifier, STAKE);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.slashStake(CLAIM_A, verifier, STAKE, keccak256("replay"));
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.lock(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.BOUNTY_ESCROW, 1);
+
+        vm.prank(settlement);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.SettlementAlreadyFinalized.selector, CLAIM_A, 0));
+        vault.allocateLocked(
+            address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, 1, keccak256("replay")
+        );
     }
 
     function test_settleConclusive_overAllocationReverts() public {

@@ -10,8 +10,14 @@
     "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv",
     "test:fuzz:extended": "forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv && forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv",
     "test:coverage": "forge coverage --report lcov",
+    "test:coverage:gate": "forge coverage --report lcov --report summary --skip script && npx ts-node scripts/coverage-quality-gate.ts",
     "compile": "hardhat compile",
     "compile:forge": "forge build",
+    "security:analysis": "bash ./scripts/symbolic-check.sh --tool auto",
+    "security:mythril": "bash ./scripts/symbolic-check.sh --tool mythril",
+    "security:slither": "bash ./scripts/symbolic-check.sh --tool slither",
+    "static-analysis": "bash ./scripts/symbolic-check.sh --tool auto",
+    "symbolic-check": "bash ./scripts/symbolic-check.sh --tool auto",
     "deploy": "hardhat run scripts/deploySlashing.ts",
     "verify": "hardhat run scripts/verify.ts",
     "stake": "hardhat run scripts/stake.ts",
@@ -23,7 +29,12 @@
     "deploy:mainnet": "npx hardhat ignition deploy ignition/modules/FullDeploy.ts --network optimism --parameters ignition/parameters/optimism_mainnet.json",
     "deploy:token": "npx hardhat ignition deploy ignition/modules/TruthBounty.ts --network optimism_sepolia",
     "deploy:staking": "npx hardhat ignition deploy ignition/modules/Staking.ts --network optimism_sepolia",
-    "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia"
+    "deploy:rewards": "npx hardhat ignition deploy ignition/modules/Rewards.ts --network optimism_sepolia",
+    "check:boundaries": "node scripts/check-dependency-boundaries.mjs",
+    "test:boundaries": "node --test test/scripts/check-dependency-boundaries.test.mjs",
+    "lint": "npm run check:boundaries && npm run test:boundaries",
+    "sbom:release": "ts-node scripts/generateContractReleaseSbom.ts",
+    "test:sbom": "hardhat test test/ContractReleaseSbom.test.ts"
   },
   "keywords": [
     "blockchain",
@@ -49,7 +60,6 @@
     "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7",
     "@nomicfoundation/hardhat-typechain": "^3.1.1",
     "@nomicfoundation/hardhat-verify": "^3.1.0",
-    "@nomicfoundation/solidity-analyzer-win32-x64-msvc": "^0.1.2",
     "@openzeppelin/hardhat-upgrades": "^4.1.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
@@ -64,11 +74,12 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
     "typechain": "^8.3.2",
-    "typescript": "^7.0.2"
+    "typescript": "^5.6.3"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1",
     "@openzeppelin/contracts-upgradeable": "^5.6.1",
-    "dotenv": "^17.4.2"
-  }
+    "dotenv": "^18.0.3"
+  },
+  "type": "module"
 }
