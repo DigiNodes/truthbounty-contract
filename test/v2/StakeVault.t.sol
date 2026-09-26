@@ -37,8 +37,8 @@ contract StakeVaultTest is Test {
 
         vault.setSupportedAsset(address(tokenB), true);
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.registerModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SLASHING(), slashing);
 
         token.mint(verifier, 1_000 ether);
         token.mint(verifier2, 1_000 ether);
