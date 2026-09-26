@@ -1,21 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IClaimRegistry} from "../interfaces/IClaimRegistry.sol";
-import {ITruthBountyEvents} from "../interfaces/ITruthBountyEvents.sol";
-import {IEvidence} from "./interfaces/IEvidence.sol";
-import {IV2Module} from "./interfaces/IV2Module.sol";
-import {IV2Types} from "./interfaces/IV2Types.sol";
-import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
+import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IClaimRegistry } from "../interfaces/IClaimRegistry.sol";
+import { ITruthBountyEvents } from "../interfaces/ITruthBountyEvents.sol";
+import { IEvidence } from "./interfaces/IEvidence.sol";
+import { IV2Module } from "./interfaces/IV2Module.sol";
+import { IV2Types } from "./interfaces/IV2Types.sol";
+import { ProtocolExecutionBounds } from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title EvidenceRegistry
 /// @notice Content-addressed V2 evidence commitment registry.
 /// @dev Stores only immutable digests and deterministic IDs. Raw evidence
 ///      content, CIDs, URLs, signatures, and private data stay off-chain.
+///
+///      Event completeness (V2-SC-132): every authoritative read cell —
+///      commitment fields, per-claim ordering, contributor nonce, dedupe set,
+///      lifecycle status, and the pause gate — is closed by at least one
+///      canonical event, so replaying the ordered log stream reconstructs the
+///      full read state. The authoritative enumeration is published on-chain by
+///      `EventCompletenessAnchor`.
 contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents {
     /// @notice Role allowed to change evidence acceptance status.
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
@@ -27,6 +34,13 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @notice Maximum evidence IDs returned by one pagination query.
     uint256 public constant MAX_PAGE_SIZE = 100;
     uint256 public constant MAX_EVIDENCE_PER_CLAIM = ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM;
+
+    /// @notice Fixed, domain-separated reason attached to admin-driven pause logs.
+    /// @dev `EmergencyPauseActivatedV1` requires a `bytes32 reason`; the pause
+    ///      authority for this module is the `PAUSER_ROLE` holder and no
+    ///      per-call reason is collected, so the constant keeps the log
+    ///      deterministic across deployments.
+    bytes32 public constant ADMIN_PAUSE_REASON = keccak256("EVIDENCE_REGISTRY_ADMIN_PAUSE");
 
     /// @notice Legacy claim registry used to validate claim existence, status, and verification deadlines.
     IClaimRegistry public immutable claimRegistry;
@@ -192,14 +206,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest, uint64(block.timestamp), 1);
         emit EvidenceSubmittedV1(claimId, evidenceId, msg.sender, contentDigest, now_, EVENT_SCHEMA_VERSION);
         emit EvidenceCommitted(
-            claimId,
-            evidenceId,
-            msg.sender,
-            contentDigest,
-            metadataDigest,
-            nonce,
-            now_,
-            EVENT_SCHEMA_VERSION
+            claimId, evidenceId, msg.sender, contentDigest, metadataDigest, nonce, now_, EVENT_SCHEMA_VERSION
         );
     }
 
@@ -254,7 +261,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         if (end > length) end = length;
 
         evidenceIds = new uint256[](end - cursor);
-        for (uint256 i = cursor; i < end; ) {
+        for (uint256 i = cursor; i < end;) {
             evidenceIds[i - cursor] = ids[i];
             unchecked {
                 ++i;
@@ -279,7 +286,11 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         bytes32 metadataDigest,
         uint256 nonce
     ) public view returns (uint256) {
-        return uint256(keccak256(abi.encode(block.chainid, address(this), claimId, contributor, contentDigest, metadataDigest, nonce)));
+        return uint256(
+            keccak256(
+                abi.encode(block.chainid, address(this), claimId, contributor, contentDigest, metadataDigest, nonce)
+            )
+        );
     }
 
     /// @notice Returns the next required nonce for a contributor.
@@ -298,14 +309,21 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
     /// @notice Pauses evidence submission; existing evidence remains readable.
     /// @dev Pausing is fail-closed for commit operations and is restricted to `PAUSER_ROLE`.
+    ///      Emits `EmergencyPauseActivatedV1`: the pause flag gates every
+    ///      `commitEvidence` call, so it is an authoritative read cell
+    ///      (V2-SC-132) and is published as a canonical family-15 log instead of
+    ///      mutating silently.
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(msg.sender, ADMIN_PAUSE_REASON, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     /// @notice Resumes evidence submission after the pauser restores the registry.
     /// @dev Unpausing does not bypass claim deadlines, nonce sequencing, or duplicate checks.
+    ///      Emits `EmergencyPauseRecoveredV1` for the same reason as `pause`.
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     function _existingEvidence(uint256 evidenceId) private view returns (EvidenceCommitment storage evidence) {
