@@ -639,6 +639,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 amount
     ) internal {
         if (amount == 0) revert V2Errors.ZeroAmount();
+        if (fromRound == toRound) revert V2Errors.InvalidRoundTransfer(fromRound, toRound);
         if (toRound < fromRound) revert V2Errors.InvalidArgument("destination round must be later");
         if (toRound == fromRound) revert V2Errors.InvalidArgument("same round");
         if (_settlementOutcome[claimId][toRound] != IV2Types.SettlementOutcome.NONE) {
