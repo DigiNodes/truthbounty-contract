@@ -2,6 +2,8 @@
 
 Indexer, backend, frontend, explorer, and analytics consumers should apply the following rules to the SC-022 event surface.
 
+Reorganization expectations (confirmation depth, finality classes, bounded replacement/removal, and replay) are now authoritative and machine-readable: see [`docs/reorg-consumer-guarantees.md`](./reorg-consumer-guarantees.md) and the on-chain `IConsumerGuarantees` anchor. The rules below remain valid; the guarantees document makes them normative.
+
 - Filter by contract address and canonical event signature before decoding.
 - Treat indexed entity identifiers and actors as the primary query keys.
 - Persist block number, block hash, transaction hash, transaction index, and log index with every decoded event.

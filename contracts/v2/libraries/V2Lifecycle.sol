@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {IV2Types} from "../interfaces/IV2Types.sol";
 import {V2Errors} from "./V2Errors.sol";
+import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
 
 /// @title V2Lifecycle
 /// @notice Shared lifecycle and state machine logic for the TruthBounty V2 protocol.
@@ -14,52 +15,89 @@ library V2Lifecycle {
 
     /// @notice Canonical economic and timing parameter set snapshot.
     struct ParameterSet {
+        /// @dev Approved asset addresses.
         address[] supportedAssets;
+        /// @dev Minimum bounty in asset base units.
         uint128 minBounty;
+        /// @dev Maximum bounty in asset base units.
         uint128 maxBounty;
+        /// @dev Minimum stake in asset base units.
         uint128 minStake;
+        /// @dev Maximum stake in asset base units.
         uint128 maxStake;
+        /// @dev Challenge bond in asset base units.
         uint128 challengeBond;
+        /// @dev Maximum weight cap in basis points.
         uint16 weightCapBps;
+        /// @dev Claim lifetime in seconds.
         uint48 claimDuration;
+        /// @dev Verification window in seconds.
         uint48 verificationDuration;
+        /// @dev Dispute window in seconds.
         uint48 disputeDuration;
+        /// @dev Appeal window in seconds.
         uint48 appealDuration;
+        /// @dev Minimum participation in basis points.
         uint24 minParticipationBps;
+        /// @dev Maximum participation in basis points.
         uint24 maxParticipationBps;
+        /// @dev Confidence threshold in basis points.
         uint16 confidenceThresholdBps;
+        /// @dev Appeal multiplier in basis points.
         uint24 appealMultiplierBps;
+        /// @dev Bounty allocation in basis points.
         uint16 bountyAllocationBps;
+        /// @dev Stake allocation in basis points.
         uint16 stakeAllocationBps;
+        /// @dev Protocol allocation in basis points; all allocations must sum to 10,000.
         uint16 protocolAllocationBps;
+        /// @dev Minimum reputation in basis points.
         uint16 minReputationBps;
+        /// @dev Maximum reputation in basis points.
         uint16 maxReputationBps;
+        /// @dev Pause cooldown in seconds.
         uint48 pauseCooldown;
+        /// @dev Unpause cooldown in seconds.
         uint48 unpauseCooldown;
+        /// @dev Configured rounding policy identifier; values greater than 2 are rejected.
         uint8 roundingPolicy;
     }
 
     /// @notice Storage layout for published immutable parameter versions.
     struct VersionedConfigRegistry {
+        /// @dev Authority allowed to publish and configure assets.
         address governance;
+        /// @dev Published immutable snapshots by version ID.
         mapping(bytes32 => ParameterSet) versions;
+        /// @dev Existence guard preventing duplicate publication.
         mapping(bytes32 => bool) versionExists;
+        /// @dev Publication order for version enumeration.
         bytes32[] versionIds;
+        /// @dev Approved adapter for each asset.
         mapping(address => address) assetAdapters;
     }
-
 
     uint16 internal constant MAX_BPS = 10_000;
     uint16 internal constant TOTAL_ALLOCATION_BPS = 10_000;
 
     /// @notice Hashes a parameter set to produce its immutable version ID.
-    function parameterSetId(ParameterSet memory params) internal pure returns (bytes32) {
+    /// @param params Parameter snapshot to hash with ABI field ordering.
+    /// @return versionId Deterministic version identifier.
+    function parameterSetId(ParameterSet memory params) internal pure returns (bytes32 versionId) {
         return keccak256(abi.encode(params));
     }
 
     /// @notice Validates every configured bound and invariant for a parameter set.
+    /// @dev Validation is fail-closed: the first invalid bound or allocation causes a revert and no publication occurs.
+    /// @param params Parameter snapshot to validate.
     function validateParameterSet(ParameterSet memory params) internal pure {
         if (params.supportedAssets.length == 0) revert V2Errors.InvalidSupportedAssets(0);
+        if (params.supportedAssets.length > ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS) {
+            revert V2Errors.SupportedAssetLimitExceeded(
+                params.supportedAssets.length,
+                ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS
+            );
+        }
         for (uint256 i = 0; i < params.supportedAssets.length; ++i) {
             if (params.supportedAssets[i] == address(0)) {
                 revert V2Errors.UnsupportedAsset(params.supportedAssets[i]);
@@ -107,6 +145,9 @@ library V2Lifecycle {
     }
 
     /// @notice Initializes the registry governance address.
+    /// @dev Initialization is one-time; a second initialization or zero governance address fails closed.
+    /// @param self Registry storage to initialize.
+    /// @param governance Non-zero authority allowed to publish and configure assets.
     function initializeConfigRegistry(VersionedConfigRegistry storage self, address governance) internal {
         if (self.governance != address(0) || governance == address(0)) {
             revert V2Errors.InvalidGovernance(governance);
@@ -115,6 +156,10 @@ library V2Lifecycle {
     }
 
     /// @notice Approves an adapter for an asset before it can be included in a parameter set.
+    /// @dev Governance-only, one-time-per-asset operation; an adapter is never changed after approval.
+    /// @param self Registry storage to mutate.
+    /// @param asset Asset address requiring an adapter.
+    /// @param adapter Non-zero approved adapter.
     function setAssetAdapter(VersionedConfigRegistry storage self, address asset, address adapter) internal {
         if (msg.sender != self.governance) revert V2Errors.NotGovernance(msg.sender);
         if (asset == address(0) || adapter == address(0)) revert V2Errors.UnsupportedAsset(asset);
@@ -123,6 +168,10 @@ library V2Lifecycle {
     }
 
     /// @notice Publishes a new immutable parameter set version through the timelocked governance hook.
+    /// @dev Governance-only, validates all bounds and approved adapters, and rejects duplicate hashes before storing the snapshot.
+    /// @param self Registry storage to mutate.
+    /// @param params Candidate parameter snapshot.
+    /// @return versionId Hash identifying the published snapshot.
     function publishParameterSet(VersionedConfigRegistry storage self, ParameterSet memory params)
         internal
         returns (bytes32 versionId)
@@ -142,6 +191,10 @@ library V2Lifecycle {
     }
 
     /// @notice Returns a parameter set snapshot by version ID.
+    /// @dev Unknown IDs revert; published snapshots are never silently substituted.
+    /// @param self Registry storage to read.
+    /// @param versionId Version identifier to read.
+    /// @return params Stored parameter snapshot.
     function getParameterSet(VersionedConfigRegistry storage self, bytes32 versionId)
         internal
         view
@@ -152,6 +205,9 @@ library V2Lifecycle {
     }
 
     /// @notice Returns whether a parameter set version is published.
+    /// @param self Registry storage to read.
+    /// @param versionId Version identifier to inspect.
+    /// @return published True only when the immutable snapshot exists.
     function isParameterSetPublished(VersionedConfigRegistry storage self, bytes32 versionId)
         internal
         view
@@ -161,7 +217,9 @@ library V2Lifecycle {
     }
 
     /// @notice Returns the number of published parameter sets.
-    function versionCount(VersionedConfigRegistry storage self) internal view returns (uint256) {
+    /// @param self Registry storage to read.
+    /// @return count Number of immutable snapshots in publication order.
+    function versionCount(VersionedConfigRegistry storage self) internal view returns (uint256 count) {
         return self.versionIds.length;
     }
 
@@ -202,6 +260,7 @@ library V2Lifecycle {
     }
 
     /// @notice Enforces a claim state transition, reverting if invalid.
+    /// @dev The shared library uses claim ID zero for the generic transition error; calling modules should surface the claim ID in their own contextual error where possible.
     /// @param currentState The current claim status.
     /// @param nextState The target claim status.
     function enforceValidClaimTransition(
