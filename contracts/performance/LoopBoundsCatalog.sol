@@ -131,6 +131,24 @@ contract LoopBoundsCatalog {
         }
         if (index == 12) {
             return LoopBound({
+                module: "Claims",
+                functionName: "createClaim",
+                loopVariable: "claimsInWindow",
+                maxIterations: ProtocolExecutionBounds.MAX_CLAIMS_PER_ACCOUNT_WINDOW,
+                mitigation: "AntiGriefing per-account sliding window (V2-SC-105)"
+            });
+        }
+        if (index == 13) {
+            return LoopBound({
+                module: "ClaimRegistry",
+                functionName: "createClaim",
+                loopVariable: "openClaimCount",
+                maxIterations: ProtocolExecutionBounds.MAX_OPEN_CLAIMS_PER_CREATOR,
+                mitigation: "Open-claim inventory cap frees on terminal status (V2-SC-105)"
+            });
+        }
+        if (index == 12) {
+            return LoopBound({
                 module: "V2Lifecycle",
                 functionName: "validateParameterSet",
                 loopVariable: "supportedAssets.length",

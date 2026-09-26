@@ -155,6 +155,38 @@ contract ParameterVersionRegistry is
     function _createGenesisVersion() internal {
         versionCounter = 1;
         
+        // Initialize genesis parameters with default values
+        EconomicParameters storage genesisParams = _versions[versionCounter].parameters;
+        
+        // Default tokenomics parameters
+        genesisParams.verifierRewardsBPS = 4000;
+        genesisParams.treasuryReserveBPS = 2000;
+        genesisParams.ecosystemIncentivesBPS = 1500;
+        genesisParams.governanceIncentivesBPS = 1000;
+        genesisParams.protocolDevelopmentBPS = 1000;
+        genesisParams.emergencyReserveBPS = 500;
+        genesisParams.emissionLimit = type(uint256).max;
+        genesisParams.rewardMultiplier = 1e18;
+        genesisParams.treasuryReserveTargetBPS = 2000;
+        
+        // Default fee parameters
+        genesisParams.claimSubmissionFee = 0.001e18;
+        genesisParams.verificationSubmissionFee = 0.001e18;
+        genesisParams.disputeInitiationFee = 0.002e18;
+        genesisParams.protocolReserveFeeBPS = 50; // 0.5%
+        
+        // Default staking/reputation parameters
+        genesisParams.minStakeAmount = 1e18;
+        genesisParams.maxStakeAmount = type(uint256).max;
+        genesisParams.minBountyAmount = 1e18;
+        genesisParams.maxBountyAmount = type(uint256).max;
+        genesisParams.minReputationScore = 0;
+        genesisParams.maxReputationScore = 10000;
+        genesisParams.defaultReputationScore = 5000;
+        genesisParams.slashPercentageBPS = 1000; // 10%
+        genesisParams.maxSlashPercentageBPS = 5000; // 50%
+        
+        // Set genesis version as active
         EconomicParameters memory genesisParams = EconomicParameters({
             verifierRewardsBPS: 4000,
             treasuryReserveBPS: 2000,
@@ -251,6 +283,14 @@ contract ParameterVersionRegistry is
         // Thresholds
         if (parameters.participationThresholdBPS < MIN_SAFE_PARTICIPATION_THRESHOLD || parameters.participationThresholdBPS > MAX_SAFE_PARTICIPATION_THRESHOLD) revert InvalidParticipationThreshold();
         if (parameters.confidenceThresholdBPS < MIN_SAFE_CONFIDENCE_THRESHOLD || parameters.confidenceThresholdBPS > MAX_SAFE_CONFIDENCE_THRESHOLD) revert InvalidConfidenceThreshold();
+        if (parameters.maxStakeAmount != 0 && parameters.minStakeAmount > parameters.maxStakeAmount) {
+            revert InvalidStakeAmount();
+        }
+        // Validate bounty floors used by anti-dust claim creation (V2-SC-105)
+        if (parameters.minBountyAmount == 0) revert InvalidBountyBounds();
+        if (parameters.maxBountyAmount != 0 && parameters.minBountyAmount > parameters.maxBountyAmount) {
+            revert InvalidBountyBounds();
+        }
 
         // Reputation
         if (parameters.minReputationScore > parameters.maxReputationScore) revert InvalidReputationRange();
