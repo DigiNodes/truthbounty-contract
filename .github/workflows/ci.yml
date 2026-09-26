@@ -39,10 +39,10 @@ jobs:
             ${{ runner.os }}-node-
       - name: Install dependencies
         run: npm ci
+      - name: Repository Boundary and Lint Checks
+        run: npm run lint
       - name: Solidity Lint
         run: npm run lint:sol --if-present
-      - name: TypeScript Lint
-        run: npm run lint --if-present
 
   test:
     name: Test
@@ -135,6 +135,50 @@ jobs:
       - name: Run Foundry invariant tests
         run: forge test --match-path "test/invariant/**"
 
+  coverage-gate:
+    name: Coverage Gate
+    runs-on: ubuntu-latest
+    needs: test
+    # Report coverage even when tests fail; the Test job still fails the run on its own.
+    if: ${{ always() && needs.test.result != 'cancelled' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      # Pinned so the floor below is always measured with the same toolchain.
+      # Update this version and MIN_BRANCH_PCT together when remeasuring.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      # Deploy scripts are skipped because they hit "stack too deep" under coverage instrumentation.
+      # Test pass/fail is enforced by the Test job; this job only enforces branch coverage.
+      - name: Measure V2 branch coverage
+        run: forge coverage --ir-minimum --skip "*.s.sol" --match-path "test/v2/**" --no-match-path "test/v2/*Invariant*" --allow-failure --report lcov --report-file lcov.info
+      # Fails if StakeVault's branch coverage drops below the floor, or if its record is missing or malformed.
+      # Lowering the floor requires editing this file, so any regression is explicit in review.
+      - name: Enforce StakeVault branch coverage floor
+        env:
+          COVERAGE_FILE: contracts/v2/StakeVault.sol
+          MIN_BRANCH_PCT: "54.83"
+        run: |
+          awk -v file="$COVERAGE_FILE" -v min="$MIN_BRANCH_PCT" '
+            open && /^SF:/ { open = 0; broken = 1 }
+            $0 == ("SF:" file) { open = 1; seen++; next }
+            open && /^BRF:/ { found = substr($0, 5); brf++ }
+            open && /^BRH:/ { hit = substr($0, 5); brh++ }
+            open && $0 == "end_of_record" { open = 0 }
+            END {
+              if (seen != 1 || open || broken || brf != 1 || brh != 1 || found !~ /^[0-9]+$/ || hit !~ /^[0-9]+$/ || length(found) > 9 || found + 0 == 0 || hit + 0 > found + 0) {
+                print file ": missing or malformed branch coverage record"; exit 1
+              }
+              pct = 100 * hit / found
+              printf "%s branch coverage: %.2f%% (%d/%d), floor %s%%\n", file, pct, hit, found, min
+              if (pct + 0.005 < min + 0) { print "Branch coverage regressed below the floor."; exit 1 }
+            }' lcov.info
+
   gas-check:
     name: Gas Check
     runs-on: ubuntu-latest
@@ -163,3 +207,34 @@ jobs:
           version: latest
       - name: Check gas snapshots
         run: forge snapshot --check
+
+  coverage-quality-gate:
+    name: Coverage Quality Gate
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: latest
+      - name: Generate coverage report
+        run: forge coverage --report lcov --report summary --skip script
+      - name: Run coverage quality gate
+        run: npx ts-node scripts/coverage-quality-gate.ts
