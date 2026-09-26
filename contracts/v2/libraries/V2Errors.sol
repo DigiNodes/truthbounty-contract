@@ -20,6 +20,7 @@ library V2Errors {
     error ZeroAmount();
 
     /// @notice Attempted action by an unregistered or unauthorized module.
+    /// @param caller Address that failed the module authorization check.
     error UnauthorizedModule(address caller);
 
     // =========================================================================
@@ -27,18 +28,23 @@ library V2Errors {
     // =========================================================================
 
     /// @notice Claim not found.
+    /// @param claimId Claim identifier that was not found.
     error ClaimNotFound(uint256 claimId);
 
     /// @notice Canonical claim not found.
+    /// @param claimId Canonical claim commitment that was not found.
     error CanonicalClaimNotFound(bytes32 claimId);
 
     /// @notice Invalid claim state transition.
+    /// @param claimId Claim whose requested transition is invalid.
     error InvalidClaimStateTransition(uint256 claimId);
 
     /// @notice Claim already exists.
+    /// @param claimId Existing claim identifier.
     error ClaimAlreadyExists(uint256 claimId);
 
     /// @notice Canonical claim already exists.
+    /// @param claimId Existing canonical claim commitment.
     error CanonicalClaimAlreadyExists(bytes32 claimId);
 
     /// @notice Invalid claim subject.
@@ -52,6 +58,7 @@ library V2Errors {
     // =========================================================================
 
     /// @notice Evidence not found.
+    /// @param evidenceId Missing evidence identifier.
     error EvidenceNotFound(uint256 evidenceId);
 
     /// @notice Invalid evidence content hash.
@@ -68,6 +75,7 @@ library V2Errors {
     // =========================================================================
 
     /// @notice Verification not found.
+    /// @param verificationId Missing verification identifier.
     error VerificationNotFound(uint256 verificationId);
 
     /// @notice Verification window closed.
@@ -87,9 +95,11 @@ library V2Errors {
     // =========================================================================
 
     /// @notice Settlement not found.
+    /// @param claimId Claim without a settlement record.
     error SettlementNotFound(uint256 claimId);
 
     /// @notice Settlement not executable yet.
+    /// @param executeAfter Earliest executable Unix timestamp.
     error SettlementNotExecutable(uint64 executeAfter);
 
     /// @notice Settlement execution failed.
@@ -103,6 +113,7 @@ library V2Errors {
     // =========================================================================
 
     /// @notice Dispute not found.
+    /// @param disputeId Missing dispute identifier.
     error DisputeNotFound(uint256 disputeId);
 
     /// @notice Dispute window closed.
@@ -128,30 +139,47 @@ library V2Errors {
     error InvalidCustodyReference();
 
     /// @notice Asset is not supported by the custody vault.
+    /// @param asset Asset address rejected by configuration.
     error UnsupportedAsset(address asset);
 
     /// @notice Insufficient claimable balance for the requested operation.
+    /// @param account Account whose balance was checked.
+    /// @param requested Amount requested.
+    /// @param available Available claimable amount.
     error InsufficientClaimable(address account, uint256 requested, uint256 available);
 
     /// @notice Insufficient locked balance for the requested operation.
+    /// @param requested Amount requested.
+    /// @param available Available locked amount.
     error InsufficientLocked(uint256 requested, uint256 available);
 
     /// @notice Insufficient protocol allocation for the requested operation.
+    /// @param requested Amount requested.
+    /// @param available Available protocol allocation.
     error InsufficientProtocolAllocation(uint256 requested, uint256 available);
 
     /// @notice Token transfer amount does not match the expected value.
+    /// @param expected Amount requested from the token.
+    /// @param received Amount actually received.
     error TransferAmountMismatch(uint256 expected, uint256 received);
 
     /// @notice Recorded obligations exceed on-chain custody for an asset.
+    /// @param asset Asset whose accounting failed reconciliation.
+    /// @param custody Accounted custody.
+    /// @param obligations Sum of recorded obligations.
     error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
     /// @notice Canonical asset conservation invariant is violated; on-chain balance and accounting buckets must match exactly.
     error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
 
     /// @notice Settlement outcome already recorded for this claim-round; repeated or conflicting instructions revert.
+    /// @param claimId Settlement claim.
+    /// @param round Settlement round.
     error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
 
     /// @notice Invalid settlement outcome requested for this claim-round.
+    /// @param claimId Settlement claim.
+    /// @param round Settlement round.
     error InvalidSettlementOutcome(uint256 claimId, uint256 round);
 
     // =========================================================================
@@ -213,4 +241,23 @@ library V2Errors {
 
     /// @notice Reentrancy guard detected.
     error ReentrancyDetected();
+
+    // =========================================================================
+    // Supply-Chain Attestation Errors (V2-SC-138)
+    // =========================================================================
+
+    /// @notice Invalid attestation schema version.
+    error InvalidAttestationSchemaVersion();
+
+    /// @notice Empty protocol name in attestation.
+    error EmptyProtocolName();
+
+    /// @notice Empty release version in attestation.
+    error EmptyReleaseVersion();
+
+    /// @notice Invalid source commit format (must be 40-char lowercase hex).
+    error InvalidSourceCommit();
+
+    /// @notice Invalid checksum (zero or malformed).
+    error InvalidChecksum();
 }

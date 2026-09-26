@@ -20,6 +20,8 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     mapping(bytes32 => PendingRoleChange) public pendingRoleChanges;
+    mapping(address => mapping(bool => bytes32)) public _resolverRoleChangeId;
+    mapping(bytes32 => uint256) public resolverRoleChangeReadyAt;
     uint256 private _operationNonce; // Nonce for unique operation IDs
 
     event ResolverRoleChangeScheduled(
@@ -37,7 +39,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     error ResolverRoleChangeAlreadyPending();
     error ResolverRoleChangeNotPending();
     error ResolverRoleChangeNotReady(uint256 readyAt);
-    error ResolverRoleChangeExpired();
+    error ResolverRoleChangeExpiredError();
     error ResolverRoleChangeNoop();
     error InvalidDelay(uint256 delay);
     error OperationIdCollision(bytes32 operationId);
@@ -46,12 +48,12 @@ abstract contract ResolverRoleTimelock is AccessControl {
 
     function scheduleResolverRoleGrant(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
         if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
-        operationId = _scheduleResolverRoleChange(account, true);
+        operationId = _scheduleResolverRoleChange(account, true, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function scheduleResolverRoleRevoke(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
         if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
-        operationId = _scheduleResolverRoleChange(account, false);
+        operationId = _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function cancelResolverRoleChange(bytes32 operationId, address account, bool grant) external onlyRole(getRoleAdmin(_resolverRole())) {
@@ -61,6 +63,8 @@ abstract contract ResolverRoleTimelock is AccessControl {
 
         // Remove from storage completely to prevent any future execution
         delete pendingRoleChanges[operationId];
+        delete _resolverRoleChangeId[account][grant];
+        delete resolverRoleChangeReadyAt[operationId];
         emit ResolverRoleChangeCancelled(operationId, account, grant);
     }
 
@@ -81,11 +85,17 @@ abstract contract ResolverRoleTimelock is AccessControl {
     function cleanupExpiredRoleChange(bytes32 operationId, address account, bool grant) external {
         PendingRoleChange storage pendingChange = pendingRoleChanges[operationId];
         if (pendingChange.readyAt == 0) revert ResolverRoleChangeNotPending();
-        if (block.timestamp <= pendingChange.expireAt) revert ResolverRoleChangeExpired();
+        if (block.timestamp <= pendingChange.expireAt) revert ResolverRoleChangeExpiredError();
         
         // Remove from storage
         delete pendingRoleChanges[operationId];
+        delete _resolverRoleChangeId[account][grant];
+        delete resolverRoleChangeReadyAt[operationId];
         emit ResolverRoleChangeExpired(operationId, account, grant);
+    }
+
+    function resolverRoleChangeId(address account, bool grant) public view returns (bytes32) {
+        return _resolverRoleChangeId[account][grant];
     }
 
     function grantRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
@@ -106,6 +116,14 @@ abstract contract ResolverRoleTimelock is AccessControl {
     function scheduleResolverRoleRevokeWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
         if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
         operationId = _scheduleResolverRoleChange(account, false, delay);
+    }
+
+    function _scheduleResolverRoleGrant(address account) internal returns (bytes32 operationId) {
+        return _scheduleResolverRoleChange(account, true, MIN_RESOLVER_ROLE_CHANGE_DELAY);
+    }
+
+    function _scheduleResolverRoleRevoke(address account) internal returns (bytes32 operationId) {
+        return _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function _scheduleResolverRoleChange(address account, bool grant, uint256 delay) internal returns (bytes32 operationId) {
@@ -134,18 +152,11 @@ abstract contract ResolverRoleTimelock is AccessControl {
             executed: false
         });
 
+        // Track operation ID for account/grant pair
+        _resolverRoleChangeId[account][grant] = operationId;
+        resolverRoleChangeReadyAt[operationId] = readyAt;
+
         emit ResolverRoleChangeScheduled(operationId, account, grant, readyAt, expireAt);
-    }
-
-    // Keep original functions for backward compatibility with default delay
-    function scheduleResolverRoleGrant(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
-        if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
-        operationId = _scheduleResolverRoleChange(account, true, MIN_RESOLVER_ROLE_CHANGE_DELAY);
-    }
-
-    function scheduleResolverRoleRevoke(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
-        if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
-        operationId = _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function _executeResolverRoleChange(bytes32 operationId, address account, bool grant) internal {
@@ -156,13 +167,17 @@ abstract contract ResolverRoleTimelock is AccessControl {
         if (block.timestamp > pendingChange.expireAt) {
             // Remove from storage and revert
             delete pendingRoleChanges[operationId];
+            delete _resolverRoleChangeId[account][grant];
+            delete resolverRoleChangeReadyAt[operationId];
             emit ResolverRoleChangeExpired(operationId, account, grant);
-            revert ResolverRoleChangeExpired();
+            revert ResolverRoleChangeExpiredError();
         }
 
         // Mark as executed first (reentrancy protection) and then remove from storage completely
         pendingChange.executed = true;
         delete pendingRoleChanges[operationId];
+        delete _resolverRoleChangeId[account][grant];
+        delete resolverRoleChangeReadyAt[operationId];
 
         if (grant) {
             if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();

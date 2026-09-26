@@ -7,6 +7,7 @@ import {IConfiguration} from "./interfaces/IConfiguration.sol";
 import {IClaims} from "./interfaces/IClaims.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {IV2Module} from "./interfaces/IV2Module.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
 
 /// @title Aggregation
