@@ -37,8 +37,8 @@ contract StakeVaultTest is Test {
 
         vault.setSupportedAsset(address(tokenB), true);
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.registerModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SLASHING(), slashing);
 
         token.mint(verifier, 1_000 ether);
         token.mint(verifier2, 1_000 ether);
@@ -566,7 +566,7 @@ contract StakeVaultTest is Test {
         vault.depositStake(CLAIM_A, STAKE);
 
         vm.prank(settlement);
-        vm.expectRevert(abi.encodeWithSelector(V2Errors.InvalidArgument.selector, "same round"));
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InvalidRoundTransfer.selector, uint256(0), uint256(0)));
         vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 0, STAKE);
     }
 
