@@ -144,7 +144,13 @@ contract StakeVaultInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         handler = new StakeVaultInvariantHandler();
-        targetContract(address(handler.vault()));
+        // The fuzz target must be the handler, not the vault. Targeting the vault
+        // had the fuzzer call it directly from random senders with random
+        // arguments, so every authorized path failed `_onlyAuthorizedMutator`,
+        // the handler below never ran, and the invariants held vacuously against
+        // an empty vault. See test/v2/invariant/StakeVaultSlashingInvariant.t.sol
+        // (V2-SC-097) for the slashing-specific successor to this suite.
+        targetContract(address(handler));
     }
 
     function invariant_obligationsNeverExceedCustody() public view {
@@ -164,5 +170,17 @@ contract StakeVaultInvariantTest is StdInvariant, Test {
 
         assertEq(custody, obligations);
         assertEq(custody, actualBalance);
+    }
+    /// @notice The handler's ghost accounting matches the vault's own totals.
+    /// @dev These four ghosts existed but were never asserted against anything.
+    ///      No handler path in this suite slashes, so protocol allocation stays
+    ///      zero and obligations reduce to locked plus claimable.
+    function invariant_ghostAccountingMatchesVault() public view {
+        address asset = address(handler.token());
+        (uint256 custody, uint256 obligations,) = handler.vault().conservation(asset);
+
+        assertEq(handler.vault().protocolAllocation(asset), 0, "this suite never slashes");
+        assertEq(custody, handler.ghostCustody(), "ghost custody diverged");
+        assertEq(obligations, handler.ghostLocked() + handler.ghostClaimable(), "ghost obligations diverged");
     }
 }
