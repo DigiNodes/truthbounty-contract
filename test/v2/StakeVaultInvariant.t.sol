@@ -160,6 +160,9 @@ contract StakeVaultInvariantTest is StdInvariant, Test {
     function invariant_reconcileEquality() public view {
         address asset = address(handler.token());
         (uint256 custody, uint256 obligations) = handler.vault().reconcile(asset);
+        uint256 actualBalance = handler.token().balanceOf(address(handler.vault()));
+
         assertEq(custody, obligations);
+        assertEq(custody, actualBalance);
     }
 }
