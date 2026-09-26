@@ -4,10 +4,16 @@
   "main": "index.js",
   "scripts": {
     "test": "hardhat test",
+    "test:network": "forge test --match-test \"test_recovery_scenario_\" -vv",
     "test:gas": "REPORT_GAS=true hardhat test",
     "test:gas:snapshot": "REPORT_GAS=true hardhat test --snapshot",
-    "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv",
+    "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv && forge test --match-test \"test_fuzz_\" -vv",
     "test:fuzz:extended": "forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv && forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv",
+    "test:invariant": "forge test --match-test \"invariant_\" -vv",
+    "test:recovery": "forge test --match-test \"test_recovery_scenario_\" -vv",
+    "test:testnet": "forge test --match-path \"test/testnet/\" -vv",
+    "test:reconciliation": "forge test --match-test \"test_reconciliation_\" -vv",
+    "test:deployment": "forge test --match-test \"test_deploy_\" -vv",
     "test:coverage": "forge coverage --report lcov",
     "test:coverage:gate": "forge coverage --report lcov --report summary --skip script && npx ts-node scripts/coverage-quality-gate.ts",
     "compile": "hardhat compile",
@@ -75,6 +81,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1",
     "@openzeppelin/contracts-upgradeable": "^5.6.1",
+    "dotenv": "^17.4.2"
     "dotenv": "^18.0.3"
   },
   "type": "module"
