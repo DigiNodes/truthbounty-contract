@@ -67,6 +67,7 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
 
         _nextClaimId = 1;
         _configVersion = 1;
+
         parameterVersionRegistry =
             IParameterVersionRegistry(parameterVersionRegistry_);
 
@@ -74,6 +75,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         _grantRole(ADMIN_ROLE, initialAdmin);
         _setRoleAdmin(REGISTRY_UPDATER_ROLE, ADMIN_ROLE);
     }
+
+    // =========================================================================
+    // Legacy Claim Creation
+    // =========================================================================
 
     function createClaim(
         string calldata statement,
@@ -119,12 +124,20 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         c.createdAt = now_;
         c.verificationDeadline = verificationDeadline;
 
-        emit ClaimCreated(claimId, msg.sender, evidenceCID);
+        emit ClaimCreated(
+            claimId,
+            msg.sender,
+            evidenceCID
+        );
     }
 
+    // =========================================================================
+    // Parameter Registry
+    // =========================================================================
+
     /**
-     * @notice Update the ParameterVersionRegistry address
-     * @param newRegistry The new ParameterVersionRegistry address
+     * @notice Update the ParameterVersionRegistry address.
+     * @param newRegistry The new ParameterVersionRegistry address.
      */
     function setParameterVersionRegistry(
         address newRegistry
@@ -136,6 +149,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         parameterVersionRegistry =
             IParameterVersionRegistry(newRegistry);
     }
+
+    // =========================================================================
+    // Legacy Claim Status
+    // =========================================================================
 
     /**
      * @inheritdoc IClaimRegistry
@@ -153,12 +170,19 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         ClaimStatus current = _claims[claimId].status;
 
         if (current == newStatus) {
-            revert InvalidStatusTransition(current, newStatus);
+            revert InvalidStatusTransition(
+                current,
+                newStatus
+            );
         }
 
         _claims[claimId].status = newStatus;
 
-        emit ClaimStatusUpdated(claimId, current, newStatus);
+        emit ClaimStatusUpdated(
+            claimId,
+            current,
+            newStatus
+        );
     }
 
     // =========================================================================
@@ -176,20 +200,24 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         bytes32 metadataDigest,
         bytes32 evidenceDigest,
         uint256 nonce
-    ) external override nonReentrant returns (bytes32 claimId) {
+    )
+        external
+        override
+        nonReentrant
+        returns (bytes32 claimId)
+    {
         uint256 activeVersion =
             parameterVersionRegistry.currentActiveVersionId();
 
-        return
-            _createCanonicalClaim(
-                recipient,
-                asset,
-                bounty,
-                metadataDigest,
-                evidenceDigest,
-                nonce,
-                activeVersion
-            );
+        return _createCanonicalClaim(
+            recipient,
+            asset,
+            bounty,
+            metadataDigest,
+            evidenceDigest,
+            nonce,
+            activeVersion
+        );
     }
 
     /**
@@ -208,17 +236,21 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         bytes32 evidenceDigest,
         uint256 nonce,
         uint256 parameterVersion
-    ) external override nonReentrant returns (bytes32 claimId) {
-        return
-            _createCanonicalClaim(
-                recipient,
-                asset,
-                bounty,
-                metadataDigest,
-                evidenceDigest,
-                nonce,
-                parameterVersion
-            );
+    )
+        external
+        override
+        nonReentrant
+        returns (bytes32 claimId)
+    {
+        return _createCanonicalClaim(
+            recipient,
+            asset,
+            bounty,
+            metadataDigest,
+            evidenceDigest,
+            nonce,
+            parameterVersion
+        );
     }
 
     function currentConfigVersion()
@@ -239,14 +271,21 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         bool supported,
         uint256 minBounty,
         uint256 maxBounty
-    ) external override onlyRole(ADMIN_ROLE) {
+    )
+        external
+        override
+        onlyRole(ADMIN_ROLE)
+    {
         if (asset == address(0)) {
             revert ZeroAddress();
         }
 
         if (supported) {
-            uint256 safeMin = parameterVersionRegistry.MIN_SAFE_BOND();
-            uint256 safeMax = parameterVersionRegistry.MAX_SAFE_BOND();
+            IParameterVersionRegistry.EconomicParameters memory params =
+                parameterVersionRegistry.getCurrentParameters();
+
+            uint256 safeMin = params.minBountyAmount;
+            uint256 safeMax = params.maxBountyAmount;
 
             if (
                 minBounty < safeMin ||
@@ -255,6 +294,7 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             ) {
                 revert InvalidBounty(minBounty);
             }
+
             _supportedAssets[asset] = true;
             _assetMinBounty[asset] = minBounty;
             _assetMaxBounty[asset] = maxBounty;
@@ -267,7 +307,12 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
 
     function isSupportedAsset(
         address asset
-    ) external view override returns (bool supported) {
+    )
+        external
+        view
+        override
+        returns (bool supported)
+    {
         return _supportedAssets[asset];
     }
 
@@ -277,7 +322,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         external
         view
         override
-        returns (uint256 minBounty, uint256 maxBounty)
+        returns (
+            uint256 minBounty,
+            uint256 maxBounty
+        )
     {
         return (
             _assetMinBounty[asset],
@@ -307,16 +355,15 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert ZeroDigest();
         }
 
-        return
-            keccak256(
-                abi.encode(
-                    block.chainid,
-                    address(this),
-                    submitter,
-                    submitterNonce,
-                    metadataDigest
-                )
-            );
+        return keccak256(
+            abi.encode(
+                block.chainid,
+                address(this),
+                submitter,
+                submitterNonce,
+                metadataDigest
+            )
+        );
     }
 
     function claimIdFor(
@@ -329,12 +376,11 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         override
         returns (bytes32 claimId)
     {
-        return
-            computeClaimId(
-                submitter,
-                submitterNonce,
-                metadataDigest
-            );
+        return computeClaimId(
+            submitter,
+            submitterNonce,
+            metadataDigest
+        );
     }
 
     // =========================================================================
@@ -450,7 +496,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         bytes32 evidenceDigest,
         uint256 nonce,
         uint256 parameterVersion
-    ) internal returns (bytes32 claimId) {
+    )
+        internal
+        returns (bytes32 claimId)
+    {
         if (msg.sender == address(0)) {
             revert ZeroAddress();
         }
@@ -467,7 +516,10 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert UnsupportedAsset(asset);
         }
 
-        if (metadataDigest == 0 || evidenceDigest == 0) {
+        if (
+            metadataDigest == 0 ||
+            evidenceDigest == 0
+        ) {
             revert ZeroDigest();
         }
 
@@ -486,12 +538,24 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             );
         }
 
-        uint256 safeMin = parameterVersionRegistry.MIN_SAFE_BOND();
-        uint256 safeMax = parameterVersionRegistry.MAX_SAFE_BOND();
-        if (bounty < safeMin || bounty > safeMax) revert InvalidBounty(bounty);
+        IParameterVersionRegistry.EconomicParameters memory params =
+            parameterVersionRegistry.getCurrentParameters();
 
-        uint256 minBounty = _assetMinBounty[asset];
-        uint256 maxBounty = _assetMaxBounty[asset];
+        uint256 safeMin = params.minBountyAmount;
+        uint256 safeMax = params.maxBountyAmount;
+
+        if (
+            bounty < safeMin ||
+            bounty > safeMax
+        ) {
+            revert InvalidBounty(bounty);
+        }
+
+        uint256 minBounty =
+            _assetMinBounty[asset];
+
+        uint256 maxBounty =
+            _assetMaxBounty[asset];
 
         if (
             bounty == 0 ||
@@ -501,18 +565,21 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert InvalidBounty(bounty);
         }
 
-        uint256 expectedNonce = _submitterNonce[msg.sender];
+        uint256 expectedNonce =
+            _submitterNonce[msg.sender];
 
         if (nonce != expectedNonce) {
-            revert InvalidNonce(expectedNonce, nonce);
+            revert InvalidNonce(
+                expectedNonce,
+                nonce
+            );
         }
 
-        claimId =
-            computeClaimId(
-                msg.sender,
-                nonce,
-                metadataDigest
-            );
+        claimId = computeClaimId(
+            msg.sender,
+            nonce,
+            metadataDigest
+        );
 
         if (_canonicalClaimExists[claimId]) {
             revert DuplicateClaimId(claimId);
@@ -524,7 +591,8 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             bounty
         );
 
-        _submitterNonce[msg.sender] = nonce + 1;
+        _submitterNonce[msg.sender] =
+            nonce + 1;
 
         bytes32 custodyRef =
             keccak256(
@@ -549,14 +617,20 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
         claim.evidenceDigest = evidenceDigest;
         claim.nonce = nonce;
 
-        // Snapshot the version at creation time.
-        claim.parameterVersion = parameterVersion;
+        // Snapshot the parameter version at creation time.
+        claim.parameterVersion =
+            parameterVersion;
 
-        claim.createdAt = uint64(block.timestamp);
-        claim.custodyRef = custodyRef;
+        claim.createdAt =
+            uint64(block.timestamp);
+
+        claim.custodyRef =
+            custodyRef;
+
         claim.exists = true;
 
-        _canonicalClaimExists[claimId] = true;
+        _canonicalClaimExists[claimId] =
+            true;
 
         emit ClaimCreated(
             claimId,
@@ -587,7 +661,10 @@ interface IVerificationRoundManager {
     function frozenRecordCount(
         uint256 roundId,
         uint256 claimId
-    ) external view returns (uint256 count);
+    )
+        external
+        view
+        returns (uint256 count);
 
     /// @notice Returns one frozen verification record by index.
     function frozenRecordAt(
@@ -597,18 +674,26 @@ interface IVerificationRoundManager {
     )
         external
         view
-        returns (FrozenVerificationRecord memory record);
+        returns (
+            FrozenVerificationRecord memory record
+        );
 
     /// @notice Returns true when the threshold module signals threshold failure.
     function thresholdFailure(
         uint256 roundId,
         uint256 claimId
-    ) external view returns (bool failed);
+    )
+        external
+        view
+        returns (bool failed);
 
     /// @notice Returns the protocol parameter version for a round.
     function parameterVersion(
         uint256 roundId
-    ) external view returns (uint256 version);
+    )
+        external
+        view
+        returns (uint256 version);
 }
 
 /**
@@ -655,10 +740,14 @@ contract DeterministicAggregationEngine {
     /// @notice Immutable round manager used to get frozen records.
     IVerificationRoundManager public immutable roundManager;
 
-    mapping(uint256 => mapping(uint256 => AggregationRecord))
+    mapping(
+        uint256 => mapping(uint256 => AggregationRecord)
+    )
         private _aggregationRecords;
 
-    mapping(uint256 => mapping(uint256 => bool))
+    mapping(
+        uint256 => mapping(uint256 => bool)
+    )
         private _aggregated;
 
     constructor(
@@ -715,13 +804,15 @@ contract DeterministicAggregationEngine {
                 );
 
             if (frozen.decision) {
-                trueEffectiveWeight += frozen.effectiveWeight;
+                trueEffectiveWeight +=
+                    frozen.effectiveWeight;
 
                 unchecked {
                     ++trueCount;
                 }
             } else {
-                falseEffectiveWeight += frozen.effectiveWeight;
+                falseEffectiveWeight +=
+                    frozen.effectiveWeight;
 
                 unchecked {
                     ++falseCount;
@@ -734,30 +825,40 @@ contract DeterministicAggregationEngine {
 
         if (
             !thresholdFailed &&
-            trueEffectiveWeight != falseEffectiveWeight
+            trueEffectiveWeight !=
+            falseEffectiveWeight
         ) {
             outcome =
-                trueEffectiveWeight > falseEffectiveWeight
+                trueEffectiveWeight >
+                falseEffectiveWeight
                     ? AggregationOutcome.True
                     : AggregationOutcome.False;
         }
 
         uint256 parameterVersion =
-            roundManager.parameterVersion(roundId);
+            roundManager.parameterVersion(
+                roundId
+            );
 
         record = AggregationRecord({
             roundId: roundId,
             claimId: claimId,
-            trueEffectiveWeight: trueEffectiveWeight,
-            falseEffectiveWeight: falseEffectiveWeight,
+            trueEffectiveWeight:
+                trueEffectiveWeight,
+            falseEffectiveWeight:
+                falseEffectiveWeight,
             trueCount: trueCount,
             falseCount: falseCount,
             outcome: outcome,
-            parameterVersion: parameterVersion
+            parameterVersion:
+                parameterVersion
         });
 
-        _aggregated[roundId][claimId] = true;
-        _aggregationRecords[roundId][claimId] = record;
+        _aggregated[roundId][claimId] =
+            true;
+
+        _aggregationRecords[roundId][claimId] =
+            record;
 
         emit AggregationComputed(
             roundId,
@@ -779,8 +880,12 @@ contract DeterministicAggregationEngine {
     )
         external
         view
-        returns (AggregationRecord memory record)
+        returns (
+            AggregationRecord memory record
+        )
     {
-        return _aggregationRecords[roundId][claimId];
+        return _aggregationRecords[
+            roundId
+        ][claimId];
     }
 }
