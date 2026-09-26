@@ -68,6 +68,12 @@ contract TruthBountyGovernorTest is Test {
         snapshot.revokeRole(registrarRole, admin);
 
         guardianContract = new GovernanceGuardian(admin, guardian, ITruthBountyGovernor(address(governor)));
+        vm.stopPrank();
+
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+
+        vm.startPrank(admin);
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
@@ -86,6 +92,8 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(voter);
         token.delegate(voter);
 
+        // Voting power checkpoints must predate the proposal snapshot lookup (clock() - 1).
+        vm.warp(block.timestamp + 1);
         // Warp so delegation checkpoints are in the past — getPastVotes(x, block.timestamp)
         // requires the timepoint to be strictly before current block.timestamp (OZ Votes invariant).
         vm.warp(block.timestamp + 2);
@@ -108,9 +116,12 @@ contract TruthBountyGovernorTest is Test {
     }
 
     function _voteAndQueue(uint256 proposalId) internal {
+        // Enter the Active window first so the vote is accepted ...
         vm.warp(block.timestamp + VOTING_DELAY + 1);
         vm.prank(voter);
         governor.castVote(proposalId, 1);
+        // ... then cross the voting deadline so the proposal reaches Succeeded and can be queued.
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
         governor.queue(proposalId);
     }
 

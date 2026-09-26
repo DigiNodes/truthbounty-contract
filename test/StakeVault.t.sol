@@ -29,8 +29,10 @@ contract StakeVaultTest is Test {
         token = new MockERC20("Bounty", "BOUNTY");
         vault = new StakeVault(admin, address(token));
 
+        // Resolve the role before pranking: the staticcall would otherwise consume the prank.
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(admin);
-        vault.grantRole(vault.OPERATOR_ROLE(), operator);
+        vault.grantRole(operatorRole, operator);
 
         token.mint(depositor, 1000e18);
     }
@@ -69,7 +71,7 @@ contract StakeVaultTest is Test {
         vault.lockBond(1, address(token), depositor, 100e18);
 
         vm.prank(operator);
-        vm.expectRevert(ISTakeVault.LockAlreadyExists.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISTakeVault.LockAlreadyExists.selector, uint256(1)));
         vault.lockBond(1, address(token), depositor, 100e18);
     }
 
@@ -115,7 +117,7 @@ contract StakeVaultTest is Test {
         vault.releaseBond(1, recipient);
 
         vm.prank(operator);
-        vm.expectRevert(ISTakeVault.LockAlreadyReleased.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISTakeVault.LockAlreadyReleased.selector, uint256(1)));
         vault.releaseBond(1, recipient);
     }
 

@@ -130,7 +130,9 @@ contract StakeVaultTest is Test {
         );
 
         assertEq(vault.protocolAllocation(address(token)), STAKE / 4);
-        assertEq(vault.claimableBalance(address(token), verifier), STAKE / 2);
+        // Net effect: the allocated quarter left custody, the rest stays claimable
+        // (lock 50 then unlock 25 nets claimable = STAKE - STAKE/4).
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE - STAKE / 4);
     }
 
     // -------------------------------------------------------------------------
@@ -321,11 +323,25 @@ contract StakeVaultTest is Test {
         vm.prank(settlement);
         vault.unlock(address(malicious), address(attacker), CLAIM_A, 0, IV2Types.LockCategory.BOUNTY_ESCROW, STAKE);
 
+        // The malicious token fires its callback mid-transfer to reenter `withdraw`.
+        // The reentrancy guard plus the emptied claimable balance must swallow the
+        // inner attempt, so the outer withdrawal settles exactly once.
+        vm.expectEmit(false, false, false, true, address(malicious));
+        emit MaliciousERC20.AttackAttempted(address(attacker), STAKE);
         vm.prank(address(attacker));
-        vm.expectRevert();
         attacker.withdraw(STAKE);
 
-        assertEq(malicious.balanceOf(address(vault)), STAKE);
+        assertEq(malicious.balanceOf(address(attacker)), STAKE);
+        assertEq(malicious.balanceOf(address(vault)), 0);
+        assertEq(vault.claimableBalance(address(malicious), address(attacker)), 0);
+        assertEq(vault.totalCustody(address(malicious)), 0);
+
+        // Nothing left to drain: a replayed withdrawal (as the reentrancy attempted) reverts.
+        vm.prank(address(attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(V2Errors.InsufficientClaimable.selector, address(attacker), STAKE, 0)
+        );
+        attacker.withdraw(STAKE);
     }
 
     // -------------------------------------------------------------------------
@@ -360,15 +376,23 @@ contract StakeVaultTest is Test {
         vm.prank(verifier);
         vault.depositStake(CLAIM_A, STAKE);
 
-        // Fund protocol allocation for reward.
+        // Fund protocol allocation for the reward without touching the principal lock:
+        // deposit extra custody, lock it as a challenge bond, then move it to allocation.
         vm.prank(verifier);
         vault.deposit(address(token), STAKE);
+
+        vm.prank(settlement);
+        vault.lock(address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.CHALLENGE_BOND, STAKE);
+
         vm.prank(slashing);
-        vault.slashStake(CLAIM_A, verifier, STAKE, keccak256("reward-fund"));
+        vault.allocateLocked(
+            address(token), verifier, CLAIM_A, 1, IV2Types.LockCategory.CHALLENGE_BOND, STAKE, keccak256("reward-fund")
+        );
 
         vm.prank(settlement);
         vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, STAKE / 2);
 
+        // Principal returned to claimable plus reward credited from protocol allocation.
         assertEq(vault.claimableBalance(address(token), verifier), STAKE + STAKE / 2);
         assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), 0);
         assertEq(uint256(vault.settlementOutcome(CLAIM_A, 0)), uint256(IV2Types.SettlementOutcome.CONCLUDED));

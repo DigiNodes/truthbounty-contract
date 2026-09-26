@@ -59,13 +59,21 @@ contract DisputeResolutionTest is Test {
             admin
         );
 
+        // Resolve roles before pranking: the staticcalls would otherwise consume the pranks.
+        bytes32 updaterRole = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+
         // Authorise the dispute module to transition claims.
         vm.prank(admin);
-        registry.grantRole(registry.REGISTRY_UPDATER_ROLE(), address(dispute));
+        registry.grantRole(updaterRole, address(dispute));
+
+        // Authorise the local test updater used to drive claims to outcomes.
+        vm.prank(admin);
+        registry.grantRole(updaterRole, updater);
 
         // Authorise the dispute module as the vault operator.
         vm.prank(admin);
-        vault.grantRole(vault.OPERATOR_ROLE(), address(dispute));
+        vault.grantRole(operatorRole, address(dispute));
 
         // Fund challengers and users.
         token.mint(challenger, 100_000e18);
@@ -95,8 +103,10 @@ contract DisputeResolutionTest is Test {
     }
 
     function _approveChallenge(address who, uint256 amount) internal {
+        // The contract checks allowance(msg.sender -> vault): the challenger
+        // authorizes the vault directly as the ERC-20 spender.
         vm.prank(who);
-        token.approve(address(dispute), amount);
+        token.approve(address(vault), amount);
     }
 
     // =========================================================================
@@ -258,13 +268,10 @@ contract DisputeResolutionTest is Test {
         vm.prank(challenger);
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
 
-        // Claim is now Disputed; trying to open again is not a challengeable
-        // state (and would also be blocked as duplicate).
+        // Claim is now Disputed; the one-appeal-path-per-claim guard runs before the
+        // status check, so a recursive open attempt fails with DisputeAlreadyOpen.
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IDisputeResolution.ClaimNotChallengeable.selector,
-                IClaimRegistry.ClaimStatus.Disputed
-            )
+            abi.encodeWithSelector(IDisputeResolution.DisputeAlreadyOpen.selector, claimId)
         );
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
     }
@@ -347,16 +354,18 @@ contract DisputeResolutionTest is Test {
             WINDOW,
             admin
         );
+        bytes32 updaterRole2 = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 operatorRole2 = vault.OPERATOR_ROLE();
         vm.prank(admin);
-        registry.grantRole(registry.REGISTRY_UPDATER_ROLE(), address(failingModule));
+        registry.grantRole(updaterRole2, address(failingModule));
         vm.prank(admin);
-        vault.grantRole(vault.OPERATOR_ROLE(), address(failingModule));
+        vault.grantRole(operatorRole2, address(failingModule));
 
         // Failing token mints to ITS deployer (this test contract); grant the
-        // challenger tokens and an allowance.
+        // challenger tokens and an allowance toward the vault (the ERC-20 spender).
         failing.mint(challenger, 100_000e18);
         vm.prank(challenger);
-        failing.approve(address(failingModule), BOND);
+        failing.approve(address(vault), BOND);
 
         uint256 claimId = _createClaim();
         _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
@@ -385,14 +394,16 @@ contract DisputeResolutionTest is Test {
             WINDOW,
             admin
         );
+        bytes32 updaterRole2 = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 operatorRole2 = vault.OPERATOR_ROLE();
         vm.prank(admin);
-        registry.grantRole(registry.REGISTRY_UPDATER_ROLE(), address(failingModule));
+        registry.grantRole(updaterRole2, address(failingModule));
         vm.prank(admin);
-        vault.grantRole(vault.OPERATOR_ROLE(), address(failingModule));
+        vault.grantRole(operatorRole2, address(failingModule));
 
         failing.mint(challenger, 100_000e18);
         vm.prank(challenger);
-        failing.approve(address(failingModule), BOND);
+        failing.approve(address(vault), BOND);
 
         uint256 claimId = _createClaim();
         _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
@@ -416,8 +427,9 @@ contract DisputeResolutionTest is Test {
     // =========================================================================
 
     function test_OpenDispute_RevertsWhenPaused() public {
+        bytes32 pauserRole = dispute.PAUSER_ROLE();
         vm.prank(admin);
-        dispute.grantRole(dispute.PAUSER_ROLE(), admin);
+        dispute.grantRole(pauserRole, admin);
         vm.prank(admin);
         dispute.pause();
 
@@ -434,8 +446,9 @@ contract DisputeResolutionTest is Test {
     }
 
     function test_OpenDispute_SucceedsAfterUnpause() public {
+        bytes32 pauserRole = dispute.PAUSER_ROLE();
         vm.prank(admin);
-        dispute.grantRole(dispute.PAUSER_ROLE(), admin);
+        dispute.grantRole(pauserRole, admin);
         vm.prank(admin);
         dispute.pause();
         vm.prank(admin);
