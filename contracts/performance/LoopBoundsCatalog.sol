@@ -147,6 +147,24 @@ contract LoopBoundsCatalog {
                 mitigation: "Open-claim inventory cap frees on terminal status (V2-SC-105)"
             });
         }
+        if (index == 12) {
+            return LoopBound({
+                module: "V2Lifecycle",
+                functionName: "validateParameterSet",
+                loopVariable: "supportedAssets.length",
+                maxIterations: ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS,
+                mitigation: "Hard cap before validation and storage copy"
+            });
+        }
+        if (index == 13) {
+            return LoopBound({
+                module: "EvidenceRegistry",
+                functionName: "commitEvidence",
+                loopVariable: "claimEvidenceIds[claimId].length",
+                maxIterations: ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM,
+                mitigation: "Hard cap with paginated claimEvidence reads"
+            });
+        }
         revert("IndexOutOfBounds");
     }
 }
