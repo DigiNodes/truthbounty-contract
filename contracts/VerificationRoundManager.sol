@@ -57,6 +57,8 @@ contract VerificationRoundManager is
 
     /// @notice Maximum basis-point value for passingThreshold (100 %).
     uint16 public constant MAX_BPS = 10_000;
+    /// @notice Version of the round lifecycle event schema.
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
 
     // =========================================================================
     // State
@@ -192,7 +194,9 @@ contract VerificationRoundManager is
             maxStake,
             weightCap,
             passingThreshold,
-            paramVersion
+            paramVersion,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
         );
     }
 
@@ -229,7 +233,14 @@ contract VerificationRoundManager is
         uint256 voteCount = _participants[roundId].length;
 
         // --- Event ---
-        emit RoundClosed(claimId, roundId, uint64(block.timestamp), voteCount);
+        emit RoundClosed(
+            claimId,
+            roundId,
+            uint64(block.timestamp),
+            voteCount,
+            uint64(block.timestamp),
+            EVENT_SCHEMA_VERSION
+        );
     }
 
     /**

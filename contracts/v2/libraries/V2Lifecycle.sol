@@ -89,6 +89,10 @@ library V2Lifecycle {
     /// @notice Supported asset list is empty.
     /// @param assetCount Number of supplied assets.
     error InvalidSupportedAssets(uint256 assetCount);
+    /// @notice Supported asset list exceeds the bounded execution limit.
+    /// @param assetCount Number of supplied assets.
+    /// @param maxAssets Maximum permitted asset count.
+    error SupportedAssetLimitExceeded(uint256 assetCount, uint256 maxAssets);
     /// @notice Bounty bounds are reversed.
     /// @param minBounty Configured minimum.
     /// @param maxBounty Configured maximum.

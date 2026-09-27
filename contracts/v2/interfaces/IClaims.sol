@@ -12,7 +12,7 @@ interface IClaims is IV2Module {
     /// @param claimant Account that created the claim.
     /// @param subject Protocol-defined subject commitment.
     /// @param reward Reward in the configured asset's base units.
-    event ClaimCreated(uint256 indexed claimId, address indexed claimant, bytes32 indexed subject, uint256 reward);
+    event ClaimCreated(uint256 indexed claimId, address indexed claimant, bytes32 indexed subject, uint256 reward, uint64 timestamp, uint16 version);
 
     /// @notice Emitted for every authorized claim lifecycle transition.
     /// @param claimId Claim whose state changed.
@@ -21,7 +21,7 @@ interface IClaims is IV2Module {
     /// @param actor Authorized account that performed the transition.
     /// @param timestamp Unix timestamp in seconds.
     /// @param reasonCode Stable reason code for the transition.
-    event ClaimStateChanged(uint256 indexed claimId, IV2Types.ClaimState previousState, IV2Types.ClaimState newState, address indexed actor, uint64 timestamp, bytes32 reasonCode);
+    event ClaimStateChanged(uint256 indexed claimId, IV2Types.ClaimState previousState, IV2Types.ClaimState newState, address indexed actor, uint64 timestamp, bytes32 reasonCode, uint16 version);
 
     /// @notice Creates a claim with a subject commitment and configured reward.
     /// @dev Must validate subject, reward bounds, asset, metadata rules, and caller authorization; invalid input fails closed without creating state.

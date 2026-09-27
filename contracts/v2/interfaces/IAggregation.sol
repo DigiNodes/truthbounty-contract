@@ -11,7 +11,7 @@ interface IAggregation is IV2Module {
     /// @param accepted Final acceptance result.
     /// @param supportingWeight Total weight supporting the claim in configured weight units.
     /// @param opposingWeight Total weight opposing the claim in configured weight units.
-    event AggregationFinalized(uint256 indexed claimId, bool accepted, uint256 supportingWeight, uint256 opposingWeight);
+    event AggregationFinalized(uint256 indexed claimId, bool accepted, uint256 supportingWeight, uint256 opposingWeight, uint64 timestamp, uint16 version);
 
     /// @notice Finalizes aggregation for a claim after the configured verification deadline.
     /// @dev Must fail closed unless the claim is eligible, and must be idempotent or revert on repeated finalization.

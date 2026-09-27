@@ -40,8 +40,10 @@ contract Aggregation is IAggregation {
     function finalizeAggregation(uint256 claimId) external override {
         if (_outcomes[claimId].finalized) revert V2Errors.SettlementAlreadyFinalized(claimId, 0);
 
-        IConfiguration config = IConfiguration(registry.getModule(keccak256("CONFIGURATION")));
-        IVerification verifier = IVerification(registry.getModule(keccak256("VERIFICATION")));
+        (address configAddress,,) = registry.module(keccak256("CONFIGURATION"));
+        (address verifierAddress,,) = registry.module(keccak256("VERIFICATION"));
+        IConfiguration config = IConfiguration(configAddress);
+        IVerification verifier = IVerification(verifierAddress);
         
         uint256 versionId = config.getLatestVersion();
         IConfiguration.ParameterSet memory params = config.getParameterSet(versionId);
