@@ -13,6 +13,8 @@ import {ICreate2AddressPlanner} from "./ICreate2AddressPlanner.sol";
  *      no Stellar/Soroban/Freighter dependencies; fail-closed on invalid inputs.
  */
 contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
+    /// @notice EIP-170 runtime-code ceiling; oversized verification input is rejected before hashing.
+    uint256 public constant MAX_RUNTIME_BYTECODE_BYTES = 24_576;
     /// @notice Role permitted to plan addresses and verify bytecode.
     bytes32 public constant PLANNER_ROLE = keccak256("PLANNER_ROLE");
 
@@ -109,6 +111,9 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         external
         onlyRole(PLANNER_ROLE)
     {
+        if (runtimeBytecode.length > MAX_RUNTIME_BYTECODE_BYTES) {
+            revert RuntimeBytecodeTooLarge(runtimeBytecode.length, MAX_RUNTIME_BYTECODE_BYTES);
+        }
         if (runtimeBytecode.length == 0) revert BytecodeHashMismatch(bytes32(0), bytes32(0));
 
         Plan storage plan = _requirePlan(moduleId);

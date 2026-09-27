@@ -104,6 +104,20 @@ describe("EvidenceRegistry", function () {
       .to.be.revertedWithCustomError(evidence, "ZeroDigest");
   });
 
+  it("bounds raw metadata before hashing it", async function () {
+    const { evidence, contributor } = await loadFixture(deployFixture);
+    const maximum = Number(await evidence.MAX_METADATA_BYTES());
+
+    await evidence.connect(contributor).submitEvidence(CLAIM_ID, CONTENT_DIGEST, "a".repeat(maximum));
+
+    await expect(
+      evidence.connect(contributor).submitEvidence(CLAIM_ID, CONTENT_DIGEST_2, "a".repeat(maximum + 1)),
+    )
+      .to.be.revertedWithCustomError(evidence, "MetadataTooLarge")
+      .withArgs(maximum + 1, maximum);
+    expect(await evidence.nextContributorNonce(contributor.address)).to.equal(1n);
+  });
+
   it("rejects invalid claims", async function () {
     const { evidence, contributor } = await loadFixture(deployFixture);
 

@@ -78,6 +78,7 @@ interface RawEntry {
   inputs: RawParameter[];
   outputs: RawParameter[];
   stateMutability: string;
+  anonymous?: boolean;
 }
 
 export interface AbiFragment {
@@ -87,6 +88,7 @@ export interface AbiFragment {
   inputs: AbiParameter[];
   outputs?: AbiParameter[];
   stateMutability?: string;
+  anonymous?: boolean;
 }
 
 export interface ParsedInterface {
@@ -315,6 +317,7 @@ function parseEntry(declaration: string, kind: "function" | "error" | "event", d
     inputs: parseParameters(inner),
     outputs: [],
     stateMutability: kind === "function" ? stateMutabilityOf(tail) : "",
+    anonymous: kind === "event" && /\banonymous\b/.test(tail),
   };
   if (kind === "function") {
     const returnsMatch = /returns\s*\(/.exec(tail);
@@ -375,6 +378,8 @@ function resolveEntry(entry: RawEntry, registry: TypeRegistry): AbiFragment {
   if (entry.kind === "function") {
     fragment.outputs = entry.outputs.map((output) => parameterJson(output, registry));
     fragment.stateMutability = entry.stateMutability;
+  } else if (entry.kind === "event") {
+    if (entry.anonymous) fragment.anonymous = true;
   }
   return fragment;
 }
