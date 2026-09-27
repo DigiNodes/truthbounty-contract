@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {BoundedStaticCall} from "../libraries/BoundedStaticCall.sol";
+
 /**
  * @title EmergencyProtected
  * @notice Abstract contract providing a `whenNotPaused` modifier that queries
@@ -37,12 +39,12 @@ abstract contract EmergencyProtected {
      */
     modifier whenNotPaused(bytes32 operationType) {
         if (emergencyController == address(0)) revert EmergencyControllerNotSet();
-        (bool success, bytes memory data) = emergencyController.staticcall(
+        (bool success, uint256 value, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            emergencyController,
             abi.encodeWithSignature("isOperationAllowed(bytes32)", operationType)
         );
-        if (success && data.length >= 32) {
-            bool allowed = abi.decode(data, (bool));
-            if (!allowed) revert OperationPaused(operationType, 0);
+        if (success && returnSize >= 32 && value <= 1) {
+            if (value == 0) revert OperationPaused(operationType, 0);
         }
         // If the call fails, assume paused (fail-safe)
         else {

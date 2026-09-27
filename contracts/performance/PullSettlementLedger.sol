@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {ProtocolExecutionBounds} from "./ProtocolExecutionBounds.sol";
 
 /**

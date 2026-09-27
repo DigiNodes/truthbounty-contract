@@ -7,6 +7,11 @@ import {IV2Types} from "./IV2Types.sol";
 /// @notice Content-addressed evidence commitment and status interface.
 /// @dev The contract stores digests, not raw evidence. Content availability and cryptographic interpretation are external assumptions.
 interface IEvidence is IV2Module {
+    /// @notice Metadata exceeded the 1 KiB calldata limit.
+    /// @param actual Supplied metadata size in bytes.
+    /// @param maximum Maximum accepted metadata size in bytes.
+    error MetadataTooLarge(uint256 actual, uint256 maximum);
+
     /// @notice Emitted when an evidence commitment is accepted.
     /// @param evidenceId Deterministically derived evidence identifier.
     /// @param claimId Claim receiving the evidence.
@@ -25,7 +30,7 @@ interface IEvidence is IV2Module {
     /// @dev Must reject zero digests, duplicate commitments, closed windows, finalized claims, and invalid nonces. Metadata is treated as opaque and should be stored off-chain.
     /// @param claimId Existing claim receiving evidence.
     /// @param contentHash Digest of off-chain content.
-    /// @param metadata Opaque metadata bytes whose interpretation is outside the EVM contract.
+    /// @param metadata Opaque metadata bytes, limited to 1,024 bytes, whose interpretation is outside the EVM contract.
     /// @return evidenceId Deterministically derived identifier.
     function submitEvidence(uint256 claimId, bytes32 contentHash, bytes calldata metadata) external returns (uint256 evidenceId);
 
