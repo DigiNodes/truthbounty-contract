@@ -53,6 +53,12 @@ jobs:
         run: node scripts/check-native-value-policy.mjs
       - name: Native Value Policy self-tests (V2-SC-153)
         run: node --test test/scripts/check-native-value-policy.test.mjs
+      # V2-SC-161: every integer-narrowing cast in canonical V2 must be proven safe or guarded
+      # by V2SafeCast; a new unlisted cast or a raw block.timestamp/chainid narrowing fails here.
+      - name: Safe-cast inventory (V2-SC-161)
+        run: node scripts/check-safe-casts.mjs
+      - name: Safe-cast inventory self-tests (V2-SC-161)
+        run: node --test test/scripts/check-safe-casts.test.mjs
 
   test:
     name: Test

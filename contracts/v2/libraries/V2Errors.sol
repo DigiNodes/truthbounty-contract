@@ -19,6 +19,7 @@ pragma solidity ^0.8.20;
 ///      | Governance        | NotGovernance, ZeroGuardian*, Module*   | Authority / allowlist                   |
 ///      | Slashing          | Slash*, SlashingNotPermitted            | Over-slash / policy                     |
 ///      | Emergency         | ProtocolPaused, EmergencyAuthority*     | Pause / guardian path                   |
+///      | Integer widths    | SafeCastOverflow, SafeCastNegative      | Narrowing past the field's width        |
 ///
 ///      Modules MUST revert with these selectors (via `V2Errors.<Error>`) instead of
 ///      `require`/`revert` string reasons or ad-hoc local errors that collide by name
@@ -499,4 +500,20 @@ library V2Errors {
 
     /// @notice Two arrays that must be index-aligned had different lengths.
     error LengthMismatch();
+
+    // =========================================================================
+    // Safe-Cast & Integer-Width Boundaries (V2-SC-161)
+    // =========================================================================
+
+    /// @notice A value does not fit the narrower integer width of the named field.
+    /// @dev Raised by `V2SafeCast` instead of silently truncating to the low bits.
+    /// @param field Left-aligned ASCII identifier of the field (`"<Module>.<field>"`).
+    /// @param value The rejected value.
+    /// @param max The largest value the destination width can hold (`type(uintN).max`).
+    error SafeCastOverflow(bytes32 field, uint256 value, uint256 max);
+
+    /// @notice A negative signed value was converted to an unsigned field.
+    /// @param field Left-aligned ASCII identifier of the field.
+    /// @param value The rejected signed value.
+    error SafeCastNegative(bytes32 field, int256 value);
 }

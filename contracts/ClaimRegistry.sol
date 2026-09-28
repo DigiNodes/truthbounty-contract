@@ -9,6 +9,7 @@ import "./interfaces/IClaimRegistry.sol";
 import "./interfaces/IParameterVersionRegistry.sol";
 import "./performance/ProtocolExecutionBounds.sol";
 import "./v2/libraries/AntiGriefing.sol";
+import {V2SafeCast} from "./v2/libraries/V2SafeCast.sol";
 
 /**
  * @title ClaimRegistry
@@ -107,11 +108,12 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert InvalidCID();
         }
 
-        uint64 now_ = uint64(block.timestamp);
+        // V2-SC-161: `createdAt` / `verificationDeadline` are uint64; never truncate the clock.
+        uint64 now_ = V2SafeCast.timestamp64(V2SafeCast.FIELD_REGISTRY_CREATED_AT);
 
         if (
             verificationDeadline <= now_ ||
-            verificationDeadline > now_ + MAX_DEADLINE_HORIZON
+            uint256(verificationDeadline) > uint256(now_) + uint256(MAX_DEADLINE_HORIZON)
         ) {
             revert InvalidDeadline();
         }
@@ -646,7 +648,7 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             parameterVersion;
 
         claim.createdAt =
-            uint64(block.timestamp);
+            V2SafeCast.timestamp64(V2SafeCast.FIELD_REGISTRY_CANONICAL_CREATED_AT);
 
         claim.custodyRef =
             custodyRef;
