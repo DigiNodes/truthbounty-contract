@@ -77,6 +77,29 @@ jobs:
       - name: Run Hardhat tests
         run: npx hardhat test
 
+  storage-layouts:
+    name: Storage Layout Manifests (V2-SC-121)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Verify frozen storage-layout manifests
+        run: npm run test:layouts
+
   fuzz-tests:
     name: Fuzz Tests
     runs-on: ubuntu-latest

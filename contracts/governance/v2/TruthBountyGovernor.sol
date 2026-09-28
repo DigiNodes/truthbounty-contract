@@ -20,6 +20,13 @@ import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol
  * @dev Proposals may only target registered governed modules and are blocked from claim-outcome calls.
  *      Guardian cancellation is separate from timelock execution authority.
  *
+ *      Cancellation semantics (V2-SC-066): a proposal may only be cancelled while it is in a
+ *      non-terminal state (Pending, Active, Succeeded, or Queued) and only under one of the four
+ *      explicit {CancelAuthority} conditions — proposer withdrawal, proposer-below-threshold
+ *      invalidation, guardian veto, or governed-module invalidation. Every other path fails closed
+ *      with {ProposalCancellationUnauthorized}. Cancellation decisions are evaluated freshly on
+ *      every call against canonical state, so no authorisation can be stored, replayed, or reused
+ *      after the proposal it was granted for has left the cancelable window.
  *      ## Canonical Snapshot Integration (V2-SC-063)
  *
  *      At proposal creation, `_propose` calls `governanceSnapshot.registerSnapshot(proposalId)`,
@@ -44,12 +51,36 @@ contract TruthBountyGovernor is
 {
     using GovernanceForbiddenCalls for bytes;
 
+    /// @notice Explicit, exhaustive conditions under which a governance proposal may be cancelled (V2-SC-066).
+    enum CancelAuthority {
+        /// @dev No cancellation condition satisfied — every cancel attempt fails closed.
+        NONE,
+        /// @dev The original proposer withdraws their own proposal while it is Pending or Active.
+        PROPOSER,
+        /// @dev Permissionless: the proposer's live voting power fell below `proposalThreshold()`
+        ///      while the proposal is still Pending, so the proposal no longer meets the spam bar
+        ///      that allowed it to be created.
+        THRESHOLD,
+        /// @dev The guardian (or the wired guardian module) vetoes before execution.
+        GUARDIAN,
+        /// @dev Permissionless: at least one proposal target was removed from the governed module
+        ///      registry after creation, so the proposal no longer targets canonical modules.
+        INVALIDATED
+    }
+
     /// @notice Registry consulted for every proposal target; unregistered targets revert.
     IGovernedModuleRegistry public immutable moduleRegistry;
     /// @notice Address currently authorized to cancel proposals.
     address public guardian;
     /// @notice Optional bootstrap guardian module authorized to cancel proposals.
     address public governanceGuardianModule;
+
+    /// @notice Emitted alongside {Governor-ProposalCanceled} recording who cancelled and under which condition.
+    event ProposalCancellationAuthorized(
+        uint256 indexed proposalId,
+        address indexed caller,
+        CancelAuthority authority
+    );
 
     /// @notice Emitted when the governor guardian is rotated by governance.
     /// @param oldGuardian Previous guardian.
@@ -84,6 +115,8 @@ contract TruthBountyGovernor is
     /// @notice Caller is not the bootstrap guardian.
     /// @param caller Unauthorized caller.
     error UnauthorizedGuardianModuleSetter(address caller);
+    /// @dev Thrown when a cancel attempt satisfies none of the explicit {CancelAuthority} conditions.
+    error ProposalCancellationUnauthorized(uint256 proposalId, address caller);
 
     /// @param token ERC20Votes token used to calculate voting power.
     /// @param timelock Timelock that queues and executes proposals.
@@ -196,9 +229,134 @@ contract TruthBountyGovernor is
         return proposalId;
     }
 
+    /**
+     * @notice Cancel a proposal under the explicit V2-SC-066 cancellation conditions.
+     * @dev Reverts with {ProposalCancellationUnauthorized} unless `caller` satisfies one of the
+     *      {CancelAuthority} conditions for the proposal's current state. Emits
+     *      {ProposalCancellationAuthorized} before {Governor-ProposalCanceled} so indexers can
+     *      attribute every cancellation to its condition. Unknown proposal ids revert with
+     *      {Governor-GovernorNonexistentProposal}.
+     * @param targets Proposal target contracts (must hash to a known proposal id).
+     * @param values ETH value per target.
+     * @param calldatas Encoded calls per target.
+     * @param descriptionHash keccak256 hash of the proposal description.
+     * @return proposalId The cancelled proposal id.
+     */
+    function cancel(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        bytes32 descriptionHash
+    ) public override returns (uint256) {
+        uint256 proposalId = getProposalId(targets, values, calldatas, descriptionHash);
+        address caller = _msgSender();
+
+        if (proposalSnapshot(proposalId) != 0) {
+            CancelAuthority authority = cancellationAuthority(proposalId, caller);
+            if (authority == CancelAuthority.NONE) {
+                revert ProposalCancellationUnauthorized(proposalId, caller);
+            }
+            emit ProposalCancellationAuthorized(proposalId, caller, authority);
+        }
+
+        return super.cancel(targets, values, calldatas, descriptionHash);
+    }
+
     /// @inheritdoc Governor
     function _validateCancel(uint256 proposalId, address caller) internal view override returns (bool) {
-        return super._validateCancel(proposalId, caller) || caller == guardian || caller == governanceGuardianModule;
+        return _cancellationAuthority(proposalId, caller, state(proposalId)) != CancelAuthority.NONE;
+    }
+
+    /**
+     * @notice Return the explicit condition under which `caller` may cancel `proposalId` right now.
+     * @dev Conditions are evaluated against fresh canonical state on every call: nothing is cached,
+     *      stored, or reusable, so a previously valid authorisation cannot be replayed once the
+     *      proposal leaves the cancelable window. Returns {CancelAuthority-NONE} for unknown
+     *      proposals and for every terminal state (Defeated, Canceled, Expired, Executed).
+     * @param proposalId The proposal to evaluate.
+     * @param caller The address that would submit the cancellation.
+     * @return The satisfied condition, or {CancelAuthority-NONE} when cancellation must fail closed.
+     */
+    function cancellationAuthority(uint256 proposalId, address caller) public view returns (CancelAuthority) {
+        if (proposalSnapshot(proposalId) == 0) {
+            return CancelAuthority.NONE;
+        }
+        return _cancellationAuthority(proposalId, caller, state(proposalId));
+    }
+
+    /**
+     * @notice Whether `proposalId` targets at least one address no longer in the governed module registry.
+     * @dev Only meaningful while the proposal is in a non-terminal cancelable state; returns false
+     *      for unknown proposals and terminal states so callers fail closed rather than assume
+     *      invalidation that can no longer act.
+     * @param proposalId The proposal to inspect.
+     * @return True when a target was deregistered after proposal creation.
+     */
+    function isProposalInvalidated(uint256 proposalId) public view returns (bool) {
+        if (proposalSnapshot(proposalId) == 0) {
+            return false;
+        }
+        ProposalState currentState = state(proposalId);
+        if (!_isCancelableState(currentState)) {
+            return false;
+        }
+        return _hasDeregisteredTarget(proposalId);
+    }
+
+    /// @dev Core authority rules shared by the public view and the {Governor-_validateCancel} hook.
+    function _cancellationAuthority(
+        uint256 proposalId,
+        address caller,
+        ProposalState currentState
+    ) internal view returns (CancelAuthority) {
+        if (!_isCancelableState(currentState)) {
+            return CancelAuthority.NONE;
+        }
+        if (caller == guardian || caller == governanceGuardianModule) {
+            return CancelAuthority.GUARDIAN;
+        }
+
+        address proposer = proposalProposer(proposalId);
+        if (caller == proposer && (currentState == ProposalState.Pending || currentState == ProposalState.Active)) {
+            return CancelAuthority.PROPOSER;
+        }
+        if (_hasDeregisteredTarget(proposalId)) {
+            return CancelAuthority.INVALIDATED;
+        }
+
+        // Threshold invalidation is deliberately restricted to Pending: once voting has started the
+        // proposer's power is snapshotted, and permissionless cancellation must never be usable to
+        // censor a live vote (anti-censorship property).
+        uint256 votesThreshold = proposalThreshold();
+        if (
+            currentState == ProposalState.Pending &&
+            votesThreshold > 0 &&
+            getVotes(proposer, clock() - 1) < votesThreshold
+        ) {
+            return CancelAuthority.THRESHOLD;
+        }
+        return CancelAuthority.NONE;
+    }
+
+    /// @dev True only for states in which OpenZeppelin's state machine still accepts a cancellation.
+    function _isCancelableState(ProposalState currentState) internal pure returns (bool) {
+        return
+            currentState == ProposalState.Pending ||
+            currentState == ProposalState.Active ||
+            currentState == ProposalState.Succeeded ||
+            currentState == ProposalState.Queued;
+    }
+
+    /// @dev True when any proposal target has been removed from the governed module registry.
+    function _hasDeregisteredTarget(uint256 proposalId) internal view returns (bool) {
+        (address[] memory targets,,,) = proposalDetails(proposalId);
+        uint256 length = targets.length;
+        for (uint256 i = 0; i < length; ++i) {
+            if (!moduleRegistry.isGovernedModule(targets[i])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// @notice Returns the current token weight required to create a proposal.
