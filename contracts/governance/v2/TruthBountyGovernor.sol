@@ -39,6 +39,22 @@ import {GovernanceForbiddenCalls} from "./libraries/GovernanceForbiddenCalls.sol
  *      If `governanceSnapshot` is set (non-zero), snapshot registration is mandatory: a
  *      failed call reverts the entire `_propose` call, preventing proposals from existing
  *      without a canonical snapshot entry (fail-closed).
+ *      ## Native Value Isolation (V2-SC-153)
+ *
+ *      TruthBounty V2 accounting is token-denominated, so the governor never holds, forwards,
+ *      or accounts for native currency:
+ *        - {receive} rejects every native transfer unconditionally, in every executor
+ *          configuration and identically for the implementation and any proxy.
+ *        - Both {execute} overloads reject an attached `msg.value`, so execution can never be
+ *          funded with native currency (which would otherwise be credited to the timelock and
+ *          could be disbursed through a proposal's `values`).
+ *        - Every proposal operation must carry a zero native value (`values[i] == 0`),
+ *          enforced when the proposal is created and again when it executes.
+ *
+ *      Native currency forced onto this contract or onto the timelock (for example through
+ *      SELFDESTRUCT) cannot be prevented at the EVM level, but it is economically inert: no
+ *      governance path reads `address(this).balance`, no path transfers it out, and it grants no
+ *      voting weight, no proposal threshold credit, and no claimable balance anywhere.
  */
 contract TruthBountyGovernor is
     Governor,
@@ -117,6 +133,13 @@ contract TruthBountyGovernor is
     error UnauthorizedGuardianModuleSetter(address caller);
     /// @dev Thrown when a cancel attempt satisfies none of the explicit {CancelAuthority} conditions.
     error ProposalCancellationUnauthorized(uint256 proposalId, address caller);
+    /// @notice Native value was attached to a token-denominated governor entry point (V2-SC-153).
+    /// @param value Rejected `msg.value`.
+    error UnexpectedNativeValue(uint256 value);
+    /// @notice A proposal operation carried a non-zero native value (V2-SC-153).
+    /// @param index Index of the offending operation.
+    /// @param value Rejected native value for that operation.
+    error NativeValueProposalNotAllowed(uint256 index, uint256 value);
 
     /// @param token ERC20Votes token used to calculate voting power.
     /// @param timelock Timelock that queues and executes proposals.
@@ -194,6 +217,49 @@ contract TruthBountyGovernor is
         emit GovernanceGuardianModuleUpdated(address(0), module);
     }
 
+    /**
+     * @notice Reject every native transfer to the governor (V2-SC-153).
+     * @dev Unconditional rejection: the governor is a token-denominated component, so the policy is
+     *      identical for every executor configuration and for the implementation as well as any
+     *      proxy that delegates to it. Forced native value already on the contract (SELFDESTRUCT) is
+     *      excluded from all accounting because no governor path reads `address(this).balance`.
+     */
+    receive() external payable virtual override {
+        revert UnexpectedNativeValue(msg.value);
+    }
+
+    /**
+     * @notice Execute a queued proposal by id, rejecting attached native value (V2-SC-153).
+     * @dev Identical to the inherited proposal-id {GovernorStorage-execute} except that `msg.value`
+     *      must be zero: execution may not be funded with native currency, so a caller can never
+     *      silently credit the timelock with balance that no TruthBounty invariant accounts for.
+     * @param proposalId Proposal to execute.
+     */
+    function execute(uint256 proposalId) public payable override {
+        _rejectNativeValue();
+        super.execute(proposalId);
+    }
+
+    /**
+     * @notice Execute a queued proposal by operations, rejecting attached native value (V2-SC-153).
+     * @dev See {execute(uint256)}. The rejection happens before any proposal state, timelock queue
+     *      entry, or target call is touched, so a rejected call cannot produce partial mutation.
+     * @param targets Proposal targets.
+     * @param values Native value per target; every entry must be zero (V2-SC-153).
+     * @param calldatas Encoded calls, one per target.
+     * @param descriptionHash keccak256 hash of the proposal description.
+     * @return proposalId The executed proposal id.
+     */
+    function execute(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        bytes32 descriptionHash
+    ) public payable override returns (uint256) {
+        _rejectNativeValue();
+        return super.execute(targets, values, calldatas, descriptionHash);
+    }
+
     /// @inheritdoc Governor
     function propose(
         address[] memory targets,
@@ -202,6 +268,7 @@ contract TruthBountyGovernor is
         string memory description
     ) public override returns (uint256) {
         _validateProposalOperations(targets, calldatas);
+        _validateProposalValues(values);
         return super.propose(targets, values, calldatas, description);
     }
 
@@ -214,6 +281,7 @@ contract TruthBountyGovernor is
         address proposer
     ) internal override(Governor, GovernorStorage) returns (uint256) {
         _validateProposalOperations(targets, calldatas);
+        _validateProposalValues(values);
         uint256 proposalId = super._propose(targets, values, calldatas, description, proposer);
 
         // Register the canonical snapshot timestamp for this proposal.
@@ -413,6 +481,9 @@ contract TruthBountyGovernor is
         bytes[] memory calldatas,
         bytes32 descriptionHash
     ) internal override(Governor, GovernorTimelockControl) {
+        // Defense in depth (V2-SC-153): proposals created before the native-value policy cannot be
+        // executed, so a queued `values` entry can never move forced native balance held elsewhere.
+        _validateProposalValues(values);
         super._executeOperations(proposalId, targets, values, calldatas, descriptionHash);
     }
 
@@ -436,6 +507,19 @@ contract TruthBountyGovernor is
                 revert TargetNotGovernedModule(targets[i]);
             }
             calldatas[i].enforceAllowed();
+        }
+    }
+
+    /// @dev Reverts when native value is attached to a token-denominated governor entry point (V2-SC-153).
+    function _rejectNativeValue() internal view {
+        if (msg.value != 0) revert UnexpectedNativeValue(msg.value);
+    }
+
+    /// @dev Every governance operation must be native-value free (V2-SC-153).
+    function _validateProposalValues(uint256[] memory values) internal pure {
+        uint256 length = values.length;
+        for (uint256 i = 0; i < length; ++i) {
+            if (values[i] != 0) revert NativeValueProposalNotAllowed(i, values[i]);
         }
     }
 }
