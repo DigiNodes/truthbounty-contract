@@ -41,6 +41,12 @@ jobs:
         run: npm ci
       - name: Repository Boundary and Lint Checks
         run: npm run lint
+      # V2-SC-152: the canonical EIP-712 vectors, the Solidity mirror, and both
+      # implementations must agree; drift fails here with an expected/found diff.
+      - name: EIP-712 canonical vector drift check
+        run: |
+          node scripts/check-eip712-vectors.mjs
+          node --test test/scripts/check-eip712-vectors.test.mjs
       - name: Solidity Lint
         run: npm run lint:sol --if-present
 
