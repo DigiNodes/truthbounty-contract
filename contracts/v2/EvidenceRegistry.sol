@@ -11,6 +11,7 @@ import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title EvidenceRegistry
@@ -151,7 +152,8 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         IClaimRegistry.Claim memory claim = claimRegistry.getClaim(claimId);
         if (!_acceptsEvidence(claim.status)) revert V2Errors.ClaimFinalized(claimId, uint8(claim.status));
 
-        uint64 now_ = uint64(block.timestamp);
+        // V2-SC-161: `committedAt` is uint64; never truncate the clock into storage.
+        uint64 now_ = V2SafeCast.timestamp64(V2SafeCast.FIELD_EVIDENCE_COMMITTED_AT);
         if (now_ > claim.verificationDeadline) {
             revert V2Errors.EvidenceWindowClosed(claimId, claim.verificationDeadline, now_);
         }

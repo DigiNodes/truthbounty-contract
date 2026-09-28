@@ -13,6 +13,7 @@ import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title StakeVault
@@ -153,7 +154,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         address account = msg.sender;
         _deposit(account, asset, amount);
         _lock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit StakeDeposited(account, claimId, amount, uint64(block.timestamp), 1);
+        emit StakeDeposited(account, claimId, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -162,7 +163,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _unlock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit StakeReleased(account, claimId, amount, uint64(block.timestamp), 1);
+        emit StakeReleased(account, claimId, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -171,7 +172,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _assertSettlementNotFinalized(claimId, 0);
         address asset = address(stakingToken);
         _slash(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount, reason);
-        emit StakeSlashed(account, claimId, amount, reason, uint64(block.timestamp), 1);
+        emit StakeSlashed(account, claimId, amount, reason, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -284,7 +285,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         if (rewardAmount > 0) {
             _creditReward(asset, account, rewardAmount);
         }
-        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount, uint64(block.timestamp), 1);
+        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -300,7 +301,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.REFUNDED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultRefundedInconclusive(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
+        emit VaultRefundedInconclusive(asset, account, claimId, round, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -317,7 +318,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.CARRIED_FORWARD;
 
         _moveLock(asset, account, claimId, fromRound, toRound, amount);
-        emit VaultCarriedForward(asset, account, claimId, fromRound, toRound, amount, uint64(block.timestamp), 1);
+        emit VaultCarriedForward(asset, account, claimId, fromRound, toRound, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -334,7 +335,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.ROLLED_OVER;
 
         _moveLock(asset, account, claimId, fromRound, toRound, amount);
-        emit VaultRolledOver(asset, account, claimId, fromRound, toRound, amount, uint64(block.timestamp), 1);
+        emit VaultRolledOver(asset, account, claimId, fromRound, toRound, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -350,7 +351,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.UNLOCKED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultFinalUnlocked(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
+        emit VaultFinalUnlocked(asset, account, claimId, round, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody

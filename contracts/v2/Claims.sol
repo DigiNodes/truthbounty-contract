@@ -13,6 +13,7 @@ import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {AntiGriefing} from "./libraries/AntiGriefing.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title Claims
@@ -137,7 +138,8 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         address claimant = msg.sender;
         AntiGriefing.requireOpenClaimCapacity(claimant, _openClaimCount[claimant], maxOpenClaimsPerCreator);
 
-        uint64 nowTs = uint64(block.timestamp);
+        // V2-SC-161: fail closed instead of truncating the stored `createdAt` and window start.
+        uint64 nowTs = V2SafeCast.timestamp64(V2SafeCast.FIELD_CLAIM_CREATED_AT);
         (uint64 newStart, uint256 newCount) = AntiGriefing.nextClaimWindow(
             claimant,
             nowTs,
@@ -206,7 +208,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
             IV2Types.ClaimState.VerificationOpen,
             IV2Types.ClaimState.Finalized,
             msg.sender,
-            uint64(block.timestamp),
+            V2SafeCast.timestamp64(V2SafeCast.FIELD_CLAIM_EVENT_TIMESTAMP),
             keccak256("CANCELLED")
         );
     }
@@ -239,7 +241,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
             IV2Types.ClaimState.VerificationOpen,
             IV2Types.ClaimState.Finalized,
             msg.sender,
-            uint64(block.timestamp),
+            V2SafeCast.timestamp64(V2SafeCast.FIELD_CLAIM_EVENT_TIMESTAMP),
             bytes32(uint256(uint8(terminalStatus)))
         );
     }
