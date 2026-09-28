@@ -35,21 +35,21 @@ contract EconomicParameterEnvelopesTest is Test {
         
         // Too low stake
         params.minStakeAmount = registry.MIN_SAFE_STAKE() - 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.InvalidStakeBounds.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.InvalidStakeBounds.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
 
         // Max stake below min
         params = _getValidParameters();
         params.maxStakeAmount = params.minStakeAmount - 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.InvalidStakeBounds.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.InvalidStakeBounds.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
 
         // Max stake too high
         params = _getValidParameters();
         params.maxStakeAmount = registry.MAX_SAFE_STAKE() + 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.InvalidStakeBounds.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.InvalidStakeBounds.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
     }
@@ -59,14 +59,14 @@ contract EconomicParameterEnvelopesTest is Test {
         
         // Too short duration
         params.challengeDuration = registry.MIN_SAFE_DURATION() - 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.NonZeroDurationRequired.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.NonZeroDurationRequired.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
 
         // Too long duration
         params = _getValidParameters();
         params.challengeDuration = registry.MAX_SAFE_DURATION() + 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.NonZeroDurationRequired.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.NonZeroDurationRequired.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
     }
@@ -91,13 +91,13 @@ contract EconomicParameterEnvelopesTest is Test {
         IParameterVersionRegistry.EconomicParameters memory params = _getValidParameters();
         
         params.minStakeAmount = registry.MIN_SAFE_STAKE() - 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.InvalidStakeBounds.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.InvalidStakeBounds.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
         
         params = _getValidParameters();
         params.maxStakeAmount = registry.MAX_SAFE_STAKE() + 1;
-        vm.expectRevert(abi.encodeWithSelector(ParameterVersionRegistry.InvalidStakeBounds.selector));
+        vm.expectRevert(abi.encodeWithSelector(IParameterVersionRegistry.InvalidStakeBounds.selector));
         vm.prank(proposer);
         registry.proposeNewVersion(params);
     }

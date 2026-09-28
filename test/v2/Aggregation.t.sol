@@ -82,8 +82,8 @@ contract AggregationTest is Test {
         config = new MockConfiguration();
         verification = new MockVerification();
 
-        registry.registerModule(keccak256("CONFIGURATION"), address(config));
-        registry.registerModule(keccak256("VERIFICATION"), address(verification));
+        registry.permitModule(keccak256("CONFIGURATION"), address(config));
+        registry.permitModule(keccak256("VERIFICATION"), address(verification));
 
         aggregation = new Aggregation(address(registry));
     }

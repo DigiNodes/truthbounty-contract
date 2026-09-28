@@ -62,7 +62,7 @@ contract TokenomicsFuzzTest is Test {
         // ratio invariant (mirrors TokenomicsEngine.t.sol) so treasury validation does
         // not trip on allocations that never touch the staking reserve.
         vm.startPrank(admin);
-        treasury.setMinStakingReserveRatio(0);
+        treasuryAccounting.setMinStakingReserveRatio(0);
         vm.stopPrank();
     }
 
@@ -299,24 +299,21 @@ contract TokenomicsFuzzTest is Test {
         uint256 protocol,
         uint256 emergency
     ) external {
-        // Only test configurations that do NOT sum to 10000
-        uint256 total = verifier + treasuryAmount + ecosystem + governance + protocol + emergency;
-        // Clamp to ensure we don't hit overflow, and only test invalid configs
         // Bound first, then only exercise configurations that do NOT sum to 10000.
         verifier = bound(verifier, 1, 9999);
-        treasury = bound(treasury, 1, 9999);
+        treasuryAmount = bound(treasuryAmount, 1, 9999);
         ecosystem = bound(ecosystem, 1, 9999);
         governance = bound(governance, 1, 9999);
         protocol = bound(protocol, 1, 9999);
         emergency = bound(emergency, 1, 9999);
 
-        uint256 total = verifier + treasury + ecosystem + governance + protocol + emergency;
+        uint256 total = verifier + treasuryAmount + ecosystem + governance + protocol + emergency;
         if (total == 10000) return;
 
         vm.startPrank(admin);
         ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: verifier,
-            treasuryReserveBPS: treasury,
+            treasuryReserveBPS: treasuryAmount,
             ecosystemIncentivesBPS: ecosystem,
             governanceIncentivesBPS: governance,
             protocolDevelopmentBPS: protocol,

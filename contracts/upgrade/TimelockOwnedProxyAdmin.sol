@@ -60,7 +60,8 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     error TimelockNotElapsed();
     error UpgradeAlreadyExecuted();
     error UpgradeAlreadyCancelled();
-    error UpgradeExpired();
+    error UpgradeWindowExpired();
+    error UpgradeNotYetExpired();
     error PredecessorNotCompleted(bytes32 predecessorId);
     error InvalidDelay(uint256 delay);
     error InvalidImplementation(string reason);
@@ -166,7 +167,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
             // Mark as expired and clean up
             delete pendingUpgrades[upgradeId];
             emit UpgradeExpired(upgradeId);
-            revert UpgradeExpired();
+            revert UpgradeWindowExpired();
         }
         
         // Validate predecessor if specified
@@ -212,7 +213,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     function cleanupExpiredUpgrade(bytes32 upgradeId) external {
         PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
         if (upgrade.proxy == address(0)) revert UpgradeNotScheduled();
-        if (block.timestamp <= upgrade.expireAt) revert UpgradeExpired(); // Only allow cleanup if actually expired
+        if (block.timestamp <= upgrade.expireAt) revert UpgradeNotYetExpired(); // Only allow cleanup if actually expired
         
         // Remove from storage
         delete pendingUpgrades[upgradeId];

@@ -93,14 +93,6 @@ interface IInsuranceFund {
     //                           ERRORS
     // =============================================================
 
-    error ClaimNotFound(uint256 claimId);
-
-    error InvalidClaimState(
-        uint256 claimId,
-        ClaimState currentState,
-        ClaimState expectedState
-    );
-
     error InvalidClaimStateTransition(
         uint256 claimId,
         ClaimState currentState,
@@ -119,13 +111,6 @@ interface IInsuranceFund {
         uint256 maximum
     );
 
-    error CoverageDisabled(CoverageCategory category);
-
-    error PayoutTimelockActive(
-        uint256 claimId,
-        uint256 availableAt
-    );
-
     error InsufficientReserve(
         uint256 requested,
         uint256 available
@@ -137,8 +122,6 @@ interface IInsuranceFund {
     );
 
     error InvalidBasisPoints(uint256 value);
-
-    error ZeroAddress();
 
     // =============================================================
     //                           EVENTS
