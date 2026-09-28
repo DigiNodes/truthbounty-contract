@@ -31,8 +31,16 @@ contract ParameterVersionRegistry is
     error InvalidFee();
     error InvalidBPS();
     error InvalidStakeAmount();
+    error InvalidStakeBounds();
+    error InvalidBountyBounds();
+    error InvalidWeightCap();
+    error InvalidParticipationThreshold();
+    error InvalidConfidenceThreshold();
     error InvalidReputationRange();
     error InvalidSlashBPS();
+    error InvalidRewardMultiplier();
+    error InvalidAppealMultiplier();
+    error NonZeroDurationRequired();
 
     // ============ Constants ============
     
@@ -156,37 +164,6 @@ contract ParameterVersionRegistry is
         versionCounter = 1;
         
         // Initialize genesis parameters with default values
-        EconomicParameters storage genesisParams = _versions[versionCounter].parameters;
-        
-        // Default tokenomics parameters
-        genesisParams.verifierRewardsBPS = 4000;
-        genesisParams.treasuryReserveBPS = 2000;
-        genesisParams.ecosystemIncentivesBPS = 1500;
-        genesisParams.governanceIncentivesBPS = 1000;
-        genesisParams.protocolDevelopmentBPS = 1000;
-        genesisParams.emergencyReserveBPS = 500;
-        genesisParams.emissionLimit = type(uint256).max;
-        genesisParams.rewardMultiplier = 1e18;
-        genesisParams.treasuryReserveTargetBPS = 2000;
-        
-        // Default fee parameters
-        genesisParams.claimSubmissionFee = 0.001e18;
-        genesisParams.verificationSubmissionFee = 0.001e18;
-        genesisParams.disputeInitiationFee = 0.002e18;
-        genesisParams.protocolReserveFeeBPS = 50; // 0.5%
-        
-        // Default staking/reputation parameters
-        genesisParams.minStakeAmount = 1e18;
-        genesisParams.maxStakeAmount = type(uint256).max;
-        genesisParams.minBountyAmount = 1e18;
-        genesisParams.maxBountyAmount = type(uint256).max;
-        genesisParams.minReputationScore = 0;
-        genesisParams.maxReputationScore = 10000;
-        genesisParams.defaultReputationScore = 5000;
-        genesisParams.slashPercentageBPS = 1000; // 10%
-        genesisParams.maxSlashPercentageBPS = 5000; // 50%
-        
-        // Set genesis version as active
         EconomicParameters memory genesisParams = EconomicParameters({
             verifierRewardsBPS: 4000,
             treasuryReserveBPS: 2000,
@@ -494,5 +471,4 @@ contract ParameterVersionRegistry is
     error InvalidClaimId();
     error TimelockTooShort(uint256 provided, uint256 minimum);
     error TimelockTooLong(uint256 provided, uint256 maximum);
-    error InvalidRewardMultiplier();
 }

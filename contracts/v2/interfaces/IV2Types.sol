@@ -104,4 +104,27 @@ interface IV2Types {
         /// @dev Current settlement state.
         SettlementStatus status;
     }
+
+    /// @notice Current verification quorum snapshot for a claim.
+    struct QuorumState {
+        uint256 claimId;
+        uint256 totalStake;
+        uint256 supportStake;
+        uint256 opposeStake;
+        uint256 verifierCount;
+        bool complete;
+        bool passed;
+        uint64 openedAt;
+        uint64 closesAt;
+    }
+
+    /// @notice Enforced verification quorum parameters.
+    struct QuorumParameters {
+        uint256 minStakeRequired;
+        uint256 totalStakeThreshold;
+        uint256 requiredSupportBps;
+        uint256 minVerifierCount;
+        uint64 verificationWindow;
+        uint64 challengeWindow;
+    }
 }

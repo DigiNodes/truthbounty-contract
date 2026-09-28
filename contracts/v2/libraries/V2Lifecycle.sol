@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IV2Quorum} from "../interfaces/IV2Quorum.sol";
 import {IV2Types} from "../interfaces/IV2Types.sol";
 import {V2Errors} from "./V2Errors.sol";
 import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
@@ -204,11 +203,6 @@ library V2Lifecycle {
         }
         if (params.roundingPolicy > 2) revert V2Errors.InvalidRoundingPolicy(params.roundingPolicy);
 
-        uint256 totalAllocationBps = uint256(params.bountyAllocationBps)
-            + uint256(params.quorumMinBps)
-            + uint256(params.quorumMaxBps)
-            + uint256(params.stakeSplitLimitBps)
-            + uint256(params.lastBlockVotingWindowBps);
         if (params.quorumMinBps > MAX_BPS || params.quorumMaxBps > MAX_BPS) {
             revert InvalidQuorumBounds(params.quorumMinBps, params.quorumMaxBps);
         }

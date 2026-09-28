@@ -98,8 +98,17 @@ contract V2SC098ReentrantRegistry is IModuleRegistry {
         return interfaceId == type(IModuleRegistry).interfaceId || interfaceId == type(IV2Module).interfaceId;
     }
 
-    function registerModule(bytes32, address) external pure override { }
+    function registerModule(ModuleRegistration calldata) external pure override returns (bytes32) { return bytes32(0); }
+    function registerModules(ModuleRegistration[] calldata) external pure override returns (bytes32[] memory) { return new bytes32[](0); }
+    function activateModule(bytes32) external pure override {}
+    function activateModules(bytes32[] calldata) external pure override {}
+    function proposeModuleReplacement(ModuleRegistration calldata) external pure override returns (bytes32) { return bytes32(0); }
+    function cancelModuleReplacement(bytes32) external pure override {}
+    function activateModuleReplacement(bytes32) external pure override {}
+    function deprecateModule(bytes32) external pure override {}
     function removeModule(bytes32) external pure override { }
+    function forbidModule(address) external pure override {}
+    function unforbidModule(address) external pure override {}
 
     function module(bytes32 moduleId) external view override returns (address implementation, uint16 major, uint16 minor) {
         if (moduleId == SETTLEMENT) return (address(this), 2, 0);
@@ -113,6 +122,25 @@ contract V2SC098ReentrantRegistry is IModuleRegistry {
         );
         return !callbackSucceeded;
     }
+    function getModule(bytes32) external pure override returns (ModuleInfo memory info) { return info; }
+    function moduleStatus(bytes32) external pure override returns (ModuleStatus) { return ModuleStatus.NONE; }
+    function isActive(bytes32) external pure override returns (bool) { return false; }
+    function isDeprecated(bytes32) external pure override returns (bool) { return false; }
+    function isForbidden(address) external pure override returns (bool) { return false; }
+    function versionIdOf(ModuleRegistration memory) external pure override returns (bytes32) { return bytes32(0); }
+    function versionOf(bytes32) external pure override returns (bytes32, uint16, uint16) { return (bytes32(0), 0, 0); }
+    function interfaceIdOf(bytes32) external pure override returns (bytes4) { return bytes4(0); }
+    function getRegisteredKeys() external pure override returns (bytes32[] memory) { return new bytes32[](0); }
+    function moduleCount() external pure override returns (uint256) { return 0; }
+    function canonicalModuleIds() external pure override returns (bytes32[] memory) { return new bytes32[](0); }
+    function canonicalInterfaceOf(bytes32) external pure override returns (bytes4) { return bytes4(0); }
+    function canonicalDependencies() external pure override returns (Dependency[] memory) { return new Dependency[](0); }
+    function checkDependencies(bytes32[] calldata) external pure override returns (Dependency[] memory) { return new Dependency[](0); }
+    function preflightRegistration(ModuleRegistration calldata) external pure override returns (PreflightResult memory result) { return result; }
+    function preflightActivation(bytes32) external pure override returns (PreflightResult memory result) { return result; }
+    function validateCanonicalSuite() external pure override returns (PreflightResult memory result) { return result; }
+    function canonicalModules() external pure override returns (ModuleInfo[] memory) { return new ModuleInfo[](0); }
+    function replacementReadyAt(bytes32) external pure override returns (uint256) { return 0; }
 }
 
 /// @dev A reward recipient retries its own entitlement from the ERC-20 transfer callback.

@@ -42,8 +42,9 @@ contract IntegrationFuzzTest is Test {
         staking.setSlashingContract(slashingContract);
 
         // Advance past the resolver role timelock and apply the grant
+        bytes32 opId = staking.scheduleResolverRoleGrant(slashingContract);
         vm.warp(block.timestamp + staking.RESOLVER_ROLE_CHANGE_DELAY());
-        staking.executeResolverRoleGrant(slashingContract);
+        staking.executeResolverRoleGrant(opId, slashingContract);
         
         // Setup verifiers with tokens
         stakingToken.mint(verifier1, 100000e18);

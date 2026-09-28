@@ -97,7 +97,7 @@ contract ThreatModelControls is Test {
         vm.expectRevert(
             abi.encodeWithSelector(ResolverRoleTimelock.ResolverRoleChangeNotReady.selector, readyAt)
         );
-        token.executeResolverRoleGrant(settler);
+        token.executeResolverRoleGrant(opId, settler);
     }
 
     /// @notice After the delay, the grant succeeds.

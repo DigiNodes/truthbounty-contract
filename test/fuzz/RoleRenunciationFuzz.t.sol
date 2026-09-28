@@ -11,6 +11,7 @@ import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModu
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
 
@@ -36,7 +37,7 @@ contract RoleRenunciationFuzz is Test {
         address[] memory empty = new address[](0);
         timelock = new TimelockController(2 days, empty, empty, deployer);
         governor = new TruthBountyGovernor(
-            IVotes(address(govToken)), timelock, registry, guardian,
+            IVotes(address(govToken)), timelock, registry, IGovernanceSnapshot(address(0)), guardian,
             uint48(1 days), uint32(3 days), 100_000 ether, 4
         );
         guardianContract = new GovernanceGuardian(deployer, guardian, ITruthBountyGovernor(address(governor)));

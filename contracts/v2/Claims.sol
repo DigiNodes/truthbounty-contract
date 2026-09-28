@@ -256,7 +256,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         if (c.id == 0) revert V2Errors.ClaimNotFound(claimId);
         if (c.status == IV2Types.ClaimStatus.OPEN) return IV2Types.ClaimState.VerificationOpen;
         if (c.status == IV2Types.ClaimStatus.VERIFIED) return IV2Types.ClaimState.AwaitingSettlement;
-        if (c.status == IV2Types.ClaimStatus.DISPUTLED) return IV2Types.ClaimState.Disputed;
+        if (c.status == IV2Types.ClaimStatus.DISPUTED) return IV2Types.ClaimState.Disputed;
         return IV2Types.ClaimState.Finalized;
     }
 

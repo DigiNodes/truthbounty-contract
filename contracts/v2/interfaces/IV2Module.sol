@@ -10,9 +10,4 @@ interface IV2Module is IERC165 {
     /// @dev Declared `view` (not `pure`) so implementations can read version-bearing immutables;
     ///      the function selector and IV2Module interface ID are unaffected by mutability.
     function protocolVersion() external view returns (uint16 major, uint16 minor);
-    /// @notice Returns the immutable ABI version implemented by this module.
-    /// @dev The pair is a compatibility tuple: consumers must reject unsupported major versions and may permit compatible minor versions according to deployment policy.
-    /// @return major ABI major version.
-    /// @return minor ABI minor version.
-    function protocolVersion() external pure returns (uint16 major, uint16 minor);
 }

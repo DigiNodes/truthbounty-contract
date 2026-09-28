@@ -191,7 +191,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         });
         _claimEvidenceIds[claimId].push(evidenceId);
 
-        emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest, uint64(block.timestamp), 1);
+        emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest);
         emit EvidenceSubmittedV1(claimId, evidenceId, msg.sender, contentDigest, now_, EVENT_SCHEMA_VERSION);
         emit EvidenceCommitted(
             claimId,
@@ -216,7 +216,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         IV2Types.EvidenceStatus previous = evidence.status;
         evidence.status = status;
-        emit EvidenceStatusChanged(evidenceId, previous, status, msg.sender, uint64(block.timestamp), 1);
+        emit EvidenceStatusChanged(evidenceId, previous, status, msg.sender);
     }
 
     /// @inheritdoc IEvidence

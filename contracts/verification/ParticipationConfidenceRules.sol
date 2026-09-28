@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-prigma solidity ^0.8.28;
+pragma solidity ^0.8.28;
 
 import {ParticipationThresholdTypes} from "./ParticipationThresholdTypes.sol";
 
@@ -43,7 +43,7 @@ library ParticipationConfidenceRules {
      * @param weights Aggregated true/false weights and verifier count.
      * @param config Frozen threshold configuration for the round.
      * @param roundKind FIRST or APPEAL round selector.
-     * @return ThresholdEvaluation with evaluated thresholds and outcome.
+     * @return result ThresholdEvaluation with evaluated thresholds and outcome.
      */
     function evaluate(
         ParticipationThresholdTypes.WeightTotals memory weights,
@@ -132,16 +132,17 @@ library ParticipationConfidenceRules {
         return (minVerifierCount, minTotalWeight, minConfidenceBps);
     }
 
-    //* @dev Ceiling multiply keeps appeal thresholds strictly >= scaled base minimums.
+    /**
+     * @dev Ceiling multiply keeps appeal thresholds strictly >= scaled base minimums.
      * @param baseMinimum The base minimum value to scale.
      * @param multiplierBps The appeal multiplier in basis points.
      * @return The scaled minimum with ceiling rounding.
      */
     function _scaleMinimum(uint256 baseMinimum, uint256 multiplierBps) private pure returns (uint256) {
         if (baseMinimum == 0 || multiplierBps <= ParticipationThresholdTypes.BPS_DENOMINATOR) {
-            return (baseMinimum * multiplerBps) / ParticipationThresholdTypes.BPS_DENOMINATOR;
+            return (baseMinimum * multiplierBps) / ParticipationThresholdTypes.BPS_DENOMINATOR;
         }
-        return (baseMinimu * multiplierBps + ParticipationThresholdTypes.BPS_DENOMINATOR - 1)
+        return (baseMinimum * multiplierBps + ParticipationThresholdTypes.BPS_DENOMINATOR - 1)
             / ParticipationThresholdTypes.BPS_DENOMINATOR;
     }
 

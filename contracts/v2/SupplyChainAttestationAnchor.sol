@@ -21,11 +21,11 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     /// @notice The immutable attestation fields for this deployment.
     /// @dev Published individually as immutables (structs are not value types);
     ///      `supplyChainAttestation()` reassembles the authoritative record.
-    string private immutable _protocol;
-    string private immutable _releaseVersion;
-    string private immutable _sourceCommit;
+    string private _protocol;
+    string private _releaseVersion;
+    string private _sourceCommit;
 
-    ISupplyChainAttestations.CompilerSettings private immutable _compiler;
+    ISupplyChainAttestations.CompilerSettings private _compiler;
 
     /// @notice Chain ID this anchor is bound to, fixed at deployment.
     /// @dev Snapshot of block.chainid at construction; deployment manifests
@@ -38,23 +38,23 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
 
     /// @notice Dependencies array stored as packed immutables.
     /// @dev Each dependency is encoded as: name|version|kind|rev|integrity
-    string[] private immutable _dependencyData;
+    string[] private _dependencyData;
 
     /// @notice Artifacts array stored as packed immutables.
     /// @dev Each artifact is encoded as: path|sha256|size
-    string[] private immutable _artifactData;
+    string[] private _artifactData;
 
-    ISupplyChainAttestations.WorkflowIdentity private immutable _workflowIdentity;
+    ISupplyChainAttestations.WorkflowIdentity private _workflowIdentity;
 
     /// @notice Subjects array stored as packed immutables.
     /// @dev Each subject is encoded as: name|digest
-    string[] private immutable _subjectData;
+    string[] private _subjectData;
 
     /// @notice Materials array stored as packed immutables.
     /// @dev Each material is encoded as: uri|digest
-    string[] private immutable _materialData;
+    string[] private _materialData;
 
-    bytes32 private immutable _checksum;
+    bytes32 private _checksum;
 
     /// @param attestation_ The validated attestation record to publish.
     /// @param deployer_    Deployment provenance address; must not be zero.
@@ -328,7 +328,10 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         require(b.length == 64, "invalid hex length");
         bytes32 result;
         for (uint256 i = 0; i < 32; i++) {
-            result = result | (bytes32(parseHexNibble(b[i * 2])) << (8 * (31 - i)) * 2) | (bytes32(parseHexNibble(b[i * 2 + 1])) << (8 * (31 - i)) * 2 + 4);
+            uint8 hi = parseHexNibble(uint8(b[i * 2]));
+            uint8 lo = parseHexNibble(uint8(b[i * 2 + 1]));
+            uint256 byteValue = (uint256(hi) << 4) | uint256(lo);
+            result = bytes32(uint256(result) | (byteValue << (8 * (31 - i))));
         }
         return result;
     }
@@ -377,8 +380,9 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         bytes memory hexBytes = new bytes(64);
         bytes memory alphabet = "0123456789abcdef";
         for (uint256 i = 0; i < 32; i++) {
-            hexBytes[i * 2] = alphabet[uint8(data >> (8 * (31 - i))) >> 4];
-            hexBytes[i * 2 + 1] = alphabet[uint8(data >> (8 * (31 - i))) & 0x0f];
+            uint256 chunk = uint256(data >> (8 * (31 - i)));
+            hexBytes[i * 2] = alphabet[(chunk >> 4) & 0x0f];
+            hexBytes[i * 2 + 1] = alphabet[chunk & 0x0f];
         }
         return string(hexBytes);
     }

@@ -55,6 +55,18 @@ contract MockVerification is IVerification {
         return (ids, end);
     }
 
+    function getQuorumState(uint256) external pure returns (IV2Types.QuorumState memory state) {
+        return state;
+    }
+
+    function isQuorumComplete(uint256) external pure returns (bool) {
+        return false;
+    }
+
+    function getQuorumParameters() external pure returns (IV2Types.QuorumParameters memory params) {
+        return params;
+    }
+
     function addVerification(bool supportsClaim, uint256 stake) external {
         verifications.push(IV2Types.Verification({
             id: verifications.length,

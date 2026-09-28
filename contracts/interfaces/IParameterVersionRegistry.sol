@@ -8,12 +8,6 @@ interface IParameterVersionRegistry {
     error InvalidAllocationBIS();
     error NonZeroDurationRequired();
     error UnsupportedAsset();
-    error InvalidBountyBounds();
-    error InvalidStakeBounds();
-    error InvalidWeightCap();
-    error InvalidParticipationThreshold();
-    error InvalidConfidenceThreshold();
-    error InvalidAppealMultiplier();
     error InvalidReputationBounds();
     error InvalidNumericRange();
     error VersionImmutable();
