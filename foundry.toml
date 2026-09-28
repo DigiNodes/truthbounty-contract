@@ -27,7 +27,6 @@ remappings = [
     "contracts-vrm/=contracts-vrm/",
 ]
 
-fs_permissions = [{ access = "read", path = "./deployments" }]
 
 [profile.default.model_checker]
 contracts = {

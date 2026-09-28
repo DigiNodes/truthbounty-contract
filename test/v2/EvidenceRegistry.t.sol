@@ -62,7 +62,7 @@ contract EvidenceRegistryTest is Test {
         assertEq(e.claimId, CLAIM_A);
         assertEq(e.submitter, contributor);
         assertEq(e.contentHash, CONTENT_A);
-        assertEq(e.status, IV2Types.EvidenceStatus.SUBMITTED);
+        assertEq(uint256(e.status), uint256(IV2Types.EvidenceStatus.SUBMITTED));
     }
 
     function test_submitEvidence_emitsCanonicalEvents() public {
@@ -73,9 +73,9 @@ contract EvidenceRegistryTest is Test {
         vm.expectEmit(true, true, true, true);
         emit IEvidence.EvidenceSubmitted(expectedId, CLAIM_A, contributor, CONTENT_A);
         vm.expectEmit(true, true, true, true);
-        emit EvidenceSubmittedV1(CLAIM_A, expectedId, contributor, CONTENT_A, uint64(block.timestamp), 1);
+        emit ITruthBountyEvents.EvidenceSubmittedV1(CLAIM_A, expectedId, contributor, CONTENT_A, uint64(block.timestamp), 1);
         vm.expectEmit(true, true, true, false);
-        emit EvidenceCommitted(CLAIM_A, expectedId, contributor, CONTENT_A, metaDigest, 0, uint64(block.timestamp), 1);
+        emit EvidenceRegistry.EvidenceCommitted(CLAIM_A, expectedId, contributor, CONTENT_A, metaDigest, 0, uint64(block.timestamp), 1);
         registry.submitEvidence(CLAIM_A, CONTENT_A, META_A);
     }
 
@@ -126,10 +126,10 @@ contract EvidenceRegistryTest is Test {
         uint256 eid = registry.commitEvidence(CLAIM_A, CONTENT_A, md, 0);
 
         registry.setEvidenceStatus(eid, IV2Types.EvidenceStatus.ACCEPTED);
-        assertEq(registry.getEvidence(eid).status, IV2Types.EvidenceStatus.ACCEPTED);
+        assertEq(uint256(registry.getEvidence(eid).status), uint256(IV2Types.EvidenceStatus.ACCEPTED));
 
         registry.setEvidenceStatus(eid, IV2Types.EvidenceStatus.ACCEPTED);
-        assertEq(registry.getEvidence(eid).status, IV2Types.EvidenceStatus.ACCEPTED);
+        assertEq(uint256(registry.getEvidence(eid).status), uint256(IV2Types.EvidenceStatus.ACCEPTED));
     }
 
     function test_setEvidenceStatus_emitsEvent() public {

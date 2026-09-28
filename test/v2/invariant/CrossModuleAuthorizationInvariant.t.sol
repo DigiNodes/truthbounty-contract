@@ -7,6 +7,7 @@ import "../../../contracts/v2/StakeVault.sol";
 import "../../../contracts/v2/FinalRewardAllocator.sol";
 import "../../../contracts/v2/interfaces/IFinalRewardAllocator.sol";
 import "../../../contracts/v2/interfaces/IModuleRegistry.sol";
+import {IModuleLookupStub} from "../ModuleLookupStub.sol";
 import "../../../contracts/v2/interfaces/IV2Module.sol";
 import "../../../contracts/v2/interfaces/IV2Types.sol";
 import "../../../contracts/v2/libraries/V2Errors.sol";
@@ -24,7 +25,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      *supposed* to return zero for unknown ids, so this is a conformance
 ///      stress case rather than a reachable production state — but it is exactly
 ///      the case that tells the two trust models apart.
-contract StaleEntryRegistry is ERC165, IModuleRegistry {
+contract StaleEntryRegistry is ERC165, IModuleLookupStub {
     mapping(bytes32 => address) private _impl;
     mapping(bytes32 => bool) private _live;
 
@@ -117,9 +118,9 @@ contract CrossModuleAuthorizationTest is Test {
         adminRole = vault.ADMIN_ROLE();
         defaultAdminRole = vault.DEFAULT_ADMIN_ROLE();
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlementModule);
-        registry.registerModule(vault.MODULE_SLASHING(), slashingModule);
-        registry.registerModule(vault.MODULE_VERIFICATION(), verificationModule);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlementModule);
+        registry.permitModule(vault.MODULE_SLASHING(), slashingModule);
+        registry.permitModule(vault.MODULE_VERIFICATION(), verificationModule);
 
         vm.prank(governance);
         vault.setLockMutator(explicitMutator, true);
@@ -319,7 +320,7 @@ contract CrossModuleAuthorizationTest is Test {
     ///      settlement authority.
     function test_rotatingSettlementModuleRevokesThePreviousOne() public {
         address replacement = makeAddr("newSettlement");
-        registry.registerModule(vault.MODULE_SETTLEMENT(), replacement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), replacement);
 
         vm.prank(settlementModule);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, settlementModule));
@@ -370,7 +371,7 @@ contract CrossModuleAuthorizationTest is Test {
         MockModuleRegistry otherRegistry = new MockModuleRegistry();
         StakeVault otherVault = new StakeVault(address(otherRegistry), address(token), governance);
         address otherSettlement = makeAddr("otherSettlement");
-        otherRegistry.registerModule(otherVault.MODULE_SETTLEMENT(), otherSettlement);
+        otherRegistry.permitModule(otherVault.MODULE_SETTLEMENT(), otherSettlement);
 
         vm.prank(otherSettlement);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, otherSettlement));
@@ -497,7 +498,7 @@ contract UnauthorizedCallerHandler is Test {
         allocator = new FinalRewardAllocator(address(registry), 5);
 
         // A real settlement module exists but is never used by the attackers.
-        registry.registerModule(vault.MODULE_SETTLEMENT(), makeAddr("realSettlement"));
+        registry.permitModule(vault.MODULE_SETTLEMENT(), makeAddr("realSettlement"));
 
         attackers[0] = makeAddr("attacker0");
         attackers[1] = makeAddr("attacker1");

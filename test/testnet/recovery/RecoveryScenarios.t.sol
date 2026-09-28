@@ -17,6 +17,7 @@ import "../../../contracts/TruthBountyWeighted.sol";
 import "../../../contracts/VerificationAggregator.sol";
 import "../../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../../contracts/StakeVault.sol";
 import "../../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../../contracts/interfaces/ITruthBountyEvents.sol";
 import "../../../contracts/interfaces/IParameterVersionRegistry.sol";
@@ -114,12 +115,18 @@ contract RecoveryScenarios is Test {
         );
         appealRound = new AppealVerificationRound(
             address(token), address(claimRegistry), address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController), deployer
         );
@@ -282,7 +289,7 @@ contract RecoveryScenarios is Test {
     function test_recovery_scenario_6_governance_rejection() public {
         vm.startPrank(deployer);
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT, 25
+            GovernanceHooks.ParameterType.SLASH_PERCENT, 25
         );
         governanceController.cancelParameterUpdate(proposalId);
         assertEq(governanceController.isProposalPending(proposalId), false);
@@ -297,13 +304,13 @@ contract RecoveryScenarios is Test {
     function test_recovery_scenario_7_timelock_expiration() public {
         vm.startPrank(deployer);
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.MIN_STAKE_AMOUNT, 200 * 10**18
+            GovernanceHooks.ParameterType.MIN_STAKE_AMOUNT, 200 * 10**18
         );
         vm.expectRevert();
         governanceController.executeParameterUpdate(proposalId);
         vm.warp(block.timestamp + 3600 + 1);
         governanceController.executeParameterUpdate(proposalId);
-        assertEq(governanceController.getParameterValue(GovernanceController.ParameterType.MIN_STAKE_AMOUNT), 200 * 10**18);
+        assertEq(governanceController.getParameterValue(GovernanceHooks.ParameterType.MIN_STAKE_AMOUNT), 200 * 10**18);
         vm.stopPrank();
     }
 
@@ -334,15 +341,27 @@ contract RecoveryScenarios is Test {
     function test_recovery_scenario_9_version_registry_state() public {
         vm.startPrank(deployer);
         assertEq(parameterVersionRegistry.currentActiveVersionId(), 1);
-        ParameterVersionRegistry.EconomicParameters memory params = ParameterVersionRegistry.EconomicParameters({
-            verifierRewardsBPS: 5000, treasuryReserveBPS: 2000, ecosystemIncentivesBPS: 1000,
-            governanceIncentivesBPS: 1000, protocolDevelopmentBPS: 500, emergencyReserveBPS: 500,
-            emissionLimit: type(uint256).max, rewardMultiplier: 1e18, treasuryReserveTargetBPS: 2000,
-            claimSubmissionFee: 0.001e18, verificationSubmissionFee: 0.001e18,
-            disputeInitiationFee: 0.002e18, protocolReserveFeeBPS: 50, minStakeAmount: 1e18,
-            minReputationScore: 0, maxReputationScore: 10000, defaultReputationScore: 5000,
-            slashPercentageBPS: 1000, maxSlashPercentageBPS: 5000
-        });
+        // Start from the validated active set; override only the fields this scenario exercises.
+        IParameterVersionRegistry.EconomicParameters memory params = parameterVersionRegistry.getCurrentParameters();
+        params.verifierRewardsBPS = 5000;
+        params.treasuryReserveBPS = 2000;
+        params.ecosystemIncentivesBPS = 1000;
+        params.governanceIncentivesBPS = 1000;
+        params.protocolDevelopmentBPS = 500;
+        params.emergencyReserveBPS = 500;
+        params.emissionLimit = type(uint256).max;
+        params.rewardMultiplier = 1e18;
+        params.treasuryReserveTargetBPS = 2000;
+        params.claimSubmissionFee = 0.001e18;
+        params.verificationSubmissionFee = 0.001e18;
+        params.disputeInitiationFee = 0.002e18;
+        params.protocolReserveFeeBPS = 50;
+        params.minStakeAmount = 1e18;
+        params.minReputationScore = 0;
+        params.maxReputationScore = 10000;
+        params.defaultReputationScore = 5000;
+        params.slashPercentageBPS = 1000;
+        params.maxSlashPercentageBPS = 5000;
         uint256 versionId = parameterVersionRegistry.proposeNewVersion(params);
         vm.warp(block.timestamp + 2 days + 1);
         parameterVersionRegistry.activateVersion(versionId);

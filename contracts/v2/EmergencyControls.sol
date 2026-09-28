@@ -143,7 +143,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         pausedAt[scope] = block.timestamp;
         pauseCount[scope]++;
 
-        emit EmergencyPaused(scope, msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+        emit EmergencyPaused(scope, msg.sender);
     }
 
     /**
@@ -161,7 +161,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _pausedScopes[scope] = false;
         pausedAt[scope] = 0;
 
-        emit EmergencyUnpaused(scope, msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+        emit EmergencyUnpaused(scope, msg.sender);
     }
 
     /**

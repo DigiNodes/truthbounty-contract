@@ -62,9 +62,9 @@ contract SlashingBoundHandler is Test {
         token = new MockERC20("Stake", "STK");
         vault = new StakeVault(address(registry), address(token), address(this));
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.registerModule(vault.MODULE_SLASHING(), slashing);
-        registry.registerModule(vault.MODULE_VERIFICATION(), verification);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_VERIFICATION(), verification);
 
         actors[0] = makeAddr("actorA");
         actors[1] = makeAddr("actorB");
