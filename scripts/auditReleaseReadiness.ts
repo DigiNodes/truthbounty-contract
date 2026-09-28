@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,20 @@ export async function auditReleaseReadiness(): Promise<AuditResult> {
 
     // 2. Verify TruthBountyWeighted is flagged non-canonical
     const canonicalCheck = true;
+
+    // 3. V2-SC-159: no upgradeable module may ship with a namespace collision, reserved-slot
+    //    reuse, unsafe layout transition, or a stale slot/namespace manifest.
+    const namespaceCheck = spawnSync(
+        process.execPath,
+        [path.join(__dirname, "check-storage-namespaces.mjs")],
+        { cwd: path.join(__dirname, ".."), encoding: "utf-8" }
+    );
+    if (namespaceCheck.status !== 0) {
+        const detail = `${namespaceCheck.stdout ?? ""}${namespaceCheck.stderr ?? ""}`.trim();
+        issues.push(`Storage namespace collision check failed (V2-SC-159): ${detail || namespaceCheck.error?.message || "unknown error"}`);
+    } else {
+        console.log("✅ Storage namespace and reserved-slot isolation verified (V2-SC-159).");
+    }
     console.log("✅ Classification of deployment artifacts:");
     for (const [contract, status] of Object.entries(classification)) {
         console.log(`   - ${contract}: ${status}`);
