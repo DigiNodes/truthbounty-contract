@@ -53,6 +53,14 @@ jobs:
         run: node scripts/check-native-value-policy.mjs
       - name: Native Value Policy self-tests (V2-SC-153)
         run: node --test test/scripts/check-native-value-policy.test.mjs
+      # V2-SC-160: every packed encoding must match the reviewed policy (no ambiguous packed
+      # commitment may return), and the cross-tool digest vectors must reproduce with ethers.
+      - name: Packed-encoding commitment policy (V2-SC-160)
+        run: node scripts/check-encode-packed.mjs
+      - name: Packed-encoding commitment vectors (V2-SC-160)
+        run: node scripts/check-encode-packed-vectors.mjs
+      - name: Packed-encoding policy self-tests (V2-SC-160)
+        run: node --test test/scripts/check-encode-packed.test.mjs
 
   test:
     name: Test
