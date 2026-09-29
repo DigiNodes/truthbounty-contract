@@ -11,6 +11,8 @@ import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {PauseMatrix} from "./libraries/PauseMatrix.sol";
+import {V2WiredPauseGuard} from "./libraries/V2PauseGuard.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title EvidenceRegistry
@@ -21,13 +23,13 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      finalized claims, paused state, invalid status transitions, and failed
 ///      external registry lookups.
 ///
-///      Event completeness (V2-SC-132): every authoritative read cell —
-///      commitment fields, per-claim ordering, contributor nonce, dedupe set,
-///      lifecycle status, and the pause gate — is closed by at least one
-///      canonical event, so replaying the ordered log stream reconstructs the
-///      full read state. The authoritative enumeration is published on-chain by
-///      `EventCompletenessAnchor`.
-contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents {
+///      Pause matrix (V2-SC-162, `PauseMatrix` v1): evidence submission and
+///      adjudication fail closed under the scoped `SCOPE_EVIDENCE` pause of the
+///      wired V2 pause authority *and* under this module's local `Pausable`
+///      switch (nested pause: either one blocks, lifting one never reopens the
+///      other). `pause()` is a protective RISK_REDUCING action; `unpause()` only
+///      lifts the local switch and can never override the scoped authority.
+contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents, V2WiredPauseGuard {
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -159,6 +161,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         whenNotPaused
         returns (uint256 evidenceId)
     {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
         if (contentDigest == bytes32(0) || metadataDigest == bytes32(0)) revert V2Errors.ZeroDigest();
         if (!claimRegistry.claimExists(claimId)) revert V2Errors.InvalidClaim(claimId);
 
@@ -223,6 +226,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         override
         onlyRole(EVIDENCE_ADMIN_ROLE)
     {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
         EvidenceCommitment storage evidence = _evidenceById[evidenceId];
         if (evidence.status == IV2Types.EvidenceStatus.NONE) revert V2Errors.EvidenceNotFound(evidenceId);
 
@@ -364,11 +368,18 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     }
 
     /// @notice Resumes evidence submission after the pauser restores the registry.
-    /// @dev Unpausing does not bypass claim deadlines, nonce sequencing, or duplicate checks.
-    ///      Emits `EmergencyPauseRecoveredV1` for the same reason as `pause`.
+    /// @dev Lifts only the module-local switch; a scoped `SCOPE_EVIDENCE` pause on the wired
+    ///      V2 pause authority keeps submission fail-closed (V2-SC-162).
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
         emit EmergencyPauseRecoveredV1(msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+    }
+
+    /// @notice Wires the V2 pause authority exactly once (V2-SC-162).
+    /// @dev NEUTRAL: wiring only tightens control and can never be replaced or removed.
+    /// @param authority `IEmergencyControls` implementation (e.g. `EmergencyGatekeeper`).
+    function setPauseAuthority(address authority) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _wirePauseAuthority(authority);
     }
 
     function _loadClaimOrRevert(uint256 claimId) private view returns (IClaimRegistry.Claim memory claim) {
