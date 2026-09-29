@@ -856,7 +856,7 @@ contract V2_ABI_Tests is Test {
     /// @notice SC-ABI-002: StakeDeposited event is emitted on depositStake.
     function test_depositStake_emitsStakeDeposited() public {
         vm.expectEmit(true, true, false, true, address(vault));
-        emit IStakeCustody.StakeDeposited(verifier, CLAIM_A, STAKE);
+        emit IStakeCustody.StakeDeposited(verifier, CLAIM_A, STAKE, uint64(block.timestamp), 1);
 
         vm.prank(verifier);
         vault.depositStake(CLAIM_A, STAKE);
@@ -867,7 +867,7 @@ contract V2_ABI_Tests is Test {
         vm.prank(verifier); vault.depositStake(CLAIM_A, STAKE);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit IStakeCustody.VaultSettledConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+        emit IStakeCustody.VaultSettledConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0, uint64(block.timestamp), 1);
 
         vm.prank(settlement);
         vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
@@ -878,7 +878,7 @@ contract V2_ABI_Tests is Test {
         vm.prank(verifier); vault.depositStake(CLAIM_A, STAKE);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit IStakeCustody.VaultRefundedInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+        emit IStakeCustody.VaultRefundedInconclusive(address(token), verifier, CLAIM_A, 0, STAKE, uint64(block.timestamp), 1);
 
         vm.prank(settlement);
         vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);

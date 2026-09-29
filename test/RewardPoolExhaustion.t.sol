@@ -2,12 +2,13 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "../contracts/reward/RewardEngine.sol";
-import "../contracts/reward/RewardDeferralQueue.sol";
-import "../contracts/mocks/MockRewardEngineHarness.sol";
-import "../contracts/mocks/MockRewardToken.sol";
-import "../contracts/mocks/MockRewardReputationOracle.sol";
-import "../contracts/mocks/FeeOnTransferERC20.sol";
+import {RewardEngine} from "../contracts/reward/RewardEngine.sol";
+import {RewardDeferralQueue} from "../contracts/reward/RewardDeferralQueue.sol";
+import {IRewardDeferralQueue} from "../contracts/reward/IRewardDeferralQueue.sol";
+import {MockRewardEngineHarness} from "../contracts/mocks/MockRewardEngineHarness.sol";
+import {MockRewardToken} from "../contracts/mocks/MockRewardToken.sol";
+import {MockRewardReputationOracle} from "../contracts/mocks/MockRewardReputationOracle.sol";
+import {FeeOnTransferERC20} from "../contracts/mocks/FeeOnTransferERC20.sol";
 
 /**
  * @title RewardPoolExhaustionTest

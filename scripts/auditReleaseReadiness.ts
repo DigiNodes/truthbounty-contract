@@ -66,6 +66,20 @@ export async function auditReleaseReadiness(): Promise<AuditResult> {
     } else {
         console.log("✅ Storage namespace and reserved-slot isolation verified (V2-SC-159).");
     }
+
+    // 4. V2-SC-129: rebuilt artifacts must match the approved release manifest
+    //    (compiler, optimizer, metadata, libraries, source hashes, explorer).
+    const reproducibilityCheck = spawnSync(
+        process.execPath,
+        [path.join(__dirname, "check-release-reproducibility.mjs")],
+        { cwd: path.join(__dirname, ".."), encoding: "utf-8" }
+    );
+    if (reproducibilityCheck.status !== 0) {
+        const detail = `${reproducibilityCheck.stdout ?? ""}${reproducibilityCheck.stderr ?? ""}`.trim();
+        issues.push(`Release reproducibility check failed (V2-SC-129): ${detail || reproducibilityCheck.error?.message || "unknown error"}`);
+    } else {
+        console.log("✅ Source, bytecode, and metadata reproducibility verified (V2-SC-129).");
+    }
     console.log("✅ Classification of deployment artifacts:");
     for (const [contract, status] of Object.entries(classification)) {
         console.log(`   - ${contract}: ${status}`);
