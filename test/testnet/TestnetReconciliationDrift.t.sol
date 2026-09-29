@@ -16,6 +16,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../contracts/interfaces/ITruthBountyEvents.sol";
 import "../../contracts/interfaces/IParameterVersionRegistry.sol";
@@ -101,12 +102,18 @@ contract TestnetReconciliationDrift is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -182,7 +189,7 @@ contract TestnetReconciliationDrift is Test {
         // Disputes family
         harness.emitDisputeRaisedV1(1, 1, deployer, 200, keccak256("reason"));
         harness.emitDisputeResolvedV1(1, 1, deployer, 1, 1);
-        harness.emitDisputeOpenedV1(1, 1, deployer, 0, 2, address(0), 200, block.timestamp + 86400, keccak256("reason"));
+        harness.emitDisputeOpenedV1(1, 1, deployer, 0, 2, address(0), 200, uint64(block.timestamp + 86400), keccak256("reason"));
 
         // Rewards family
         harness.emitRewardCalculatedV1(keccak256("calc"), deployer, 400);
@@ -195,7 +202,7 @@ contract TestnetReconciliationDrift is Test {
         harness.emitBatchSlashExecutedV1(1, 1, 5, 500);
 
         // Withdrawals family
-        harness.emitWithdrawalQueuedV1(keccak256("withdraw"), deployer, address(0), 10000, block.timestamp + 86400);
+        harness.emitWithdrawalQueuedV1(keccak256("withdraw"), deployer, address(0), 10000, uint64(block.timestamp + 86400));
         harness.emitWithdrawalExecutedV1(keccak256("withdraw"), deployer, address(0), 10000);
         harness.emitWithdrawalCancelledV1(keccak256("withdraw"), deployer, keccak256("reason"));
 
@@ -218,7 +225,7 @@ contract TestnetReconciliationDrift is Test {
         // Roles family
         harness.emitRoleGrantedV1(keccak256("role"), deployer, deployer);
         harness.emitRoleRevokedV1(keccak256("role"), deployer, deployer);
-        harness.emitRoleAdminChangedV1(keccak256("role"), keccak256("admin"), keccak256(0));
+        harness.emitRoleAdminChangedV1(keccak256("role"), keccak256("admin"), bytes32(0));
 
         // Emergency family
         harness.emitEmergencyPauseActivatedV1(deployer, keccak256("reason"));
@@ -291,7 +298,7 @@ contract TestnetReconciliationDrift is Test {
         truthBounty.stake(MIN_STAKE);
 
         // Verify storage
-        (uint256 totalStaked, uint256 activeStakes) = truthBounty.verifierStakes(verifier1);
+        (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(verifier1);
         assertEq(totalStaked, MIN_STAKE);
 
         vm.stopPrank();
@@ -312,7 +319,7 @@ contract TestnetReconciliationDrift is Test {
         vm.stopPrank();
 
         // Verify vote storage
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted, bool support, uint256 stakeAmount,,, bool rewardClaimed, bool stakeReturned,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(support, true);
         assertEq(stakeAmount, MIN_STAKE);
@@ -344,7 +351,7 @@ contract TestnetReconciliationDrift is Test {
         truthBounty.settleClaim(claimId);
 
         // Verify settlement storage
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake,,,,,,,,,, ) = truthBounty.settlementResults(claimId);
         assertEq(passed, true);
         assertGt(winnerStake, 0);
 
@@ -363,11 +370,11 @@ contract TestnetReconciliationDrift is Test {
         // This is a conceptual check - actual cross-contract consistency
         // is verified through the deployment wiring
 
-        assertGt(address(claimRegistry), 0);
-        assertGt(address(truthBounty), 0);
-        assertGt(address(aggregator), 0);
-        assertGt(address(settlementEngine), 0);
-        assertGt(address(appealRound), 0);
+        assertTrue(address(claimRegistry) != address(0));
+        assertTrue(address(truthBounty) != address(0));
+        assertTrue(address(aggregator) != address(0));
+        assertTrue(address(settlementEngine) != address(0));
+        assertTrue(address(appealRound) != address(0));
 
         vm.stopPrank();
     }
@@ -399,7 +406,7 @@ contract TestnetReconciliationDrift is Test {
         vm.startPrank(deployer);
 
         address tokenAddr = address(token);
-        assertGt(tokenAddr, address(0));
+        assertTrue(tokenAddr != address(0));
 
         vm.stopPrank();
     }
@@ -488,7 +495,7 @@ contract TestnetReconciliationDrift is Test {
         upgradeManager.approveUpgrade(1);
 
         // Verify proposal status
-        assertEq(upgradeManager.getUpgradeProposal(1).status, ProtocolUpgradeManager.UpgradeStatus.Approved);
+        assertEq(uint256(upgradeManager.getUpgradeProposal(1).status), uint256(ProtocolUpgradeManager.UpgradeStatus.Approved));
 
         vm.stopPrank();
     }
@@ -498,18 +505,18 @@ contract TestnetReconciliationDrift is Test {
         vm.startPrank(deployer);
 
         // Verify all deployed addresses are non-zero
-        assertGt(address(token), 0);
-        assertGt(address(governanceController), 0);
-        assertGt(address(emergencyController), 0);
-        assertGt(address(parameterVersionRegistry), 0);
-        assertGt(address(upgradeManager), 0);
-        assertGt(address(claimRegistry), 0);
-        assertGt(address(truthBounty), 0);
-        assertGt(address(aggregator), 0);
-        assertGt(address(settlementEngine), 0);
-        assertGt(address(appealRound), 0);
-        assertGt(address(oracle), 0);
-        assertGt(address(harness), 0);
+        assertTrue(address(token) != address(0));
+        assertTrue(address(governanceController) != address(0));
+        assertTrue(address(emergencyController) != address(0));
+        assertTrue(address(parameterVersionRegistry) != address(0));
+        assertTrue(address(upgradeManager) != address(0));
+        assertTrue(address(claimRegistry) != address(0));
+        assertTrue(address(truthBounty) != address(0));
+        assertTrue(address(aggregator) != address(0));
+        assertTrue(address(settlementEngine) != address(0));
+        assertTrue(address(appealRound) != address(0));
+        assertTrue(address(oracle) != address(0));
+        assertTrue(address(harness) != address(0));
 
         vm.stopPrank();
     }
@@ -528,7 +535,7 @@ contract TestnetReconciliationDrift is Test {
         addrs[6] = address(truthBounty);
 
         for (uint i = 0; i < addrs.length; i++) {
-            assertGt(addrs[i], address(0));
+            assertTrue(addrs[i] != address(0));
         }
     }
 

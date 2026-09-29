@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import {ProtocolExecutionBounds} from "../../contracts/performance/ProtocolExecutionBounds.sol";
 import {V2Lifecycle} from "../../contracts/v2/libraries/V2Lifecycle.sol";
+import {V2Errors} from "../../contracts/v2/libraries/V2Errors.sol";
 
 contract V2LifecycleBoundsHarness {
     function validate(address[] calldata assets) external pure {
@@ -45,7 +46,7 @@ contract V2LifecycleBoundsTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                V2Lifecycle.SupportedAssetLimitExceeded.selector,
+                V2Errors.SupportedAssetLimitExceeded.selector,
                 count,
                 ProtocolExecutionBounds.MAX_SUPPORTED_ASSETS
             )

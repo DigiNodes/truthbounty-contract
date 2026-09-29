@@ -16,6 +16,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../contracts/interfaces/ITruthBountyEvents.sol";
 import "../../contracts/interfaces/IParameterVersionRegistry.sol";
@@ -98,12 +99,18 @@ contract TestnetFuzz is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -163,7 +170,7 @@ contract TestnetFuzz is Test {
         token.approve(address(truthBounty), amount);
         truthBounty.stake(amount);
 
-        (uint256 totalStaked, uint256 activeStakes) = truthBounty.verifierStakes(verifier1);
+        (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(verifier1);
         assertEq(totalStaked, amount);
 
         vm.stopPrank();
@@ -185,7 +192,7 @@ contract TestnetFuzz is Test {
         bool support = (amount % 2) == 0;
         truthBounty.vote(claimId, support, amount);
 
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted,, uint256 stakeAmount,,,,,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(stakeAmount, amount);
 
@@ -213,7 +220,7 @@ contract TestnetFuzz is Test {
         vm.startPrank(outsider);
         truthBounty.settleClaim(claimId);
 
-        (bool passed, uint256 totalRewards, uint256 totalSlashed,,,,) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed,,,,,,,,,,,, ) = truthBounty.settlementResults(claimId);
         assertEq(passed, true);
 
         vm.stopPrank();
@@ -226,22 +233,22 @@ contract TestnetFuzz is Test {
         // Test different parameter types with bounded values
         if (value % 3 == 0) {
             bytes32 proposalId = governanceController.requestParameterUpdate(
-                GovernanceController.ParameterType.SLASH_PERCENT,
+                GovernanceHooks.ParameterType.SLASH_PERCENT,
                 value % 100 + 1
             );
-            assertGt(proposalId, bytes32(0));
+            assertTrue(proposalId != bytes32(0));
         } else if (value % 3 == 1) {
             bytes32 proposalId = governanceController.requestParameterUpdate(
-                GovernanceController.ParameterType.MIN_STAKE_AMOUNT,
+                GovernanceHooks.ParameterType.MIN_STAKE_AMOUNT,
                 (value % 100 + 1) * 10**18
             );
-            assertGt(proposalId, bytes32(0));
+            assertTrue(proposalId != bytes32(0));
         } else {
             bytes32 proposalId = governanceController.requestParameterUpdate(
-                GovernanceController.ParameterType.REWARD_PERCENT,
+                GovernanceHooks.ParameterType.REWARD_PERCENT,
                 value % 100 + 1
             );
-            assertGt(proposalId, bytes32(0));
+            assertTrue(proposalId != bytes32(0));
         }
 
         vm.stopPrank();
@@ -297,7 +304,7 @@ contract TestnetFuzz is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             25
         );
 
@@ -352,7 +359,7 @@ contract TestnetFuzz is Test {
         truthBounty.vote(claimId, true, MIN_STAKE);
         vm.stopPrank();
 
-        (bool voted,,,,,) = truthBounty.votes(claimId, verifier1);
+        (bool voted,,,,,,,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
 
         vm.stopPrank();
@@ -370,7 +377,7 @@ contract TestnetFuzz is Test {
         truthBounty.stake(amount);
         truthBounty.withdrawStake(amount);
 
-        (uint256 totalStaked, uint256 activeStakes) = truthBounty.verifierStakes(verifier1);
+        (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(verifier1);
         assertEq(totalStaked, 0);
 
         vm.stopPrank();
@@ -382,27 +389,27 @@ contract TestnetFuzz is Test {
 
         vm.startPrank(deployer);
 
-        ParameterVersionRegistry.EconomicParameters memory params = ParameterVersionRegistry.EconomicParameters({
-            verifierRewardsBPS: uint16(paramValue % 10000),
-            treasuryReserveBPS: 2000,
-            ecosystemIncentivesBPS: 1500,
-            governanceIncentivesBPS: 1000,
-            protocolDevelopmentBPS: 500,
-            emergencyReserveBPS: 500,
-            emissionLimit: type(uint256).max,
-            rewardMultiplier: 1e18,
-            treasuryReserveTargetBPS: 2000,
-            claimSubmissionFee: 0.001e18,
-            verificationSubmissionFee: 0.001e18,
-            disputeInitiationFee: 0.002e18,
-            protocolReserveFeeBPS: 50,
-            minStakeAmount: 1e18,
-            minReputationScore: 0,
-            maxReputationScore: 10000,
-            defaultReputationScore: 5000,
-            slashPercentageBPS: 1000,
-            maxSlashPercentageBPS: 5000
-        });
+        // Start from the validated active set; override only the fields this scenario exercises.
+        IParameterVersionRegistry.EconomicParameters memory params = parameterVersionRegistry.getCurrentParameters();
+        params.verifierRewardsBPS = uint16(paramValue % 10000);
+        params.treasuryReserveBPS = 2000;
+        params.ecosystemIncentivesBPS = 1500;
+        params.governanceIncentivesBPS = 1000;
+        params.protocolDevelopmentBPS = 500;
+        params.emergencyReserveBPS = 500;
+        params.emissionLimit = type(uint256).max;
+        params.rewardMultiplier = 1e18;
+        params.treasuryReserveTargetBPS = 2000;
+        params.claimSubmissionFee = 0.001e18;
+        params.verificationSubmissionFee = 0.001e18;
+        params.disputeInitiationFee = 0.002e18;
+        params.protocolReserveFeeBPS = 50;
+        params.minStakeAmount = 1e18;
+        params.minReputationScore = 0;
+        params.maxReputationScore = 10000;
+        params.defaultReputationScore = 5000;
+        params.slashPercentageBPS = 1000;
+        params.maxSlashPercentageBPS = 5000;
 
         // This may revert if allocation sum != 10000
         // We only test when it doesn't revert
@@ -434,7 +441,7 @@ contract TestnetFuzz is Test {
         // Governance zero address rejection
         vm.expectRevert("Zero address");
         governanceController.requestAddressParameterUpdate(
-            GovernanceController.ParameterType.RESOLVER_ROLE,
+            GovernanceHooks.ParameterType.RESOLVER_ROLE,
             address(0)
         );
     }

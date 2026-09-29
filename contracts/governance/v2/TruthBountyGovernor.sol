@@ -86,6 +86,8 @@ contract TruthBountyGovernor is
 
     /// @notice Registry consulted for every proposal target; unregistered targets revert.
     IGovernedModuleRegistry public immutable moduleRegistry;
+    /// @notice Optional snapshot registry notified when a proposal is created; zero disables it.
+    IGovernanceSnapshot public immutable governanceSnapshot;
     /// @notice Address currently authorized to cancel proposals.
     address public guardian;
     /// @notice Optional bootstrap guardian module authorized to cancel proposals.
@@ -141,9 +143,10 @@ contract TruthBountyGovernor is
     /// @param value Rejected native value for that operation.
     error NativeValueProposalNotAllowed(uint256 index, uint256 value);
 
-    /// @param token ERC20Votes token used to calculate voting power.
-    /// @param timelock Timelock that queues and executes proposals.
-    /// @param registry Allowlist of modules that proposals may target.
+    /// @param token_ ERC20Votes token used to calculate voting power.
+    /// @param timelock_ Timelock that queues and executes proposals.
+    /// @param registry_ Allowlist of modules that proposals may target.
+    /// @param snapshot_ Optional snapshot registry notified of every proposal snapshot (zero disables).
     /// @param guardian_ Initial proposal-cancellation guardian.
     /// @param votingDelay_ Delay between proposal creation and voting, in seconds.
     /// @param votingPeriod_ Voting duration in seconds.

@@ -18,14 +18,21 @@ import { V2Errors } from "./libraries/V2Errors.sol";
 ///         `SupplyChainAttestationPublished` event; no off-chain actor gains any
 ///         settlement or treasury authority from this contract.
 contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestations {
-    /// @notice The immutable attestation fields for this deployment.
-    /// @dev Published individually as immutables (structs are not value types);
-    ///      `supplyChainAttestation()` reassembles the authoritative record.
-    string private immutable _protocol;
-    string private immutable _releaseVersion;
-    string private immutable _sourceCommit;
+    /// @notice Schema version for the attestation format.
+    uint16 public constant ATTESTATION_SCHEMA_VERSION = 1;
 
-    ISupplyChainAttestations.CompilerSettings private immutable _compiler;
+    /// @notice Predicate type URI for in-toto / SLSA provenance attestations.
+    string public constant PREDICATE_TYPE =
+        "https://truthbounty.protocol/attestation/contract-release/v1";
+
+    /// @notice The immutable attestation fields for this deployment.
+    /// @dev Written once in the constructor and never mutated (strings, arrays and structs cannot be `immutable`);
+    ///      `supplyChainAttestation()` reassembles the authoritative record.
+    string private _protocol;
+    string private _releaseVersion;
+    string private _sourceCommit;
+
+    ISupplyChainAttestations.CompilerSettings private _compiler;
 
     /// @notice Chain ID this anchor is bound to, fixed at deployment.
     /// @dev Snapshot of block.chainid at construction; deployment manifests
@@ -38,21 +45,21 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
 
     /// @notice Dependencies array stored as packed immutables.
     /// @dev Each dependency is encoded as: name|version|kind|rev|integrity
-    string[] private immutable _dependencyData;
+    string[] private _dependencyData;
 
     /// @notice Artifacts array stored as packed immutables.
     /// @dev Each artifact is encoded as: path|sha256|size
-    string[] private immutable _artifactData;
+    string[] private _artifactData;
 
-    ISupplyChainAttestations.WorkflowIdentity private immutable _workflowIdentity;
+    ISupplyChainAttestations.WorkflowIdentity private _workflowIdentity;
 
     /// @notice Subjects array stored as packed immutables.
     /// @dev Each subject is encoded as: name|digest
-    string[] private immutable _subjectData;
+    string[] private _subjectData;
 
     /// @notice Materials array stored as packed immutables.
     /// @dev Each material is encoded as: uri|digest
-    string[] private immutable _materialData;
+    string[] private _materialData;
 
     bytes32 private immutable _checksum;
 
@@ -348,11 +355,11 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function hexStringToBytes32(string memory hexStr) internal pure returns (bytes32) {
         bytes memory b = bytes(hexStr);
         require(b.length == 64, "invalid hex length");
-        bytes32 result;
-        for (uint256 i = 0; i < 32; i++) {
-            result = result | (bytes32(parseHexNibble(b[i * 2])) << (8 * (31 - i)) * 2) | (bytes32(parseHexNibble(b[i * 2 + 1])) << (8 * (31 - i)) * 2 + 4);
+        uint256 result;
+        for (uint256 i = 0; i < 64; i++) {
+            result = (result << 4) | parseHexNibble(uint8(b[i]));
         }
-        return result;
+        return bytes32(result);
     }
 
     /// @dev Parses a single hex nibble.
@@ -399,8 +406,9 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         bytes memory hexBytes = new bytes(64);
         bytes memory alphabet = "0123456789abcdef";
         for (uint256 i = 0; i < 32; i++) {
-            hexBytes[i * 2] = alphabet[uint8(data >> (8 * (31 - i))) >> 4];
-            hexBytes[i * 2 + 1] = alphabet[uint8(data >> (8 * (31 - i))) & 0x0f];
+            uint8 byteValue = uint8(data[i]);
+            hexBytes[i * 2] = alphabet[byteValue >> 4];
+            hexBytes[i * 2 + 1] = alphabet[byteValue & 0x0f];
         }
         return string(hexBytes);
     }

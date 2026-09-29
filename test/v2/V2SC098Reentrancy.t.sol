@@ -6,6 +6,7 @@ import "../../contracts/v2/StakeVault.sol";
 import "../../contracts/v2/FinalRewardAllocator.sol";
 import "../../contracts/v2/interfaces/IFinalRewardAllocator.sol";
 import "../../contracts/v2/interfaces/IModuleRegistry.sol";
+import {IModuleLookupStub} from "./ModuleLookupStub.sol";
 import "../../contracts/v2/interfaces/IV2Module.sol";
 import "../../contracts/v2/interfaces/IV2Types.sol";
 import "../../contracts/mocks/MockModuleRegistry.sol";
@@ -79,7 +80,7 @@ contract V2SC098CallbackToken is MockERC20 {
 }
 
 /// @dev A view-only registry attempts a state-changing vault callback from its authorization query.
-contract V2SC098ReentrantRegistry is IModuleRegistry {
+contract V2SC098ReentrantRegistry is IModuleLookupStub {
     bytes32 internal constant SETTLEMENT = keccak256("SETTLEMENT");
 
     IV2VaultReentry internal vault;
@@ -150,7 +151,7 @@ contract V2SC098ReentrancyTest is Test {
         vault = new StakeVault(address(registry), address(token), address(this));
         callbackModule = new V2SC098CallbackModule(address(vault), address(token));
         token.setCallback(address(callbackModule));
-        registry.registerModule(vault.MODULE_SETTLEMENT(), address(callbackModule));
+        registry.permitModule(vault.MODULE_SETTLEMENT(), address(callbackModule));
 
         token.mint(user, 20);
         vm.prank(user);
@@ -207,7 +208,7 @@ contract V2SC098ReentrancyTest is Test {
         MockModuleRegistry rewardRegistry = new MockModuleRegistry();
         V2SC098CallbackToken rewardToken = new V2SC098CallbackToken();
         FinalRewardAllocator allocator = new FinalRewardAllocator(address(rewardRegistry), 1);
-        rewardRegistry.registerModule(allocator.MODULE_SETTLEMENT(), address(this));
+        rewardRegistry.permitModule(allocator.MODULE_SETTLEMENT(), address(this));
         V2SC098RewardClaimant claimant = new V2SC098RewardClaimant(address(allocator), address(rewardToken));
 
         bytes32 settlementId = keccak256("callback-reward");

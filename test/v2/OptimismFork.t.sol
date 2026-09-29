@@ -88,7 +88,7 @@ contract OptimismForkTest is Test {
 
     function test_UsdcDepositLockSettleWithdraw() public onlyFork {
         address settlement = address(0x5E77);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         deal(USDC, alice, 1_000e6);
         vm.startPrank(alice);

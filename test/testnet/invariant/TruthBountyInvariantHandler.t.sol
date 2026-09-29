@@ -15,7 +15,7 @@ import "../../../contracts/MockERC20.sol";
 /// Acceptance Criteria:
 ///   AC-7: Stateful fuzz/invariant coverage for every affected protocol property
 ///   AC-8: Regression tests for each legacy or audit defect displaced
-contract TruthBountyInvariantHandler is StdInvariant {
+contract TruthBountyInvariantHandler is Test {
     TruthBounty public truthBounty;
     MockERC20 public token;
     address[] public verifiers;
@@ -66,8 +66,8 @@ contract TruthBountyInvariantHandler is StdInvariant {
     function settleClaim(uint256 claimIdx) public {
         if (claimIds.length == 0) return;
         uint256 claimId = claimIds[claimIdx % claimIds.length];
-        (uint256 id, address submitter, string memory content, uint256 createdAt, uint256 verificationWindowEnd, bool settled, bool finalized, uint256 totalWeightedFor, uint256 totalWeightedAgainst, uint256 totalStakeAmount, uint256 totalStakedFor, uint256 totalStakedAgainst) = truthBounty.claims(claimId);
-        if (settled || finalized) return;
+        (, , , , uint256 verificationWindowEnd, bool settled, , , ) = truthBounty.claims(claimId);
+        if (settled) return;
         if (block.timestamp < verificationWindowEnd) vm.warp(verificationWindowEnd + 1);
         truthBounty.settleClaim(claimId);
     }
@@ -91,8 +91,8 @@ contract TruthBountyInvariantHandler is StdInvariant {
     function verifyInvariant_noDoubleClaim() public view {
         uint256 counter = truthBounty.claimCounter();
         for (uint256 i = 0; i < counter && i < 20; i++) {
-            (uint256 id, address submitter, string memory content, uint256 createdAt, uint256 verificationWindowEnd, bool settled, bool finalized, , , , , ) = truthBounty.claims(i);
-            if (settled && finalized) {
+            (, , , , , bool settled, , , ) = truthBounty.claims(i);
+            if (settled) {
                 // Claim cannot be settled twice - enforced by contract
             }
         }
