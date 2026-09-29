@@ -75,7 +75,7 @@ All interfaces in this directory are **CANONICAL V2** and define the protocol's 
 |---------|--------|---------|
 | **V2Errors.sol** | ✅ CANONICAL | V2-specific error definitions |
 | **V2Lifecycle.sol** | ✅ CANONICAL | Lifecycle state management utilities |
-| **V2EventCompleteness.sol** | ✅ CANONICAL | Event-completeness catalogue, reduction rules, roots, and the projection fold (V2-SC-132) |
+| **V2SafeCast.sol** | ✅ CANONICAL | Bounded integer narrowing with field-identifying `SafeCastOverflow` / `SafeCastNegative` (V2-SC-161) |
 
 ---
 

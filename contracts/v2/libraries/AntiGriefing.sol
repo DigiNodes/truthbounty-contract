@@ -54,7 +54,9 @@ library AntiGriefing {
             ? uint64(ProtocolExecutionBounds.CLAIM_SPAM_WINDOW_SECONDS)
             : windowLength;
 
-        if (windowStart == 0 || nowTs >= windowStart + window) {
+        // V2-SC-161: compare in uint256 so a window start near type(uint64).max cannot overflow
+        // (panic) the uint64 sum; the comparison is otherwise identical.
+        if (windowStart == 0 || uint256(nowTs) >= uint256(windowStart) + uint256(window)) {
             return (nowTs, 1);
         }
 

@@ -27,9 +27,21 @@ share a name but differ by ABI.
 | Local `EvidenceWindowClosed()` | `EvidenceWindowClosed(claimId, deadline, timestamp)` |
 | Local `DuplicateEvidence()` | `DuplicateEvidence(commitmentKey)` |
 | Local V2Lifecycle config errors | Same names under `V2Errors.*` |
+| Silent `uint64(block.timestamp)` / `uintN(x)` truncation | `SafeCastOverflow(field, value, max)` via `V2SafeCast` (V2-SC-161) |
+| Silent `uint256(int256)` sign flip | `SafeCastNegative(field, value)` via `V2SafeCast` (V2-SC-161) |
+
+## Integer-width boundaries (V2-SC-161)
+
+`SafeCastOverflow(bytes32 field, uint256 value, uint256 max)` and
+`SafeCastNegative(bytes32 field, int256 value)` identify the violated bound
+deterministically: `field` is an ASCII literal such as `"Claims.createdAt"`
+(constants in `V2SafeCast`) and `max` is the destination's `type(uintN).max`.
+See `docs/v2/safe-cast-integer-boundaries.md` for the full inventory.
 
 ## Tests
 
 - `test/v2/V2Errors.t.sol` — selector stability, config fail-closed paths,
   absence of string-reason `InvalidArgument`.
 - `test/v2/StakeVault.t.sol` — `InvalidRoundTransfer` on same-round carry-forward.
+- `test/v2/SafeCastBoundaries.t.sol` — exact `(field, value, max)` payloads for
+  every narrowing width and lifecycle boundary.

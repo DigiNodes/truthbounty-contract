@@ -13,8 +13,7 @@ import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
-import {PauseMatrix} from "./libraries/PauseMatrix.sol";
-import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title StakeVault
@@ -360,9 +359,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         if (rewardAmount > 0) {
             _creditReward(asset, account, rewardAmount);
         }
-        emit VaultSettledConclusive(
-            asset, account, claimId, round, principalAmount, rewardAmount, uint64(block.timestamp), 1
-        );
+        emit VaultSettledConclusive(asset, account, claimId, round, principalAmount, rewardAmount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -377,8 +374,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.REFUNDED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        _debitStakeCell(asset, account, claimId, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultRefundedInconclusive(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
+        emit VaultRefundedInconclusive(asset, account, claimId, round, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
@@ -429,8 +425,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.UNLOCKED;
 
         _unlock(asset, account, claimId, round, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        _debitStakeCell(asset, account, claimId, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
-        emit VaultFinalUnlocked(asset, account, claimId, round, amount, uint64(block.timestamp), 1);
+        emit VaultFinalUnlocked(asset, account, claimId, round, amount, V2SafeCast.timestamp64(V2SafeCast.FIELD_VAULT_EVENT_TIMESTAMP), 1);
     }
 
     /// @inheritdoc IStakeCustody
