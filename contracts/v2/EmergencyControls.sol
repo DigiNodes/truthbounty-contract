@@ -8,6 +8,7 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {IEmergencyControls} from "./interfaces/IEmergencyControls.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 
 /**
  * @title EmergencyControls
@@ -143,7 +144,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         pausedAt[scope] = block.timestamp;
         pauseCount[scope]++;
 
-        emit EmergencyPaused(scope, msg.sender);
+        emit EmergencyPaused(scope, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_EMERGENCY_EVENT_TIMESTAMP), EVENT_SCHEMA_VERSION);
     }
 
     /**
@@ -161,7 +162,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _pausedScopes[scope] = false;
         pausedAt[scope] = 0;
 
-        emit EmergencyUnpaused(scope, msg.sender);
+        emit EmergencyUnpaused(scope, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_EMERGENCY_EVENT_TIMESTAMP), EVENT_SCHEMA_VERSION);
     }
 
     /**
