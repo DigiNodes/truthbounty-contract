@@ -37,6 +37,13 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     uint256 public constant MAX_PAGE_SIZE = 100;
     uint256 public constant MAX_EVIDENCE_PER_CLAIM = ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM;
 
+    /// @notice Fixed, domain-separated reason attached to admin-driven pause logs.
+    /// @dev `EmergencyPauseActivatedV1` requires a `bytes32 reason`; the pause
+    ///      authority for this module is the `PAUSER_ROLE` holder and no
+    ///      per-call reason is collected, so the constant keeps the log
+    ///      deterministic across deployments.
+    bytes32 public constant ADMIN_PAUSE_REASON = keccak256("EVIDENCE_REGISTRY_ADMIN_PAUSE");
+
     IClaimRegistry public immutable claimRegistry;
 
     struct EvidenceCommitment {
@@ -204,14 +211,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         emit EvidenceSubmitted(evidenceId, claimId, msg.sender, contentDigest);
         emit EvidenceSubmittedV1(claimId, evidenceId, msg.sender, contentDigest, now_, EVENT_SCHEMA_VERSION);
         emit EvidenceCommitted(
-            claimId,
-            evidenceId,
-            msg.sender,
-            contentDigest,
-            metadataDigest,
-            nonce,
-            now_,
-            EVENT_SCHEMA_VERSION
+            claimId, evidenceId, msg.sender, contentDigest, metadataDigest, nonce, now_, EVENT_SCHEMA_VERSION
         );
     }
 
@@ -308,7 +308,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         if (end > length) end = length;
 
         evidenceIds = new uint256[](end - cursor);
-        for (uint256 i = cursor; i < end; ) {
+        for (uint256 i = cursor; i < end;) {
             evidenceIds[i - cursor] = ids[i];
             unchecked {
                 ++i;
@@ -335,15 +335,11 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         bytes32 metadataDigest,
         uint256 nonce
     ) public view returns (uint256) {
-        return uint256(keccak256(abi.encode(
-            block.chainid,
-            address(this),
-            claimId,
-            contributor,
-            contentDigest,
-            metadataDigest,
-            nonce
-        )));
+        return uint256(
+            keccak256(
+                abi.encode(block.chainid, address(this), claimId, contributor, contentDigest, metadataDigest, nonce)
+            )
+        );
     }
 
     /// @notice Returns the next required nonce for a contributor.
@@ -361,8 +357,14 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     }
 
     /// @notice Pauses evidence submission; existing evidence remains readable.
+    /// @dev Pausing is fail-closed for commit operations and is restricted to `PAUSER_ROLE`.
+    ///      Emits `EmergencyPauseActivatedV1`: the pause flag gates every
+    ///      `commitEvidence` call, so it is an authoritative read cell
+    ///      (V2-SC-132) and is published as a canonical family-15 log instead of
+    ///      mutating silently.
     function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
+        emit EmergencyPauseActivatedV1(msg.sender, ADMIN_PAUSE_REASON, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     /// @notice Resumes evidence submission after the pauser restores the registry.
@@ -370,6 +372,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     ///      V2 pause authority keeps submission fail-closed (V2-SC-162).
     function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
+        emit EmergencyPauseRecoveredV1(msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
     /// @notice Wires the V2 pause authority exactly once (V2-SC-162).
