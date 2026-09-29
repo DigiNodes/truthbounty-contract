@@ -141,10 +141,29 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         return true;
     }
 
+    /// @dev V2-SC-160: a delimiter-joined record is injective only if no variable-length field
+    ///      can contain the delimiter. Without this guard `name = "a|b", version = "c"` and
+    ///      `name = "a", version = "b|c"` pack to the same record and read back as the latter,
+    ///      silently shifting every later field (including `integrity`). Fixed-format fields
+    ///      (lowercase hex digests and decimal sizes rendered on-chain) cannot contain '|'.
+    function _requireNoDelimiter(string memory field) internal pure {
+        bytes memory b = bytes(field);
+        for (uint256 i = 0; i < b.length; i++) {
+            if (b[i] == bytes1("|")) {
+                revert V2Errors.AttestationFieldContainsDelimiter();
+            }
+        }
+    }
+
     /// @dev Packs dependencies into delimiter-separated strings for immutable storage.
     function packDependencies(ISupplyChainAttestations.DependencyEntry[] memory deps) internal pure returns (string[] memory) {
         string[] memory packed = new string[](deps.length);
         for (uint256 i = 0; i < deps.length; i++) {
+            _requireNoDelimiter(deps[i].name);
+            _requireNoDelimiter(deps[i].version);
+            _requireNoDelimiter(deps[i].kind);
+            _requireNoDelimiter(deps[i].rev);
+            _requireNoDelimiter(deps[i].integrity);
             packed[i] = string(
                 abi.encodePacked(
                     deps[i].name, "|",
@@ -162,6 +181,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packArtifacts(ISupplyChainAttestations.ArtifactHash[] memory artifacts) internal pure returns (string[] memory) {
         string[] memory packed = new string[](artifacts.length);
         for (uint256 i = 0; i < artifacts.length; i++) {
+            _requireNoDelimiter(artifacts[i].path);
             packed[i] = string(
                 abi.encodePacked(
                     artifacts[i].path, "|",
@@ -177,6 +197,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packSubjects(ISupplyChainAttestations.AttestationSubject[] memory subjects) internal pure returns (string[] memory) {
         string[] memory packed = new string[](subjects.length);
         for (uint256 i = 0; i < subjects.length; i++) {
+            _requireNoDelimiter(subjects[i].name);
             packed[i] = string(
                 abi.encodePacked(
                     subjects[i].name, "|",
@@ -191,6 +212,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packMaterials(ISupplyChainAttestations.AttestationMaterial[] memory materials) internal pure returns (string[] memory) {
         string[] memory packed = new string[](materials.length);
         for (uint256 i = 0; i < materials.length; i++) {
+            _requireNoDelimiter(materials[i].uri);
             packed[i] = string(
                 abi.encodePacked(
                     materials[i].uri, "|",
