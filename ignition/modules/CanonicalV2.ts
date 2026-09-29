@@ -1,11 +1,14 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import { ethers } from "ethers";
+import { validateCanonicalV2Parameters } from "../../scripts/validateDeploymentConfig";
 
 /**
  * @title CanonicalV2DeploymentModule (SC-031)
  * @notice Canonical Hardhat Ignition deployment composition for TruthBounty Protocol V2.
  * @dev Deploys, configures, and wires the approved canonical V2 suite in strict dependency order.
  *      Excludes legacy contracts (e.g. TruthBountyClaims) and ensures deployer roles are finalized.
+ *      Deployment parameters are validated against the canonical configuration bounds (SC-068)
+ *      before any Ignition transaction is submitted.
  */
 const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   // Account parameter defaults

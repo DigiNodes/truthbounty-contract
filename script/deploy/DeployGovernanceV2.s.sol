@@ -137,4 +137,52 @@ vm.stopBroadcast();
         console2.log("TruthBountyGovernor", address(governor));
         console2.log("GovernanceGuardian", address(guardianContract));
     }
+
+    /// @notice Maps the governance deployment configuration into the canonical validator model.
+    /// @dev Every optional module address is left as the deploy-fresh sentinel because this
+    ///      script deploys the complete governance suite itself. `deployer` is pinned from the
+    ///      environment when provided so a config cannot be broadcast from the wrong key.
+    function _validatorConfig(GovernanceConfig memory cfg)
+        internal
+        view
+        returns (DeploymentConfigValidator.Config memory)
+    {
+        return DeploymentConfigValidator.Config({
+            deployer: vm.envOr("DEPLOYER_ADDRESS", address(0)),
+            admin: cfg.admin,
+            guardian: cfg.guardian,
+            governanceController: address(0),
+            governanceToken: address(0),
+            timelock: address(0),
+            governor: address(0),
+            moduleRegistry: address(0),
+            governanceGuardian: address(0),
+            reputationOracle: address(0),
+            token: address(0),
+            expectedChainId: block.chainid,
+            minStakeAmount: 0,
+            settlementThresholdPercent: 0,
+            rewardPercent: 0,
+            slashPercent: 0,
+            confirmationDelay: 0,
+            minReputationScore: 0,
+            maxReputationScore: 0,
+            defaultReputationScore: 0,
+            stakingLockDuration: 0,
+            votingDelay: cfg.votingDelay,
+            votingPeriod: cfg.votingPeriod,
+            proposalThreshold: cfg.proposalThreshold,
+            quorumNumerator: cfg.quorumNumerator,
+            timelockMinDelay: cfg.timelockMinDelay,
+            tokenSupply: cfg.tokenSupply,
+            minVerificationCount: 0,
+            minConfidenceBps: 0,
+            challengeWindowDuration: 0,
+            appealDuration: 0,
+            minAppealStake: 0,
+            appealMultiplierBps: 0,
+            maxWeightCap: 0,
+            legacyDenylist: new address[](0)
+        });
+    }
 }

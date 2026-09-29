@@ -64,6 +64,19 @@ export async function deployCanonicalV2(
   const maxVotersPerRound = options.maxVotersPerRound ?? 200n;
   const finalizeDeployerRoles = options.finalizeDeployerRoles ?? false;
 
+  validateCanonicalV2Parameters({
+    initialSupply,
+    minVerificationCount,
+    minTotalWeight,
+    minConfidenceBps,
+    challengeWindowDuration,
+    appealDuration,
+    minAppealStake,
+    appealMultiplierBps,
+    maxWeightCap,
+  });
+  console.log("Deployment config validated:", deployer.address);
+
   // 1. Governance Controller
   const GovFactory = await ethers.getContractFactory("GovernanceController", deployer);
   const governanceController = await GovFactory.deploy(deployer.address);
