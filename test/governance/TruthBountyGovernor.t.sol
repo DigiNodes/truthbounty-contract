@@ -153,6 +153,26 @@ contract TruthBountyGovernorTest is Test {
         governor.castVote(proposalId, 1);
     }
 
+    function test_VoteAtVotingDeadlineIsCountedBeforeQueueing() public {
+        uint256 proposalId = _createProposal(18);
+        uint256 deadline = governor.proposalDeadline(proposalId);
+
+        vm.warp(deadline);
+        vm.prank(voter);
+        uint256 votingWeight = governor.castVote(proposalId, 1);
+
+        assertEq(votingWeight, 800_000 ether);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Active));
+
+        vm.warp(deadline + 1);
+        vm.expectRevert();
+        vm.prank(proposer);
+        governor.castVote(proposalId, 1);
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Queued));
+    }
+
     function test_ProposerCanCancelPendingProposal() public {
         uint256 proposalId = _createProposal(12);
 
@@ -190,6 +210,18 @@ contract TruthBountyGovernorTest is Test {
 
         vm.expectRevert();
         governor.execute(proposalId);
+    }
+
+    function test_TimelockExecutesAtExactEtaAfterRecovery() public {
+        uint256 proposalId = _createProposal(77);
+        _voteAndQueue(proposalId);
+        uint256 eta = governor.proposalEta(proposalId);
+
+        vm.warp(eta);
+        governor.execute(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Executed));
+        assertEq(module.value(), 77);
     }
 
     function test_DuplicateExecuteReverts() public {

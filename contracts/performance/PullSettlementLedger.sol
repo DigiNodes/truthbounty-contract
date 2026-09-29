@@ -6,6 +6,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {ProtocolExecutionBounds} from "./ProtocolExecutionBounds.sol";
+import {PauseMatrix} from "../v2/libraries/PauseMatrix.sol";
+import {V2WiredPauseGuard} from "../v2/libraries/V2PauseGuard.sol";
 
 /**
  * @title PullSettlementLedger
@@ -31,8 +33,13 @@ import {ProtocolExecutionBounds} from "./ProtocolExecutionBounds.sol";
  * Treasury grants CREDITOR_ROLE and calls `credit` / `creditBatch`.
  * Each beneficiary independently calls `withdraw` (aggregate) or
  * `withdrawFromRef` (per-settlement) to pull their tokens.
+ *
+ * Pause matrix (V2-SC-162, `PauseMatrix` v1): issuing new credit is settlement
+ * and fails closed under `SCOPE_SETTLEMENT` of the wired V2 pause authority.
+ * Both withdrawal paths are RISK_REDUCING exits of already-credited value: they
+ * are never scope-gated and freeze only at protocol SHUTDOWN.
  */
-contract PullSettlementLedger is AccessControl, ReentrancyGuard {
+contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGuard {
     using SafeERC20 for IERC20;
 
     // -------------------------------------------------------------------------
@@ -130,6 +137,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
         external
         onlyRole(CREDITOR_ROLE)
     {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (beneficiary == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (settlementRef == bytes32(0)) revert ZeroSettlementRef();
@@ -158,6 +166,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
         uint256[] calldata amounts,
         bytes32 settlementRef
     ) external onlyRole(CREDITOR_ROLE) {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         uint256 length = beneficiaries.length;
         if (length != amounts.length) revert LengthMismatch(length, amounts.length);
         if (length > ProtocolExecutionBounds.MAX_SETTLEMENT_BATCH_SIZE) {
@@ -198,6 +207,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
      * @param amount  Amount to withdraw (must be ≤ available balance).
      */
     function withdraw(uint256 amount) external nonReentrant {
+        _requireExitsNotShutdown();
         if (amount == 0) revert ZeroAmount();
         uint256 available = credited[msg.sender] - withdrawn[msg.sender];
         if (amount > available) revert InsufficientCredit(available, amount);
@@ -222,6 +232,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
      * @param amount         Amount to withdraw (must be ≤ ref's available balance).
      */
     function withdrawFromRef(bytes32 settlementRef, uint256 amount) external nonReentrant {
+        _requireExitsNotShutdown();
         if (amount == 0) revert ZeroAmount();
         if (settlementRef == bytes32(0)) revert ZeroSettlementRef();
 
@@ -229,12 +240,33 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard {
             - _refWithdrawn[msg.sender][settlementRef];
         if (amount > refAvailable) revert InsufficientCredit(refAvailable, amount);
 
+        // V2-SC-162: the aggregate `withdraw` path does not advance per-ref counters, so the
+        // per-ref view alone would let value already pulled through `withdraw` be pulled a
+        // second time here. Bounding by the aggregate balance keeps
+        // `withdrawn[account] <= credited[account]` across any mix of both exit paths.
+        uint256 aggregateAvailable = credited[msg.sender] - withdrawn[msg.sender];
+        if (amount > aggregateAvailable) revert InsufficientCredit(aggregateAvailable, amount);
+
         // CEI — update BOTH counters before external call.
         _refWithdrawn[msg.sender][settlementRef] += amount;
         withdrawn[msg.sender] += amount;
 
         token.safeTransfer(msg.sender, amount);
         emit SettlementRefWithdrawn(msg.sender, settlementRef, amount);
+    }
+
+    // -------------------------------------------------------------------------
+    // Emergency wiring (V2-SC-162)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Wire the V2 pause authority exactly once.
+     * @dev NEUTRAL: wiring only tightens control and can never be replaced or
+     *      removed, so it cannot be used to lift an active settlement pause.
+     * @param authority `IEmergencyControls` implementation (e.g. `EmergencyGatekeeper`).
+     */
+    function setPauseAuthority(address authority) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _wirePauseAuthority(authority);
     }
 
     // -------------------------------------------------------------------------

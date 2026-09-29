@@ -230,6 +230,30 @@ contract AppealBoundsTest is Test {
     // R2: bounded ladder & irreversible terminality
     // ---------------------------------------------------------------------------
 
+    function test_deadlineEqualityRejectsVoteAndAllowsPermissionlessClose() public {
+        _open();
+        IAppealVerificationRound.AppealRound memory round = appeal.getAppealRound(claimId);
+        vm.warp(round.deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AppealVerificationRound.AppealRoundExpired.selector,
+                claimId,
+                block.timestamp,
+                round.deadline
+            )
+        );
+        vm.prank(APPELLANT1);
+        appeal.submitAppealVote(claimId, true, 1e18);
+        assertEq(appeal.getAppealRound(claimId).verifierCount, 0);
+
+        vm.prank(OUTSIDER);
+        appeal.closeAppealRound(claimId);
+
+        assertEq(uint256(appeal.getAppealRound(claimId).status), 2, "round closes at deadline");
+        assertEq(vault.totalLocked(), round.requiredBond, "outage cannot release the appeal bond");
+    }
+
     function test_bondEscalatesPerRoundAndIsCapped(uint256 escBps) public {
         escBps = bound(escBps, 10_000, 40_000);
         _applyConfig(_config(1_000e18, escBps, 10_000e18, 3, 200));
