@@ -7,6 +7,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { ISupplyChainAttestations } from "./interfaces/ISupplyChainAttestations.sol";
 import { IV2Module } from "./interfaces/IV2Module.sol";
 import { V2Errors } from "./libraries/V2Errors.sol";
+import { V2SafeCast } from "./libraries/V2SafeCast.sol";
 
 /// @title SupplyChainAttestationAnchor
 /// @notice Read-only discovery anchor that publishes the authoritative
@@ -92,7 +93,8 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         _releaseVersion = attestation_.releaseVersion;
         _sourceCommit = attestation_.sourceCommit;
         _compiler = attestation_.compiler;
-        CHAIN_ID = uint64(block.chainid);
+        // V2-SC-161: EIP-155 chain ids are not bounded by the EVM; refuse to truncate one.
+        CHAIN_ID = V2SafeCast.toUint64(block.chainid, V2SafeCast.FIELD_ATTESTATION_CHAIN_ID);
         deployer = deployer_;
 
         _dependencyData = packDependencies(attestation_.dependencies);
