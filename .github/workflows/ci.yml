@@ -53,12 +53,12 @@ jobs:
         run: node scripts/check-native-value-policy.mjs
       - name: Native Value Policy self-tests (V2-SC-153)
         run: node --test test/scripts/check-native-value-policy.test.mjs
-      # V2-SC-162: every canonical V2 operation must be classified in the versioned pause matrix,
-      # gated exactly as classified in source, and mirrored in contracts/v2/libraries/PauseMatrix.sol.
-      - name: Emergency Pause Matrix (V2-SC-162)
-        run: node scripts/check-pause-matrix.mjs
-      - name: Emergency Pause Matrix self-tests (V2-SC-162)
-        run: node --test test/scripts/check-pause-matrix.test.mjs
+      # V2-SC-159: namespaced/unstructured/reserved slots of every upgradeable module must not
+      # collide, and the committed slot/namespace manifest must match the sources exactly.
+      - name: Storage namespace collision check (V2-SC-159)
+        run: node scripts/check-storage-namespaces.mjs
+      - name: Storage namespace collision self-tests (V2-SC-159)
+        run: node --test test/scripts/check-storage-namespaces.test.mjs
 
   test:
     name: Test
@@ -115,6 +115,8 @@ jobs:
         run: npm ci --legacy-peer-deps
       - name: Verify frozen storage-layout manifests
         run: npm run test:layouts
+      - name: Verify storage namespace and reserved-slot isolation (V2-SC-159)
+        run: node scripts/check-storage-namespaces.mjs
 
   fuzz-tests:
     name: Fuzz Tests
