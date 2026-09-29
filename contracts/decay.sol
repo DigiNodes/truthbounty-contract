@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {ContractSignerValidation} from "./libraries/ContractSignerValidation.sol";
 
 /**
  * @title EIP712Verifier
@@ -25,6 +26,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  */
 contract EIP712Verifier {
     using ECDSA for bytes32;
+    using ContractSignerValidation for address;
 
     // ============ EIP-712 Domain ============
 
@@ -127,6 +129,7 @@ contract EIP712Verifier {
 
     /**
      * @notice Verifies a claim submission signature.
+        * @dev Accepts an ECDSA signature from an EOA or a bounded ERC-1271 response from a contract claimant.
      * @param claimant     The address making the claim.
      * @param bountyId     The ID of the bounty being claimed.
      * @param contentHash  Hash of the claim content.
@@ -158,8 +161,11 @@ contract EIP712Verifier {
 
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
 
-        address signer = digest.recover(signature);
-        if (signer != claimant) revert InvalidSignature();
+        if (claimant.code.length == 0) {
+            if (digest.recover(signature) != claimant) revert InvalidSignature();
+        } else if (!claimant.isValidContractSignature(digest, signature)) {
+            revert InvalidSignature();
+        }
 
         usedSignatures[digest] = true;
         nonces[claimant] = currentNonce + 1;
@@ -171,6 +177,7 @@ contract EIP712Verifier {
 
     /**
      * @notice Verifies a verification intent signature.
+        * @dev Accepts an ECDSA signature from an EOA or a bounded ERC-1271 response from a contract verifier.
      * @param verifier   The address of the verifier.
      * @param bountyId   The ID of the bounty being verified.
      * @param approve    Whether the verifier approves the claim.
@@ -205,8 +212,11 @@ contract EIP712Verifier {
 
         if (usedSignatures[digest]) revert SignatureAlreadyUsed();
 
-        address signer = digest.recover(signature);
-        if (signer != verifier) revert InvalidSignature();
+        if (verifier.code.length == 0) {
+            if (digest.recover(signature) != verifier) revert InvalidSignature();
+        } else if (!verifier.isValidContractSignature(digest, signature)) {
+            revert InvalidSignature();
+        }
 
         usedSignatures[digest] = true;
         nonces[verifier] = currentNonce + 1;

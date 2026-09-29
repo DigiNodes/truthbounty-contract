@@ -21,12 +21,20 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   const minAppealStake = m.getParameter("minAppealStake", ethers.parseEther("200").toString());
   const appealMultiplierBps = m.getParameter("appealMultiplierBps", 15000n); // 1.5x
   const maxWeightCap = m.getParameter("maxWeightCap", ethers.parseEther("100000").toString());
+  const maxAppealRounds = m.getParameter("maxAppealRounds", 1n);
+  const appealBond = m.getParameter("appealBond", ethers.parseEther("1000").toString());
+  const appealBondEscalationBps = m.getParameter("appealBondEscalationBps", 15000n);
+  const maxAppealBond = m.getParameter("maxAppealBond", ethers.parseEther("5000").toString());
+  const maxVotersPerRound = m.getParameter("maxVotersPerRound", 200n);
 
   // 1. Deploy Governance Controller
   const governanceController = m.contract("GovernanceController", [deployer]);
 
   // 2. Deploy Protocol Token (RewardToken)
   const token = m.contract("RewardToken", [deployer, initialSupply]);
+
+  // 2b. Deploy Bond-Custody StakeVault (V2-SC-016/059 appeal bonds live here)
+  const bondVault = m.contract("contracts/StakeVault.sol:StakeVault", [deployer, token]);
 
   // 3. Deploy Reputation Oracle
   const reputationOracle = m.contract("MockReputationOracle", []);
@@ -67,12 +75,18 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
     stakeMultiplierBps: appealMultiplierBps,
     maxWeightCap: maxWeightCap,
     parameterVersion: 1n,
+    maxAppealRounds: maxAppealRounds,
+    appealBond: appealBond,
+    appealBondEscalationBps: appealBondEscalationBps,
+    maxAppealBond: maxAppealBond,
+    maxVotersPerRound: maxVotersPerRound,
   };
 
   const appealVerificationRound = m.contract("AppealVerificationRound", [
     token,
     claimRegistry,
     reputationOracle,
+    bondVault,
     appealConfig,
     governanceController,
     deployer,
@@ -83,6 +97,10 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   const REGISTRY_UPDATER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRY_UPDATER_ROLE"));
   m.call(claimRegistry, "grantRole", [REGISTRY_UPDATER_ROLE, provisionalSettlementEngine]);
 
+  // Authorise the appeal module to lock appeal bonds in the vault
+  const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
+  m.call(bondVault, "grantRole", [OPERATOR_ROLE, appealVerificationRound]);
+
   return {
     governanceController,
     token,
@@ -92,6 +110,7 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
     verificationAggregator,
     provisionalSettlementEngine,
     appealVerificationRound,
+    bondVault,
   };
 });
 

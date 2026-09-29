@@ -22,6 +22,7 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
 
     uint256 public constant MIN_DELAY = 1 hours;
     uint256 public constant MAX_DELAY = 30 days;
+    uint256 public constant DEFAULT_STANDARD_DELAY = 1 days;
     uint256 public constant DEFAULT_EMERGENCY_DELAY = 24 hours;
     uint256 public constant DEFAULT_EXECUTION_WINDOW = 7 days;
     uint256 public constant MAX_EMERGENCY_DELAY = 3 days;
@@ -31,7 +32,7 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
 
     uint256 public emergencyDelay = DEFAULT_EMERGENCY_DELAY;
     uint256 public executionWindow = DEFAULT_EXECUTION_WINDOW;
-    uint256 public standardDelay = 7 days; // Enforce required 7-day upgrade delay for standard upgrades
+    uint256 public standardDelay = DEFAULT_STANDARD_DELAY;
 
     mapping(bytes32 => UpgradeProposal) internal _proposals;
     mapping(address => bytes32[]) internal _upgradeHistory;
@@ -283,9 +284,11 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
         emit ExecutionWindowUpdated(oldWindow, newWindow);
     }
 
-    function setStandardDelay(uint256 newDelay) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setStandardDelay(uint256 newDelay) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         require(newDelay >= MIN_DELAY && newDelay <= MAX_DELAY, "Invalid delay");
+        uint256 oldDelay = standardDelay;
         standardDelay = newDelay;
+        emit StandardDelayUpdated(oldDelay, newDelay);
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
