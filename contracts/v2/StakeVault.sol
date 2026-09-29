@@ -14,6 +14,8 @@ import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
 import {V2SafeCast} from "./libraries/V2SafeCast.sol";
+import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
+import {PauseMatrix} from "./libraries/PauseMatrix.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
 
 /// @title StakeVault
