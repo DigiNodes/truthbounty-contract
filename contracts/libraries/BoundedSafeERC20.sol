@@ -38,6 +38,21 @@ library BoundedSafeERC20 {
         _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, newAllowance)));
     }
 
+    /// @notice Decreases an allowance while bounding token return-data copying.
+    /// @dev Mirrors OpenZeppelin SafeERC20.safeDecreaseAllowance semantics: the
+    ///      allowance is reduced by `value` and the call reverts if `value`
+    ///      exceeds the current allowance, instead of underflowing.
+    function safeDecreaseAllowance(IERC20 token, address spender, uint256 value) internal {
+        (bool success, uint256 currentAllowance, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            address(token),
+            abi.encodeCall(IERC20.allowance, (address(this), spender))
+        );
+        if (!success || returnSize != 32) revert SafeERC20FailedOperation(address(token));
+        if (value > currentAllowance) revert SafeERC20FailedOperation(address(token));
+        uint256 newAllowance = currentAllowance - value;
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, newAllowance)));
+    }
+
     function _callOptionalReturn(IERC20 token, bytes memory callData) private {
         bool success;
         uint256 returnSize;

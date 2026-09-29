@@ -88,6 +88,12 @@ jobs:
           version: latest
       - name: Build contracts (forge build)
         run: forge build
+      # V2-SC-129: rebuilt artifacts must match the approved release manifest
+      # (compiler, optimizer, metadata, libraries, source hashes, explorer).
+      - name: Release reproducibility gate (V2-SC-129)
+        run: |
+          node scripts/check-release-reproducibility.mjs
+          node --test test/scripts/check-release-reproducibility.test.mjs
       - name: Run Foundry tests (forge test)
         run: forge test --no-match-path "test/{invariant,fuzz}/**"
       - name: Run Hardhat tests

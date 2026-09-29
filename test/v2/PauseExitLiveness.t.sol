@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeERC20 as OZSafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -524,7 +524,7 @@ contract PauseExitLivenessTest is PauseLivenessBase {
 
         token.setFailMode(LivenessToken.FailMode.ReturnFalse);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(SafeERC20.SafeERC20FailedOperation.selector, address(token)));
+        vm.expectRevert(abi.encodeWithSelector(OZSafeERC20.SafeERC20FailedOperation.selector, address(token)));
         vault.withdraw(address(token), ALICE_CLAIMABLE);
 
         token.setFailMode(LivenessToken.FailMode.Revert);
