@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolExecutionBounds} from "../contracts/performance/ProtocolExecutionBounds.sol";
 import {GasBudgetRegistry} from "../contracts/performance/GasBudgetRegistry.sol";
@@ -124,7 +125,7 @@ contract GasBoundedExecutionTest is Test {
         vm.prank(userA);
         vm.expectRevert(
             abi.encodeWithSelector(
-                AccessControl.AccessControlUnauthorizedAccount.selector,
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
                 userA,
                 budgets.BUDGET_ADMIN_ROLE()
             )

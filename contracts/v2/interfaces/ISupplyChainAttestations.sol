@@ -13,13 +13,6 @@ import { IV2Module } from "./IV2Module.sol";
 ///         `SupplyChainAttestationPublished` event; no off-chain actor gains any
 ///         settlement or treasury authority from this contract.
 interface ISupplyChainAttestations is IV2Module {
-    /// @notice Schema version for the attestation format.
-    uint16 public constant ATTESTATION_SCHEMA_VERSION = 1;
-
-    /// @notice Predicate type URI for in-toto / SLSA provenance attestations.
-    string public constant PREDICATE_TYPE =
-        "https://truthbounty.protocol/attestation/contract-release/v1";
-
     /// @notice Compiler settings used for the release build.
     struct CompilerSettings {
         string solidityVersion;

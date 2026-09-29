@@ -49,8 +49,10 @@ contract Aggregation is IAggregation, V2PauseGuard {
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (_outcomes[claimId].finalized) revert V2Errors.SettlementAlreadyFinalized(claimId, 0);
 
-        IConfiguration config = IConfiguration(registry.getModule(keccak256("CONFIGURATION")));
-        IVerification verifier = IVerification(registry.getModule(keccak256("VERIFICATION")));
+        (address configModule,,) = registry.module(keccak256("CONFIGURATION"));
+        (address verificationModule,,) = registry.module(keccak256("VERIFICATION"));
+        IConfiguration config = IConfiguration(configModule);
+        IVerification verifier = IVerification(verificationModule);
         
         uint256 versionId = config.getLatestVersion();
         IConfiguration.ParameterSet memory params = config.getParameterSet(versionId);

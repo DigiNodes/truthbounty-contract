@@ -253,11 +253,11 @@ contract SupplyChainAttestationManifestTest is Test {
         attestation.dependencies = new ISupplyChainAttestations.DependencyEntry[](depCount);
         for (uint256 i = 0; i < depCount; i++) {
             attestation.dependencies[i] = ISupplyChainAttestations.DependencyEntry({
-                name: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", i.toString(), "].name"))),
-                version: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", i.toString(), "].version"))),
-                kind: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", i.toString(), "].kind"))),
-                rev: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", i.toString(), "].rev"))),
-                integrity: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", i.toString(), "].integrity")))
+                name: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", vm.toString(i), "].name"))),
+                version: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", vm.toString(i), "].version"))),
+                kind: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", vm.toString(i), "].kind"))),
+                rev: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", vm.toString(i), "].rev"))),
+                integrity: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.dependencies[", vm.toString(i), "].integrity")))
             });
         }
 
@@ -265,11 +265,11 @@ contract SupplyChainAttestationManifestTest is Test {
         uint256 artifactCount = vm.parseJsonUint(manifestJson, ".supplyChainAttestation.artifacts.length");
         attestation.artifacts = new ISupplyChainAttestations.ArtifactHash[](artifactCount);
         for (uint256 i = 0; i < artifactCount; i++) {
-            string memory sha256Hex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", i.toString(), "].sha256")));
+            string memory sha256Hex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", vm.toString(i), "].sha256")));
             attestation.artifacts[i] = ISupplyChainAttestations.ArtifactHash({
-                path: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", i.toString(), "].path"))),
+                path: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", vm.toString(i), "].path"))),
                 sha256: parseHexStringToBytes32(sha256Hex),
-                size: vm.parseJsonUint(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", i.toString(), "].size")))
+                size: vm.parseJsonUint(manifestJson, string(abi.encodePacked(".supplyChainAttestation.artifacts[", vm.toString(i), "].size")))
             });
         }
 
@@ -290,9 +290,9 @@ contract SupplyChainAttestationManifestTest is Test {
         uint256 subjectCount = vm.parseJsonUint(manifestJson, ".supplyChainAttestation.subjects.length");
         attestation.subjects = new ISupplyChainAttestations.AttestationSubject[](subjectCount);
         for (uint256 i = 0; i < subjectCount; i++) {
-            string memory digestHex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.subjects[", i.toString(), "].digest")));
+            string memory digestHex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.subjects[", vm.toString(i), "].digest")));
             attestation.subjects[i] = ISupplyChainAttestations.AttestationSubject({
-                name: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.subjects[", i.toString(), "].name"))),
+                name: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.subjects[", vm.toString(i), "].name"))),
                 digest: parseHexStringToBytes32(digestHex)
             });
         }
@@ -301,9 +301,9 @@ contract SupplyChainAttestationManifestTest is Test {
         uint256 materialCount = vm.parseJsonUint(manifestJson, ".supplyChainAttestation.materials.length");
         attestation.materials = new ISupplyChainAttestations.AttestationMaterial[](materialCount);
         for (uint256 i = 0; i < materialCount; i++) {
-            string memory digestHex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.materials[", i.toString(), "].digest")));
+            string memory digestHex = vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.materials[", vm.toString(i), "].digest")));
             attestation.materials[i] = ISupplyChainAttestations.AttestationMaterial({
-                uri: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.materials[", i.toString(), "].uri"))),
+                uri: vm.parseJsonString(manifestJson, string(abi.encodePacked(".supplyChainAttestation.materials[", vm.toString(i), "].uri"))),
                 digest: parseHexStringToBytes32(digestHex)
             });
         }
@@ -333,13 +333,11 @@ contract SupplyChainAttestationManifestTest is Test {
     function parseHexStringToBytes32(string memory hexStr) internal pure returns (bytes32) {
         bytes memory b = bytes(hexStr);
         require(b.length == 64, "invalid hex length");
-        bytes32 result;
-        for (uint256 i = 0; i < 32; i++) {
-            uint8 high = parseHexNibble(uint8(b[i * 2]));
-            uint8 low = parseHexNibble(uint8(b[i * 2 + 1]));
-            result = result | (bytes32(high) << (8 * (31 - i)) * 2) | (bytes32(low) << (8 * (31 - i)) * 2 + 4);
+        uint256 result;
+        for (uint256 i = 0; i < 64; i++) {
+            result = (result << 4) | parseHexNibble(uint8(b[i]));
         }
-        return result;
+        return bytes32(result);
     }
 
     // Parses a single hex nibble

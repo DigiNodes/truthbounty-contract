@@ -80,7 +80,7 @@ contract UupsUpgradeAuthorizationTest is Test {
     }
 
     function _upgradeCall() internal view returns (bytes memory) {
-        return abi.encodeCall(UupsAuthHarness.upgradeToAndCall, (address(implV2), bytes("")));
+        return abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(implV2), bytes(""));
     }
 
     function _operationId(bytes memory call) internal view returns (bytes32) {

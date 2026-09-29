@@ -16,6 +16,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../contracts/interfaces/ITruthBountyEvents.sol";
 import "../../contracts/interfaces/IParameterVersionRegistry.sol";
@@ -101,12 +102,18 @@ contract IndexerReplayAndReconciliation is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -221,7 +228,7 @@ contract IndexerReplayAndReconciliation is Test {
         // Verify all state is accessible
         assertEq(id, claimId);
         assertEq(submitter, claimCreator);
-        assertEq(block.timestamp - verificationWindowEnd, -VERIFICATION_WINDOW);
+        assertEq(verificationWindowEnd - block.timestamp, VERIFICATION_WINDOW);
 
         vm.stopPrank();
     }
@@ -284,9 +291,9 @@ contract IndexerReplayAndReconciliation is Test {
         // is done by the StorageCompatibilityValidator
 
         // Verify all contracts have valid addresses
-        assertGt(address(token), 0);
-        assertGt(address(governanceController), 0);
-        assertGt(address(emergencyController), 0);
+        assertTrue(address(token) != address(0));
+        assertTrue(address(governanceController) != address(0));
+        assertTrue(address(emergencyController) != address(0));
 
         vm.stopPrank();
     }
@@ -308,7 +315,7 @@ contract IndexerReplayAndReconciliation is Test {
         harness.emitDisputeRaisedV1(1, 1, deployer, 200, keccak256("reason"));
         harness.emitRewardCalculatedV1(keccak256("calc"), deployer, 400);
         harness.emitSlashExecutedV1(1, deployer, keccak256("reason"), 100);
-        harness.emitWithdrawalQueuedV1(keccak256("withdraw"), deployer, address(0), 10000, block.timestamp + 86400);
+        harness.emitWithdrawalQueuedV1(keccak256("withdraw"), deployer, address(0), 10000, uint64(block.timestamp + 86400));
         harness.emitTreasuryDepositV1(keccak256("op"), 0, address(0), 50000, deployer);
         harness.emitParameterUpdatedV1(keccak256("param"), 1, 100, 200, uint64(block.timestamp));
         harness.emitReputationRootPublishedV1(1, keccak256("root"), 150, uint64(block.timestamp));
@@ -356,7 +363,7 @@ contract IndexerReplayAndReconciliation is Test {
         truthBounty.stake(MIN_STAKE);
 
         // Verify stake state
-        (uint256 totalStaked, uint256 activeStakes) = truthBounty.verifierStakes(verifier1);
+        (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(verifier1);
         assertEq(totalStaked, MIN_STAKE);
 
         vm.stopPrank();
@@ -377,7 +384,7 @@ contract IndexerReplayAndReconciliation is Test {
         vm.stopPrank();
 
         // Verify vote state
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted, bool support, uint256 stakeAmount,,, bool rewardClaimed, bool stakeReturned,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(support, true);
         assertEq(stakeAmount, MIN_STAKE);
@@ -406,7 +413,7 @@ contract IndexerReplayAndReconciliation is Test {
         truthBounty.settleClaim(claimId);
 
         // Verify settlement result
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake,,,,,,,,,, ) = truthBounty.settlementResults(claimId);
         assertEq(passed, true);
         assertGt(winnerStake, 0);
 
@@ -450,7 +457,7 @@ contract IndexerReplayAndReconciliation is Test {
 
         // Create multiple claims
         for (uint i = 0; i < 5; i++) {
-            truthBounty.createClaim(abi.encodePacked("Claim ", i));
+            truthBounty.createClaim(string(abi.encodePacked("Claim ", vm.toString(i))));
         }
 
         assertEq(truthBounty.claimCounter(), initialCounter + 5);

@@ -15,6 +15,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 
 
@@ -102,12 +103,18 @@ contract TestnetGasBudgets is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -241,10 +248,10 @@ contract TestnetGasBudgets is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             25
         );
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         uint256 gasBefore = gasleft();
         vm.warp(block.timestamp + 3600 + 1);
@@ -332,7 +339,7 @@ contract TestnetGasBudgets is Test {
         // Multiple storage writes should be bounded
         for (uint i = 0; i < 10; i++) {
             governanceController.requestParameterUpdate(
-                GovernanceController.ParameterType.SLASH_PERCENT,
+                GovernanceHooks.ParameterType.SLASH_PERCENT,
                 20 + i
             );
         }
@@ -348,7 +355,7 @@ contract TestnetGasBudgets is Test {
         vm.startPrank(claimCreator);
 
         for (uint i = 0; i < 5; i++) {
-            truthBounty.createClaim(abi.encodePacked("Claim ", i));
+            truthBounty.createClaim(string(abi.encodePacked("Claim ", vm.toString(i))));
         }
 
         assertEq(truthBounty.claimCounter(), 5);

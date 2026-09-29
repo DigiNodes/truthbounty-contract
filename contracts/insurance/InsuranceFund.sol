@@ -271,7 +271,7 @@ contract InsuranceFund is
         claim.state = ClaimState.APPROVED;
 
         emit InsuranceClaimStateUpdated(claimId, oldState, ClaimState.APPROVED, msg.sender);
-        emit InsuranceClaimApproved(bytes32(claimId), approvedAmount);
+        emit InsuranceClaimApproved(claimId, approvedAmount);
     }
 
     /**

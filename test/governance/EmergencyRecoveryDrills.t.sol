@@ -577,9 +577,9 @@ contract EmergencyRecoveryDrillsTest is Test {
         uint256 claimId = v2Fixture.createClaim(bytes32("v2-subject"), 100 ether, "");
         assertEq(claimId, 1);
 
-        // 1. Emergency role pauses claims scope with 4-arg event
+        // 1. Emergency role pauses claims scope
         vm.expectEmit(true, true, false, true);
-        emit IEmergencyControls.EmergencyPaused(claimsScope, emergencyCouncil, uint64(block.timestamp), 1);
+        emit IEmergencyControls.EmergencyPaused(claimsScope, emergencyCouncil);
         vm.prank(emergencyCouncil);
         v2EmergencyControls.pause(claimsScope);
 
@@ -594,7 +594,7 @@ contract EmergencyRecoveryDrillsTest is Test {
         v2Fixture.cancelClaim(claimId);
 
         // Read operations remain unblocked
-        assertEq(v2Fixture.getClaim(claimId).claimId, 1);
+        assertEq(v2Fixture.getClaim(claimId).id, 1);
 
         // 3. Emergency role CANNOT unpause
         bytes memory unauthorizedUnpause = abi.encodeWithSelector(
@@ -616,7 +616,7 @@ contract EmergencyRecoveryDrillsTest is Test {
 
         // 5. Governance unpauses claims scope with 4-arg event
         vm.expectEmit(true, true, false, true);
-        emit IEmergencyControls.EmergencyUnpaused(claimsScope, daoGovernance, uint64(block.timestamp), 1);
+        emit IEmergencyControls.EmergencyUnpaused(claimsScope, daoGovernance);
         vm.prank(daoGovernance);
         v2EmergencyControls.unpause(claimsScope);
         assertFalse(v2EmergencyControls.paused(claimsScope));
