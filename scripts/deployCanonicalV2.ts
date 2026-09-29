@@ -2,11 +2,11 @@ import { network } from "hardhat";
 import type { Signer } from "ethers";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateCanonicalV2Parameters } from "./validateDeploymentConfig";
 
 export type DeploymentSigner = Signer & {
   address: string;
 };
-
 export interface CanonicalV2Suite {
   deployer: DeploymentSigner;
   governanceController: any;

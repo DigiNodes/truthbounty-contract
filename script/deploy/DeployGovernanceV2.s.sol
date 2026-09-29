@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
-import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
-import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
-import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
-import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
-import {GovernanceSnapshot} from "../../contracts/governance/v2/GovernanceSnapshot.sol";
-import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
-import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
-import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
-import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
-import {DeploymentPreflight} from "./DeploymentPreflight.sol";
+import { Script } from "forge-std/Script.sol";
+import { console2 } from "forge-std/console2.sol";
+import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
+import { GovernedModuleRegistry } from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
+import { TruthBountyGovernanceToken } from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
+import { TruthBountyGovernor } from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import { GovernanceSnapshot } from "../../contracts/governance/v2/GovernanceSnapshot.sol";
+import { IGovernanceSnapshot } from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
+import { GovernanceGuardian } from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import { ITruthBountyGovernor } from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
+import { GovernanceRoleTopology } from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
+import { DeploymentPreflight } from "./DeploymentPreflight.sol";
+import { DeploymentConfigValidator } from "../../contracts/deployment/DeploymentConfigValidator.sol";
 
 /**
  * @title DeployGovernanceV2
@@ -73,49 +74,49 @@ contract DeployGovernanceV2 is Script {
 
         uint256 minBalance = vm.envOr("MIN_GAS_BALANCE", uint256(0.05 ether));
         if (minBalance != 0) DeploymentPreflight.requireSufficientBalance(msg.sender, minBalance);
+        DeploymentConfigValidator.validate(_validatorConfig(cfg));
 
         vm.startBroadcast(cfg.admin);
 
         GovernedModuleRegistry registry = new GovernedModuleRegistry(cfg.admin);
         TruthBountyGovernanceToken token = new TruthBountyGovernanceToken(cfg.admin, cfg.tokenSupply);
 
-address[] memory proposers = new address[](0);
-address[] memory executors = new address[](0);
-TimelockController timelock = new TimelockController(cfg.timelockMinDelay, proposers, executors, cfg.admin);
+        address[] memory proposers = new address[](0);
+        address[] memory executors = new address[](0);
+        TimelockController timelock = new TimelockController(cfg.timelockMinDelay, proposers, executors, cfg.admin);
 
-// From `Deployment`: preflight check on the timelock.
-DeploymentPreflight.requireTimelock(address(timelock), "governance timelock");
+        // Check the deployed timelock and module compatibility before completing setup.
+        DeploymentPreflight.requireTimelock(address(timelock), "governance timelock");
 
-// From `main`: deploy snapshot registry with admin as temporary registrar
-// so we can grant the role to the governor after it is deployed.
-GovernanceSnapshot snapshot = new GovernanceSnapshot(cfg.admin, cfg.admin);
+        // Deploy the snapshot registry with admin as temporary registrar, then transfer its role.
+        GovernanceSnapshot snapshot = new GovernanceSnapshot(cfg.admin, cfg.admin);
 
-TruthBountyGovernor governor = new TruthBountyGovernor(
-    token,
-    timelock,
-    registry,
-    IGovernanceSnapshot(address(snapshot)),
-    cfg.guardian,
-    cfg.votingDelay,
-    cfg.votingPeriod,
-    cfg.proposalThreshold,
-    cfg.quorumNumerator
-);
+        TruthBountyGovernor governor = new TruthBountyGovernor(
+            token,
+            timelock,
+            registry,
+            IGovernanceSnapshot(address(snapshot)),
+            cfg.guardian,
+            cfg.votingDelay,
+            cfg.votingPeriod,
+            cfg.proposalThreshold,
+            cfg.quorumNumerator
+        );
 
-// From `Deployment`: preflight check that registry/governor/timelock are compatible.
-DeploymentPreflight.requireCompatibleModules(address(registry), address(governor), address(timelock));
+        // Check the newly deployed registry, governor, and timelock are compatible.
+        DeploymentPreflight.requireCompatibleModules(address(registry), address(governor), address(timelock));
 
-// From `main`: transfer SNAPSHOT_REGISTRAR_ROLE to governor and revoke from admin.
-snapshot.grantRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), address(governor));
-snapshot.revokeRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), cfg.admin);
+        // Transfer SNAPSHOT_REGISTRAR_ROLE to governor and revoke it from the admin.
+        snapshot.grantRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), address(governor));
+        snapshot.revokeRole(snapshot.SNAPSHOT_REGISTRAR_ROLE(), cfg.admin);
 
-GovernanceGuardian guardianContract = new GovernanceGuardian(
-    cfg.admin,
-    cfg.guardian,
-    ITruthBountyGovernor(address(governor))
-);
+        GovernanceGuardian guardianContract = new GovernanceGuardian(
+            cfg.admin,
+            cfg.guardian,
+            ITruthBountyGovernor(address(governor))
+        );
 
-vm.stopBroadcast();
+        vm.stopBroadcast();
         vm.startBroadcast(cfg.guardian);
         governor.setGovernanceGuardianModule(address(guardianContract));
         vm.stopBroadcast();
