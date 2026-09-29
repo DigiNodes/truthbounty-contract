@@ -14,49 +14,30 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   // Account parameter defaults
   const deployer = m.getAccount(0);
 
-  // Initial parameter defaults (documented safe values; overridable via parameters JSON)
-  const DEFAULT_INITIAL_SUPPLY = ethers.parseEther("10000000").toString();
-  const DEFAULT_MIN_VERIFICATION_COUNT = 1n;
-  const DEFAULT_MIN_TOTAL_WEIGHT = 0n;
-  const DEFAULT_MIN_CONFIDENCE_BPS = 0n;
-  const DEFAULT_CHALLENGE_WINDOW = 3 * 24 * 3600; // 3 days
-  const DEFAULT_APPEAL_DURATION = 3 * 24 * 3600; // 3 days
-  const DEFAULT_MIN_APPEAL_STAKE = ethers.parseEther("200").toString();
-  const DEFAULT_APPEAL_MULTIPLIER_BPS = 15000n; // 1.5x
-  const DEFAULT_MAX_WEIGHT_CAP = ethers.parseEther("100000").toString();
-
-  // Guard: any drift of the documented defaults out of the canonical bounds (SC-068) fails on
-  // module load, before Ignition submits anything. User-supplied parameter overrides are
-  // validated by validateCanonicalV2Parameters in scripts/deployCanonicalV2.ts and constrained
-  // by the on-chain constructors at deploy time.
-  validateCanonicalV2Parameters({
-    initialSupply: DEFAULT_INITIAL_SUPPLY,
-    minVerificationCount: DEFAULT_MIN_VERIFICATION_COUNT,
-    minTotalWeight: DEFAULT_MIN_TOTAL_WEIGHT,
-    minConfidenceBps: DEFAULT_MIN_CONFIDENCE_BPS,
-    challengeWindowDuration: DEFAULT_CHALLENGE_WINDOW,
-    appealDuration: DEFAULT_APPEAL_DURATION,
-    minAppealStake: DEFAULT_MIN_APPEAL_STAKE,
-    appealMultiplierBps: DEFAULT_APPEAL_MULTIPLIER_BPS,
-    maxWeightCap: DEFAULT_MAX_WEIGHT_CAP,
-    parameterVersion: 1n,
-  });
-
-  const initialSupply = m.getParameter("initialSupply", DEFAULT_INITIAL_SUPPLY);
-  const minVerificationCount = m.getParameter("minVerificationCount", DEFAULT_MIN_VERIFICATION_COUNT);
-  const minTotalWeight = m.getParameter("minTotalWeight", DEFAULT_MIN_TOTAL_WEIGHT);
-  const minConfidenceBps = m.getParameter("minConfidenceBps", DEFAULT_MIN_CONFIDENCE_BPS);
-  const challengeWindowDuration = m.getParameter("challengeWindowDuration", DEFAULT_CHALLENGE_WINDOW);
-  const appealDuration = m.getParameter("appealDuration", DEFAULT_APPEAL_DURATION);
-  const minAppealStake = m.getParameter("minAppealStake", DEFAULT_MIN_APPEAL_STAKE);
-  const appealMultiplierBps = m.getParameter("appealMultiplierBps", DEFAULT_APPEAL_MULTIPLIER_BPS);
-  const maxWeightCap = m.getParameter("maxWeightCap", DEFAULT_MAX_WEIGHT_CAP);
+  // Initial parameters
+  const initialSupply = m.getParameter("initialSupply", ethers.parseEther("10000000").toString());
+  const minVerificationCount = m.getParameter("minVerificationCount", 1n);
+  const minTotalWeight = m.getParameter("minTotalWeight", 0n);
+  const minConfidenceBps = m.getParameter("minConfidenceBps", 0n);
+  const challengeWindowDuration = m.getParameter("challengeWindowDuration", 3 * 24 * 3600); // 3 days
+  const appealDuration = m.getParameter("appealDuration", 3 * 24 * 3600); // 3 days
+  const minAppealStake = m.getParameter("minAppealStake", ethers.parseEther("200").toString());
+  const appealMultiplierBps = m.getParameter("appealMultiplierBps", 15000n); // 1.5x
+  const maxWeightCap = m.getParameter("maxWeightCap", ethers.parseEther("100000").toString());
+  const maxAppealRounds = m.getParameter("maxAppealRounds", 1n);
+  const appealBond = m.getParameter("appealBond", ethers.parseEther("1000").toString());
+  const appealBondEscalationBps = m.getParameter("appealBondEscalationBps", 15000n);
+  const maxAppealBond = m.getParameter("maxAppealBond", ethers.parseEther("5000").toString());
+  const maxVotersPerRound = m.getParameter("maxVotersPerRound", 200n);
 
   // 1. Deploy Governance Controller
   const governanceController = m.contract("GovernanceController", [deployer]);
 
   // 2. Deploy Protocol Token (RewardToken)
   const token = m.contract("RewardToken", [deployer, initialSupply]);
+
+  // 2b. Deploy Bond-Custody StakeVault (V2-SC-016/059 appeal bonds live here)
+  const bondVault = m.contract("contracts/StakeVault.sol:StakeVault", [deployer, token]);
 
   // 3. Deploy Reputation Oracle
   const reputationOracle = m.contract("MockReputationOracle", []);
@@ -97,12 +78,18 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
     stakeMultiplierBps: appealMultiplierBps,
     maxWeightCap: maxWeightCap,
     parameterVersion: 1n,
+    maxAppealRounds: maxAppealRounds,
+    appealBond: appealBond,
+    appealBondEscalationBps: appealBondEscalationBps,
+    maxAppealBond: maxAppealBond,
+    maxVotersPerRound: maxVotersPerRound,
   };
 
   const appealVerificationRound = m.contract("AppealVerificationRound", [
     token,
     claimRegistry,
     reputationOracle,
+    bondVault,
     appealConfig,
     governanceController,
     deployer,
@@ -113,6 +100,10 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   const REGISTRY_UPDATER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRY_UPDATER_ROLE"));
   m.call(claimRegistry, "grantRole", [REGISTRY_UPDATER_ROLE, provisionalSettlementEngine]);
 
+  // Authorise the appeal module to lock appeal bonds in the vault
+  const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
+  m.call(bondVault, "grantRole", [OPERATOR_ROLE, appealVerificationRound]);
+
   return {
     governanceController,
     token,
@@ -122,6 +113,7 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
     verificationAggregator,
     provisionalSettlementEngine,
     appealVerificationRound,
+    bondVault,
   };
 });
 
