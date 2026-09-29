@@ -106,6 +106,7 @@ contract MetaTxExample is ERC2771Context, EIP712 {
     ) external {
         // Verify deadline
         require(block.timestamp <= deadline, "Signature expired");
+        if (signature.length > 65) revert InvalidSignature();
 
         // Get current nonce
         uint256 currentNonce = nonces[from];

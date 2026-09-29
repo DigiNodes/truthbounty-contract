@@ -28,9 +28,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * Implementations MUST reject invalid state transitions.
  */
 interface IInsuranceFund {
-    // =============================================================
-    //                           ENUMS
-    // =============================================================
+    /// @notice A claim description URI exceeded the 512-byte input limit.
+    /// @param actual Supplied URI length in bytes.
+    /// @param maximum Maximum accepted URI length in bytes.
+    error DescriptionUriTooLong(uint256 actual, uint256 maximum);
+
+    // ============ Enums ============
 
     enum CoverageCategory {
         SMART_CONTRACT_FAILURE,

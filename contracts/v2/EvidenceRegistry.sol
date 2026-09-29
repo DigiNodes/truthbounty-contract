@@ -36,6 +36,8 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
     uint256 public constant MAX_EVIDENCE_PER_CLAIM = ProtocolExecutionBounds.MAX_EVIDENCE_PER_CLAIM;
+    /// @notice Maximum metadata calldata hashed for one evidence commitment.
+    uint256 public constant MAX_METADATA_BYTES = 1_024;
 
     /// @notice Fixed, domain-separated reason attached to admin-driven pause logs.
     /// @dev `EmergencyPauseActivatedV1` requires a `bytes32 reason`; the pause
@@ -142,6 +144,9 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         override
         returns (uint256 evidenceId)
     {
+        if (metadata.length > MAX_METADATA_BYTES) {
+            revert MetadataTooLarge(metadata.length, MAX_METADATA_BYTES);
+        }
         return commitEvidence(claimId, contentHash, keccak256(metadata), _nextContributorNonce[msg.sender]);
     }
 
