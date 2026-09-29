@@ -470,6 +470,11 @@ library V2Errors {
     /// @notice Invalid checksum (zero or malformed).
     error InvalidChecksum();
 
+    /// @notice A variable-length attestation field contains the '|' field delimiter (V2-SC-160).
+    /// @dev Delimiter-joined records are only unambiguous when no field can contain the
+    ///      delimiter; otherwise field boundaries shift on read-back.
+    error AttestationFieldContainsDelimiter();
+
     // =========================================================================
     // Precision & Arithmetic Errors (V2-SC-100)
     // =========================================================================
