@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ProtocolExecutionBounds} from "../../contracts/performance/ProtocolExecutionBounds.sol";
 import {GasBudgetRegistry} from "../../contracts/performance/GasBudgetRegistry.sol";
 import {ICriticalPathGasBudgets} from "../../contracts/performance/ICriticalPathGasBudgets.sol";
@@ -88,7 +88,7 @@ contract GasBudgetRegistryFuzzTest is Test {
         (uint256 before,) = budgets.getBudget(operation);
 
         vm.expectRevert(
-            abi.encodeWithSelector(AccessControl.AccessControlUnauthorizedAccount.selector, caller, role)
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, caller, role)
         );
         vm.prank(caller);
         budgets.updateBudget(operation, maxGas, "unauthorized");
