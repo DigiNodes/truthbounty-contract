@@ -68,6 +68,12 @@ contract TruthBountyGovernorTest is Test {
         snapshot.revokeRole(registrarRole, admin);
 
         guardianContract = new GovernanceGuardian(admin, guardian, ITruthBountyGovernor(address(governor)));
+        vm.stopPrank();
+
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+
+        vm.startPrank(admin);
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
@@ -86,6 +92,8 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(voter);
         token.delegate(voter);
 
+        // Voting power checkpoints must predate the proposal snapshot lookup (clock() - 1).
+        vm.warp(block.timestamp + 1);
         // Warp so delegation checkpoints are in the past — getPastVotes(x, block.timestamp)
         // requires the timepoint to be strictly before current block.timestamp (OZ Votes invariant).
         vm.warp(block.timestamp + 2);
@@ -108,9 +116,12 @@ contract TruthBountyGovernorTest is Test {
     }
 
     function _voteAndQueue(uint256 proposalId) internal {
+        // Enter the Active window first so the vote is accepted ...
         vm.warp(block.timestamp + VOTING_DELAY + 1);
         vm.prank(voter);
         governor.castVote(proposalId, 1);
+        // ... then cross the voting deadline so the proposal reaches Succeeded and can be queued.
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
         governor.queue(proposalId);
     }
 
@@ -140,6 +151,26 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(voter);
         vm.expectRevert();
         governor.castVote(proposalId, 1);
+    }
+
+    function test_VoteAtVotingDeadlineIsCountedBeforeQueueing() public {
+        uint256 proposalId = _createProposal(18);
+        uint256 deadline = governor.proposalDeadline(proposalId);
+
+        vm.warp(deadline);
+        vm.prank(voter);
+        uint256 votingWeight = governor.castVote(proposalId, 1);
+
+        assertEq(votingWeight, 800_000 ether);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Active));
+
+        vm.warp(deadline + 1);
+        vm.expectRevert();
+        vm.prank(proposer);
+        governor.castVote(proposalId, 1);
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Queued));
     }
 
     function test_ProposerCanCancelPendingProposal() public {
@@ -179,6 +210,18 @@ contract TruthBountyGovernorTest is Test {
 
         vm.expectRevert();
         governor.execute(proposalId);
+    }
+
+    function test_TimelockExecutesAtExactEtaAfterRecovery() public {
+        uint256 proposalId = _createProposal(77);
+        _voteAndQueue(proposalId);
+        uint256 eta = governor.proposalEta(proposalId);
+
+        vm.warp(eta);
+        governor.execute(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Executed));
+        assertEq(module.value(), 77);
     }
 
     function test_DuplicateExecuteReverts() public {

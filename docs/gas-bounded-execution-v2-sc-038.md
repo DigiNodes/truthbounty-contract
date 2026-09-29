@@ -66,6 +66,12 @@ See `LoopBoundsCatalog` for the canonical on-chain catalog (12 entries).
 - `config/gas-budgets.json` mirrors on-chain `GasBudgetRegistry` defaults.
 - `test/GasBoundedExecution.t.sol` validates all operation budgets, configuration
   authorization and boundaries, pull isolation, and withdrawal budget.
+- `test/fuzz/GasBudgetRegistryFuzz.t.sol` fuzzes budget updates across every operation, the
+  zero/ceiling boundaries, unauthorized callers, and out-of-range operation identifiers.
+- `test/invariant/GasBudgetRegistryInvariant.t.sol` asserts every budget stays within
+  `[1, RECOMMENDED_TX_GAS_CEILING]` and only changes through accepted admin updates.
+- Zero budgets revert with `ZeroGasBudget`; budgets above the ceiling revert with
+  `GasBudgetExceedsTransactionCeiling`.
 - Existing `.github/workflows/gas-check.yml` continues Hardhat gas snapshot comparison.
 
 ## Security Notes
