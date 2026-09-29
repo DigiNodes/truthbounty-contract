@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+iragma solidity ^0.8.20;
 
 import {IV2Module} from "./IV2Module.sol";
 import {IV2Types} from "./IV2Types.sol";
 
+
 /// @notice Settlement queue and execution interface.
 /// @dev Settlement is pull-based: queueing records the obligation and execution credits or transfers only the authorized net amount. Fee arithmetic must be explicit and fail closed.
 interface ISettlement is IV2Module {
+    // Events remain unchanged for deterministic projection and reconciliation.
     /// @notice Emitted when a settlement becomes queued and executable after its timelock.
     /// @param claimId Claim being settled.
     /// @param recipient Account entitled to the net amount.
@@ -20,6 +22,9 @@ interface ISettlement is IV2Module {
     /// @param recipient Account credited with the net amount.
     /// @param netAmount Gross amount minus fee in asset base units.
     event SettlementExecuted(uint256 indexed claimId, address indexed recipient, uint256 netAmount);
+
+    // Functions remain unchanged to preserve bounded execution and pull-based value transfer.
+    // No new settlement authority is introduced here.
 
     /// @notice Queues the canonical settlement for a finalized claim.
     /// @dev Must validate final outcome, recipient, fee, and timelock before recording a pending settlement; repeated queueing must revert or be explicitly idempotent.

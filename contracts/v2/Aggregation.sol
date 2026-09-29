@@ -9,10 +9,17 @@ import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2Precision} from "./libraries/V2Precision.sol";
+import {PauseMatrix} from "./libraries/PauseMatrix.sol";
+import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
 
 /// @title Aggregation
 /// @notice V2-SC-056 Aggregation Tie, Quorum, and Rounding Semantics
-contract Aggregation is IAggregation {
+/// @dev Pause matrix (V2-SC-162, `PauseMatrix` v1): `finalizeAggregation` fixes a claim's outcome, so it
+///      fails closed under `SCOPE_VERIFICATION` (a verification pause blocks new votes, and finalizing
+///      over a frozen, partial vote set would let a pause alter the outcome) and under `SCOPE_SETTLEMENT`.
+///      The pause authority is resolved from `registry` under `EMERGENCY_CONTROLS`.
+contract Aggregation is IAggregation, V2PauseGuard {
     IModuleRegistry public immutable registry;
 
     struct OutcomeData {
@@ -38,6 +45,8 @@ contract Aggregation is IAggregation {
     }
 
     function finalizeAggregation(uint256 claimId) external override {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_VERIFICATION);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (_outcomes[claimId].finalized) revert V2Errors.SettlementAlreadyFinalized(claimId, 0);
 
         IConfiguration config = IConfiguration(registry.getModule(keccak256("CONFIGURATION")));
@@ -73,8 +82,16 @@ contract Aggregation is IAggregation {
         bool accepted = false;
 
         if (totalWeight >= params.participationThreshold && totalWeight > 0) {
-            // Remainder allocation & Rounding semantics: Round UP for required support
-            uint256 requiredSupport = (totalWeight * params.confidenceThreshold + 9999) / 10000;
+            // Remainder allocation & Rounding semantics: Round UP for required support.
+            //
+            // Delegated to V2Precision (V2-SC-100). The previous inline form,
+            // `(totalWeight * confidenceThreshold + 9999) / 10000`, hand-rolled
+            // ceiling division with two magic numbers and multiplied before
+            // dividing, so a large totalWeight could revert on overflow. mulDiv
+            // uses a 512-bit intermediate, and the helper validates that the
+            // threshold is within basis-point range.
+            uint256 requiredSupport =
+                V2Precision.requiredSupportUp(totalWeight, params.confidenceThreshold);
             
             // Tie behaviour: If exactly equal to required support, is it accepted? 
             // In most systems, it must strictly exceed if 50/50 tie, but if threshold is exactly met, it's accepted.
@@ -96,6 +113,11 @@ contract Aggregation is IAggregation {
         });
 
         emit AggregationFinalized(claimId, accepted, supportingWeight, opposingWeight);
+    }
+
+    /// @dev Pause authority resolved from the module registry (timelocked replacement path).
+    function _pauseAuthority() internal view override returns (bool resolved, address authority) {
+        return _registryPauseAuthority(address(registry));
     }
 
     function outcome(uint256 claimId) external view override returns (bool finalized, bool accepted, uint256 supportingWeight, uint256 opposingWeight) {

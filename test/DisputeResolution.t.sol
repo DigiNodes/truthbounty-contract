@@ -59,6 +59,10 @@ contract DisputeResolutionTest is Test {
             admin
         );
 
+        // Resolve roles before pranking: the staticcalls would otherwise consume the pranks.
+        bytes32 updaterRole = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+
         // Authorise the dispute module to transition claims.
         bytes32 registryUpdaterRole = registry.REGISTRY_UPDATER_ROLE();
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -216,6 +220,20 @@ contract DisputeResolutionTest is Test {
         assertDisputeNotCommitted(claimId);
     }
 
+    function test_OpenDispute_RevertsAtVerificationDeadline() public {
+        uint256 claimId = _createClaim();
+        uint256 deadline = registry.getClaim(claimId).verificationDeadline;
+        _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
+        vm.warp(deadline);
+        _approveChallenge(challenger, BOND);
+
+        vm.expectRevert(IDisputeResolution.ChallengeWindowNotOpen.selector);
+        vm.prank(challenger);
+        dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
+
+        assertDisputeNotCommitted(claimId);
+    }
+
     function test_OpenDispute_RevertsLate_AfterFrozenDeadline() public {
         uint256 claimId = _createClaim();
         uint256 deadline = registry.getClaim(claimId).verificationDeadline;
@@ -230,6 +248,27 @@ contract DisputeResolutionTest is Test {
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
 
         assertDisputeNotCommitted(claimId);
+    }
+
+    function test_OpenDispute_SucceedsAtFrozenDeadline() public {
+        uint256 claimId = _createClaim();
+        uint256 verificationDeadline = registry.getClaim(claimId).verificationDeadline;
+        uint256 frozenDeadline = verificationDeadline + WINDOW;
+        _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
+        vm.warp(frozenDeadline);
+        _approveChallenge(challenger, BOND);
+
+        vm.prank(challenger);
+        uint256 disputeId = dispute.openDispute(
+            claimId,
+            IDisputeResolution.ChallengedOutcome.TRUE,
+            RATIONALE
+        );
+
+        assertEq(disputeId, 1);
+        assertEq(dispute.getDispute(disputeId).openedAt, frozenDeadline);
+        assertEq(dispute.getDispute(disputeId).appealDeadline, frozenDeadline);
+        assertEq(vault.totalLocked(), BOND);
     }
 
     // =========================================================================

@@ -194,6 +194,24 @@ contract SupplyChainAttestationManifestTest is Test {
         new SupplyChainAttestationAnchor(attestation, address(this));
     }
 
+    /// @dev V2-SC-160 constructive fixture: `name = "a|b", version = "c"` would pack to the same
+    ///      delimiter-joined record as `name = "a", version = "b|c"`; the anchor must refuse it.
+    function test_AnchorRejectsDelimiterInDependencyField() public {
+        ISupplyChainAttestations.SupplyChainAttestation memory attestation = buildAttestationFromManifest();
+        attestation.dependencies[0].name = "a|b";
+
+        vm.expectRevert(V2Errors.AttestationFieldContainsDelimiter.selector);
+        new SupplyChainAttestationAnchor(attestation, address(this));
+    }
+
+    function test_AnchorRejectsDelimiterInArtifactPath() public {
+        ISupplyChainAttestations.SupplyChainAttestation memory attestation = buildAttestationFromManifest();
+        attestation.artifacts[0].path = "out/A.json|deadbeef";
+
+        vm.expectRevert(V2Errors.AttestationFieldContainsDelimiter.selector);
+        new SupplyChainAttestationAnchor(attestation, address(this));
+    }
+
     function test_ProtocolVersionMarker() public {
         ISupplyChainAttestations.SupplyChainAttestation memory attestation = buildAttestationFromManifest();
         SupplyChainAttestationAnchor anchor = new SupplyChainAttestationAnchor(attestation, address(this));
