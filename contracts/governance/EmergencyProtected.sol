@@ -1,6 +1,7 @@
  // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {BoundedStaticCall} from "../libraries/BoundedStaticCall.sol";
 interface IEmergencyController {
     function isOperationAllowed(
         bytes32 operationType
@@ -55,6 +56,14 @@ abstract contract EmergencyProtected {
      * @param operationType Operation identifier, e.g.
      *        keccak256("claim_creation").
      */
+    modifier whenNotPaused(bytes32 operationType) {
+        if (emergencyController == address(0)) revert EmergencyControllerNotSet();
+        (bool success, uint256 value, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            emergencyController,
+            abi.encodeWithSignature("isOperationAllowed(bytes32)", operationType)
+        );
+        if (success && returnSize >= 32 && value <= 1) {
+            if (value == 0) revert OperationPaused(operationType, 0);
     modifier whenNotPaused(
         bytes32 operationType
     ) {

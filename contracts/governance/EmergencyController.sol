@@ -47,6 +47,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     error InvalidRecoveryStep(uint8 step);
     error ZeroAddress();
     error NoChangeRequested();
+    error ReasonTooLong(uint256 actual, uint256 maximum);
 
     // ─── Constants ────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint8 public constant MAX_PAUSE_LEVEL = 3;
+    /// @notice Maximum emergency reason length persisted on-chain.
+    uint256 public constant MAX_REASON_BYTES = 256;
 
     // ─── Roles ────────────────────────────────────────────────────────
 
@@ -200,6 +203,9 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
                 revert NotAuthorizedForLevel(msg.sender, level);
             }
         }
+
+        uint256 reasonLength = bytes(reason).length;
+        if (reasonLength > MAX_REASON_BYTES) revert ReasonTooLong(reasonLength, MAX_REASON_BYTES);
 
         currentPauseLevel = level;
         lastPauseTimestamp = block.timestamp;

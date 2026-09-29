@@ -256,9 +256,10 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         // Validate storage compatibility using the storage validator
         try storageValidator.validateUpgrade(proxy, address(0), newImplementation) {
             // Storage layout is compatible
-        } catch (bytes memory reason) {
-            emit InvalidImplementationRejected(newImplementation, string(reason));
-            revert InvalidImplementation(string(reason));
+        } catch {
+            string memory reason = "Storage layout validation failed";
+            emit InvalidImplementationRejected(newImplementation, reason);
+            revert InvalidImplementation(reason);
         }
         
         // Mark implementation as used to prevent future reuse

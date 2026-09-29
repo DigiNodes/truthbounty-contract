@@ -10,6 +10,7 @@ import { IEmergencyControls } from "./interfaces/IEmergencyControls.sol";
 import { IModuleRegistry } from "./interfaces/IModuleRegistry.sol";
 import { V2Errors } from "./libraries/V2Errors.sol";
 import { EmergencyController } from "../governance/EmergencyController.sol";
+import { BoundedStaticCall } from "../libraries/BoundedStaticCall.sol";
 
 /// @title EmergencyGatekeeper
 /// @notice Canonical V2 scoped emergency pause module (V2-SC-067).
@@ -321,10 +322,11 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
             return (true, 0);
         }
 
-        (bool success, bytes memory data) = controller.staticcall(abi.encodeWithSignature("getPauseLevel()"));
-        if (!success || data.length < 32) return (false, 0);
-
-        uint256 raw = abi.decode(data, (uint256));
+        (bool success, uint256 raw, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            controller,
+            abi.encodeWithSignature("getPauseLevel()")
+        );
+        if (!success || returnSize < 32) return (false, 0);
         if (raw > MAX_PROTOCOL_PAUSE_LEVEL) return (false, 0);
         return (true, uint8(raw));
     }
@@ -345,7 +347,12 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
 
     /// @dev Probes the candidate controller for the canonical read surface.
     function _validateControllerSurface(address controller) internal view {
-        (bool success,) = controller.staticcall(abi.encodeWithSignature("getPauseLevel()"));
-        if (!success) revert InvalidEmergencyController(controller);
+        (bool success, uint256 raw, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            controller,
+            abi.encodeWithSignature("getPauseLevel()")
+        );
+        if (!success || returnSize != 32 || raw > MAX_PROTOCOL_PAUSE_LEVEL) {
+            revert InvalidEmergencyController(controller);
+        }
     }
 }
