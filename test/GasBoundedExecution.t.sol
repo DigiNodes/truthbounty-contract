@@ -154,6 +154,31 @@ contract GasBoundedExecutionTest is Test {
         budgets.updateBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM, 1, "");
     }
 
+    function test_UpdateBudgetRejectsZeroBudget() public {
+        (uint256 before,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GasBudgetRegistry.ZeroGasBudget.selector,
+                ICriticalPathGasBudgets.Operation.REWARD_CLAIM
+            )
+        );
+        budgets.updateBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM, 0, "zero budget");
+
+        (uint256 afterUpdate,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM);
+        assertEq(afterUpdate, before);
+    }
+
+    function test_UpdateBudgetAcceptsCeilingBoundary() public {
+        budgets.updateBudget(
+            ICriticalPathGasBudgets.Operation.APPEAL_SETTLEMENT,
+            ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING,
+            "ceiling boundary"
+        );
+        (uint256 maxGas,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.APPEAL_SETTLEMENT);
+        assertEq(maxGas, ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING);
+    }
+
     function test_ZeroAdminDeploymentFailsClosed() public {
         vm.expectRevert(GasBudgetRegistry.ZeroAdmin.selector);
         new GasBudgetRegistry(address(0));
