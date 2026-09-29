@@ -478,11 +478,7 @@ contract TreasuryManagement is
     function emergencyWithdrawal(address recipient, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (recipient == address(0)) revert ZeroAddress();
-        if (
-            !hasRole(GOVERNANCE_ROLE, msg.sender) &&
-            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender) &&
-            msg.sender != emergencyAdmin
-        ) {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender) && !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert UnauthorisedWithdrawal(msg.sender, TreasuryPool.EMERGENCY_RESERVE);
         }
 

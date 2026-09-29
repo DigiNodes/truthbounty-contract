@@ -56,6 +56,14 @@ contract GovernanceOwnableTest is Test {
         assertFalse(govOwnable.paused());
     }
 
+    function test_EmergencyAdminCannotBypassGovernanceForConfiguration() public {
+        vm.prank(emergencyAdmin_);
+        vm.expectRevert(GovernanceOwnable.UnauthorizedGovernance.selector);
+        govOwnable.setValue(99);
+
+        assertEq(govOwnable.nextValue(), 0);
+    }
+
     function test_Gap_DoesNotBreakGovernanceController() public {
         vm.prank(admin);
         govOwnable.setGovernanceController(address(0x3));
