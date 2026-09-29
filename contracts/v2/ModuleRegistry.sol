@@ -10,6 +10,7 @@ import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {ModuleRegistryLib} from "./libraries/ModuleRegistryLib.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 
 /// @title ModuleRegistry
 /// @notice Canonical, version-aware module registry for the TruthBounty V2 protocol.
@@ -79,7 +80,7 @@ contract ModuleRegistry is ERC165, AccessControl, IModuleRegistry {
         info.minor = registration.minor;
         info.interfaceId = registration.interfaceId;
         info.status = ModuleStatus.REGISTERED;
-        info.changedAt = uint64(block.timestamp);
+        info.changedAt = V2SafeCast.timestamp64(V2SafeCast.FIELD_MODULE_CHANGED_AT);
         _moduleIds.push(registration.moduleId);
         emit ModuleRegistered(
             registration.moduleId,
@@ -174,7 +175,7 @@ contract ModuleRegistry is ERC165, AccessControl, IModuleRegistry {
         info.major = registration.major;
         info.minor = registration.minor;
         info.interfaceId = registration.interfaceId;
-        info.changedAt = uint64(block.timestamp);
+        info.changedAt = V2SafeCast.timestamp64(V2SafeCast.FIELD_MODULE_CHANGED_AT);
 
         delete _pendingReplacement[moduleId];
         delete _replacementReadyAt[moduleId];
@@ -188,7 +189,7 @@ contract ModuleRegistry is ERC165, AccessControl, IModuleRegistry {
         if (_deprecated[moduleId]) revert V2Errors.DeprecatedModule(moduleId);
         _deprecated[moduleId] = true;
         info.status = ModuleStatus.DEPRECATED;
-        info.changedAt = uint64(block.timestamp);
+        info.changedAt = V2SafeCast.timestamp64(V2SafeCast.FIELD_MODULE_CHANGED_AT);
         delete _pendingReplacement[moduleId];
         delete _replacementReadyAt[moduleId];
         emit ModuleDeprecated(moduleId, info.versionId, info.proxy);
@@ -611,8 +612,10 @@ contract ModuleRegistry is ERC165, AccessControl, IModuleRegistry {
     function _writeActivation(bytes32 moduleId) internal {
         ModuleInfo storage info = _modules[moduleId];
         info.status = ModuleStatus.ACTIVE;
-        info.activatedAt = uint64(block.timestamp);
-        info.changedAt = uint64(block.timestamp);
+        // V2-SC-161: one guarded read keeps activatedAt == changedAt and fails closed past uint64.
+        uint64 nowTs = V2SafeCast.timestamp64(V2SafeCast.FIELD_MODULE_ACTIVATED_AT);
+        info.activatedAt = nowTs;
+        info.changedAt = nowTs;
         emit ModuleActivated(moduleId, info.versionId, info.proxy);
     }
 
