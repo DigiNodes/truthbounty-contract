@@ -38,7 +38,9 @@
     "test:boundaries": "node --test test/scripts/check-dependency-boundaries.test.mjs",
     "check:canonical-abi": "node scripts/canonical-abi-gates.mjs",
     "test:canonical-abi": "node --test test/scripts/canonical-abi-gates.test.mjs",
-    "lint": "npm run check:boundaries && npm run test:boundaries && npm run check:canonical-abi && npm run test:canonical-abi",
+    "check:reproducibility": "node scripts/check-release-reproducibility.mjs",
+    "test:reproducibility": "node --test test/scripts/check-release-reproducibility.test.mjs",
+    "lint": "npm run check:boundaries && npm run test:boundaries && npm run check:canonical-abi && npm run test:canonical-abi && npm run test:reproducibility",
     "sbom:release": "ts-node scripts/generateContractReleaseSbom.ts",
     "test:sbom": "hardhat test test/ContractReleaseSbom.test.ts"
   },

@@ -265,7 +265,6 @@ contract EIP712Verifier {
         uint256 nonce,
         uint256 deadline
     ) external view returns (bytes32) {
-        _requireReasonBound(reason);
         bytes32 structHash = keccak256(abi.encode(
             CLAIM_SUBMISSION_TYPEHASH,
             claimant,

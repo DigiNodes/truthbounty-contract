@@ -65,7 +65,6 @@ contract DisputeResolutionTest is Test {
 
         // Authorise the dispute module to transition claims.
         bytes32 registryUpdaterRole = registry.REGISTRY_UPDATER_ROLE();
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(admin);
         registry.grantRole(registryUpdaterRole, address(dispute));
         // The helper `_driveToOutcome` impersonates `updater`, which also needs the role.
