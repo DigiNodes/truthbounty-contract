@@ -159,12 +159,12 @@ library V2Errors {
     /// @notice Invalid settlement amount.
     error InvalidSettlementAmount();
 
-    /// @notice Settlement outcome already recorded for this claim-round.
-    /// @param claimId Settlement claim.
-    /// @param round Settlement round.
     /// @notice Canonical asset conservation invariant is violated; on-chain balance and accounting buckets must match exactly.
     error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
 
+    /// @notice Settlement outcome already recorded for this claim-round.
+    /// @param claimId Settlement claim.
+    /// @param round Settlement round.
     error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
 
     /// @notice Invalid settlement outcome requested for this claim-round.
@@ -470,6 +470,11 @@ library V2Errors {
 
     /// @notice Invalid checksum (zero or malformed).
     error InvalidChecksum();
+
+    /// @notice A variable-length attestation field contains the '|' field delimiter (V2-SC-160).
+    /// @dev Delimiter-joined records are only unambiguous when no field can contain the
+    ///      delimiter; otherwise field boundaries shift on read-back.
+    error AttestationFieldContainsDelimiter();
 
     // =========================================================================
     // Precision & Arithmetic Errors (V2-SC-100)

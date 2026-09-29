@@ -155,37 +155,6 @@ contract ParameterVersionRegistry is
     function _createGenesisVersion() internal {
         versionCounter = 1;
         
-        // Initialize genesis parameters with default values
-        EconomicParameters storage genesisParams = _versions[versionCounter].parameters;
-        
-        // Default tokenomics parameters
-        genesisParams.verifierRewardsBPS = 4000;
-        genesisParams.treasuryReserveBPS = 2000;
-        genesisParams.ecosystemIncentivesBPS = 1500;
-        genesisParams.governanceIncentivesBPS = 1000;
-        genesisParams.protocolDevelopmentBPS = 1000;
-        genesisParams.emergencyReserveBPS = 500;
-        genesisParams.emissionLimit = type(uint256).max;
-        genesisParams.rewardMultiplier = 1e18;
-        genesisParams.treasuryReserveTargetBPS = 2000;
-        
-        // Default fee parameters
-        genesisParams.claimSubmissionFee = 0.001e18;
-        genesisParams.verificationSubmissionFee = 0.001e18;
-        genesisParams.disputeInitiationFee = 0.002e18;
-        genesisParams.protocolReserveFeeBPS = 50; // 0.5%
-        
-        // Default staking/reputation parameters
-        genesisParams.minStakeAmount = 1e18;
-        genesisParams.maxStakeAmount = type(uint256).max;
-        genesisParams.minBountyAmount = 1e18;
-        genesisParams.maxBountyAmount = type(uint256).max;
-        genesisParams.minReputationScore = 0;
-        genesisParams.maxReputationScore = 10000;
-        genesisParams.defaultReputationScore = 5000;
-        genesisParams.slashPercentageBPS = 1000; // 10%
-        genesisParams.maxSlashPercentageBPS = 5000; // 50%
-        
         // Set genesis version as active
         EconomicParameters memory genesisParams = EconomicParameters({
             verifierRewardsBPS: 4000,
@@ -417,7 +386,16 @@ contract ParameterVersionRegistry is
         if (versionId == 0) revert ClaimNotFound(claimId);
         return _versions[versionId].parameters;
     }
-    
+
+    /**
+     * @notice Get the parameter version a claim was frozen to at creation
+     * @param claimId The ID of the claim
+     * @return The linked version ID, or 0 if the claim was never recorded
+     */
+    function getClaimVersion(uint256 claimId) external view returns (uint256) {
+        return _claimVersionMap[claimId];
+    }
+
     /**
      * @notice Get the currently active parameters
      * @return The current economic parameters

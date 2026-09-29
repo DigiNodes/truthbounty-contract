@@ -5,7 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {IClaims} from "./interfaces/IClaims.sol";
@@ -20,7 +20,13 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 /// @notice Canonical V2 claim lifecycle with dust-bounty and claim-spam griefing controls (V2-SC-105).
 /// @dev Claim creation escrows the bounty into this module, charges a submission fee to `feeRecipient`,
 ///      and enforces per-account rate limits / open-claim caps before any storage write.
-contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
+///
+///      Pause matrix (V2-SC-162, `PauseMatrix` v1): `createClaim` fails closed under `SCOPE_CLAIMS`,
+///      `finalizeClaim` under `SCOPE_SETTLEMENT`, and `setAntiGriefParams` under `SCOPE_GOVERNANCE`.
+///      A claimant's own `cancelClaim` refund is a RISK_REDUCING exit that stays available under every
+///      scoped pause (frozen only at protocol SHUTDOWN); a manager-initiated cancel is an outcome
+///      decision and additionally fails closed under `SCOPE_SETTLEMENT`.
+contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPauseGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -102,6 +108,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         uint256 maxOpenClaimsPerCreator_,
         address feeRecipient_
     ) external onlyRole(ADMIN_ROLE) {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
         if (feeRecipient_ == address(0)) revert V2Errors.ZeroAddress();
         if (minBounty_ == 0) revert V2Errors.ZeroAmount();
         if (maxClaimsPerWindow_ == 0 || maxOpenClaimsPerCreator_ == 0 || claimSpamWindow_ == 0) {
@@ -125,6 +132,14 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         );
     }
 
+    /// @notice Wires the V2 pause authority exactly once (V2-SC-162).
+    /// @dev NEUTRAL: wiring only tightens control and can never be replaced or removed, so it cannot be
+    ///      used to lift an active pause. Admin only.
+    /// @param authority `IEmergencyControls` implementation (e.g. `EmergencyGatekeeper`).
+    function setPauseAuthority(address authority) external onlyRole(ADMIN_ROLE) {
+        _wirePauseAuthority(authority);
+    }
+
     /// @inheritdoc IClaims
     function createClaim(bytes32 subject, uint256 reward, bytes calldata /* metadata */ )
         external
@@ -132,6 +147,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         nonReentrant
         returns (uint256 claimId)
     {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_CLAIMS);
         if (subject == bytes32(0)) revert V2Errors.InvalidClaimSubject();
         AntiGriefing.requireMinAmount(reward, minBounty);
 
@@ -189,11 +205,17 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
     }
 
     /// @inheritdoc IClaims
+    /// @dev V2-SC-162: the claimant's own cancellation is a RISK_REDUCING refund exit that stays available
+    ///      under every scoped pause and freezes only at protocol SHUTDOWN. A CLAIM_MANAGER_ROLE cancellation
+    ///      of someone else's claim is an outcome decision and also fails closed under `SCOPE_SETTLEMENT`.
+    ///      Idempotent: a second cancellation reverts with `InvalidClaimStateTransition` and refunds nothing.
     function cancelClaim(uint256 claimId) external override nonReentrant {
+        _requireExitsNotShutdown();
         IV2Types.Claim storage c = _claims[claimId];
         if (c.id == 0) revert V2Errors.ClaimNotFound(claimId);
-        if (c.claimant != msg.sender && !hasRole(CLAIM_MANAGER_ROLE, msg.sender)) {
-            revert V2Errors.Unauthorized();
+        if (c.claimant != msg.sender) {
+            if (!hasRole(CLAIM_MANAGER_ROLE, msg.sender)) revert V2Errors.Unauthorized();
+            _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         }
         if (c.status != IV2Types.ClaimStatus.OPEN) revert V2Errors.InvalidClaimStateTransition(claimId);
 
@@ -219,6 +241,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         onlyRole(CLAIM_MANAGER_ROLE)
         nonReentrant
     {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         IV2Types.Claim storage c = _claims[claimId];
         if (c.id == 0) revert V2Errors.ClaimNotFound(claimId);
         if (c.status != IV2Types.ClaimStatus.OPEN && c.status != IV2Types.ClaimStatus.VERIFIED) {
@@ -258,7 +281,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims {
         if (c.id == 0) revert V2Errors.ClaimNotFound(claimId);
         if (c.status == IV2Types.ClaimStatus.OPEN) return IV2Types.ClaimState.VerificationOpen;
         if (c.status == IV2Types.ClaimStatus.VERIFIED) return IV2Types.ClaimState.AwaitingSettlement;
-        if (c.status == IV2Types.ClaimStatus.DISPUTLED) return IV2Types.ClaimState.Disputed;
+        if (c.status == IV2Types.ClaimStatus.DISPUTED) return IV2Types.ClaimState.Disputed;
         return IV2Types.ClaimState.Finalized;
     }
 

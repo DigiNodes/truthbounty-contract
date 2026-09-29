@@ -47,7 +47,7 @@ contract RewardAllocationRoundingTest is Test {
         registry = new MockModuleRegistry();
         token = new MockDecimalsERC20("Reward", "RWD", 18);
         allocator = new FinalRewardAllocator(address(registry), MAX_RECIPIENTS);
-        registry.registerModule(allocator.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(allocator.MODULE_SETTLEMENT(), settlement);
     }
 
     // =========================================================================
@@ -277,7 +277,7 @@ contract RewardAllocationRoundingTest is Test {
         for (uint256 d; d < decimalsSet.length; ++d) {
             MockModuleRegistry localRegistry = new MockModuleRegistry();
             FinalRewardAllocator localAllocator = new FinalRewardAllocator(address(localRegistry), MAX_RECIPIENTS);
-            localRegistry.registerModule(localAllocator.MODULE_SETTLEMENT(), settlement);
+            localRegistry.permitModule(localAllocator.MODULE_SETTLEMENT(), settlement);
 
             MockDecimalsERC20 localToken = new MockDecimalsERC20("Reward", "RWD", decimalsSet[d]);
             assertEq(localToken.decimals(), decimalsSet[d], "decimals wired");
@@ -527,7 +527,7 @@ contract RewardAllocationRoundingTest is Test {
     /// @dev Re-pointing the registry revokes the old module immediately. Without
     ///      this, a rotated-out settlement module would keep treasury authority.
     function test_repointingRegistryRevokesPreviousSettlementModule() public {
-        registry.registerModule(allocator.MODULE_SETTLEMENT(), makeAddr("replacement"));
+        registry.permitModule(allocator.MODULE_SETTLEMENT(), makeAddr("replacement"));
 
         token.mint(settlement, 10);
         vm.startPrank(settlement);

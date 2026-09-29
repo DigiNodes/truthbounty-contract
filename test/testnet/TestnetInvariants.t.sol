@@ -17,6 +17,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../contracts/libraries/CanonicalEventLibrary.sol";
 
@@ -100,12 +101,18 @@ contract TestnetInvariants is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: 3 days,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -159,7 +166,7 @@ contract TestnetInvariants is Test {
     /// @notice Invariant: settlement results are consistent
     function invariant_settlementResultConsistency() public view {
         for (uint i = 0; i < truthBounty.claimCounter() && i < 10; i++) {
-            (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake) = truthBounty.settlementResults(i);
+            (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake,,,,,,,,,, ) = truthBounty.settlementResults(i);
             if (totalRewards > 0 || totalSlashed > 0) {
                 assertGt(winnerStake + loserStake, 0);
             }
@@ -168,8 +175,8 @@ contract TestnetInvariants is Test {
 
     /// @notice Invariant: no zero-address dependencies
     function invariant_no_zero_address_dependencies() public view {
-        assertGt(address(token), 0);
-        assertGt(address(governanceController), 0);
+        assertTrue(address(token) != address(0));
+        assertTrue(address(governanceController) != address(0));
     }
 
     // ============ Stateful Test Functions ============
@@ -180,7 +187,7 @@ contract TestnetInvariants is Test {
 
         uint256 beforeCounter = truthBounty.claimCounter();
         for (uint i = 0; i < 10; i++) {
-            uint256 claimId = truthBounty.createClaim(abi.encodePacked("Claim ", i));
+            uint256 claimId = truthBounty.createClaim(string(abi.encodePacked("Claim ", vm.toString(i))));
             assertEq(claimId, beforeCounter + i);
         }
         assertEq(truthBounty.claimCounter(), beforeCounter + 10);
@@ -201,7 +208,7 @@ contract TestnetInvariants is Test {
         vm.prank(verifier1);
         truthBounty.vote(claimId, true, MIN_STAKE);
 
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted, bool support, uint256 stakeAmount,,, bool rewardClaimed, bool stakeReturned,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(support, true);
         assertEq(stakeAmount, MIN_STAKE);
@@ -278,10 +285,10 @@ contract TestnetInvariants is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT, 25
+            GovernanceHooks.ParameterType.SLASH_PERCENT, 25
         );
 
-        (GovernanceController.ParameterType paramType, uint256 oldValue, uint256 newValue, address newAddress, uint8 status, address proposer) = governanceController.getProposalDetails(proposalId);
+        (GovernanceHooks.ParameterType paramType, uint256 oldValue, uint256 newValue, address newAddress, uint8 status, address proposer) = governanceController.getProposalDetails(proposalId);
         assertEq(proposer, deployer);
         assertEq(status, 0);
         vm.stopPrank();
@@ -290,7 +297,7 @@ contract TestnetInvariants is Test {
 
 // ============ Invariant Handler for Stateful Fuzz ============
 
-contract TruthBountyInvariantHandler {
+contract TruthBountyInvariantHandler is CommonBase {
     TruthBounty public truthBounty;
     MockERC20 public token;
     address[] public verifiers;
@@ -338,8 +345,8 @@ contract TruthBountyInvariantHandler {
     function settleClaim(uint256 claimIdx) public {
         if (claimIds.length == 0) return;
         uint256 claimId = claimIds[claimIdx % claimIds.length];
-        (uint256 id, address submitter, string memory content, uint256 createdAt, uint256 verificationWindowEnd, bool settled, bool finalized, uint256 totalWeightedFor, uint256 totalWeightedAgainst, uint256 totalStakeAmount, uint256 totalStakedFor, uint256 totalStakedAgainst) = truthBounty.claims(claimId);
-        if (settled || finalized) return;
+        (, , , , uint256 verificationWindowEnd, bool settled, , , ) = truthBounty.claims(claimId);
+        if (settled) return;
         if (block.timestamp < verificationWindowEnd) vm.warp(verificationWindowEnd + 1);
         truthBounty.settleClaim(claimId);
     }

@@ -19,6 +19,7 @@ import "../../contracts/TruthBountyWeighted.sol";
 import "../../contracts/VerificationAggregator.sol";
 import "../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../contracts/StakeVault.sol";
 import "../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../contracts/libraries/CanonicalEventLibrary.sol";
 import "../../contracts/interfaces/ITruthBountyEvents.sol";
@@ -160,12 +161,18 @@ contract TestnetDeployment is Test {
             address(token),
             address(claimRegistry),
             address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: APPEAL_WINDOW,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController),
             deployer
@@ -305,20 +312,20 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         // ClaimRegistry references ParameterVersionRegistry
-        assertGt(address(parameterVersionRegistry), 0);
-        assertGt(address(claimRegistry), 0);
+        assertTrue(address(parameterVersionRegistry) != address(0));
+        assertTrue(address(claimRegistry) != address(0));
 
         // TruthBountyWeighted references token, oracle, governance
-        assertGt(address(token), 0);
-        assertGt(address(oracle), 0);
-        assertGt(address(governanceController), 0);
-        assertGt(address(truthBounty), 0);
+        assertTrue(address(token) != address(0));
+        assertTrue(address(oracle) != address(0));
+        assertTrue(address(governanceController) != address(0));
+        assertTrue(address(truthBounty) != address(0));
 
         // Aggregator references truthBountyWeighted
-        assertGt(address(aggregator), 0);
+        assertTrue(address(aggregator) != address(0));
 
         // SettlementEngine references claimRegistry, aggregator
-        assertGt(address(settlementEngine), 0);
+        assertTrue(address(settlementEngine) != address(0));
 
         vm.stopPrank();
     }
@@ -389,7 +396,7 @@ contract TestnetDeployment is Test {
         truthBounty.settleClaim(claimId);
 
         // 6. Verify settlement
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake, ) = truthBounty.settlementResults(claimId);
+        (bool passed, , , uint256 winnerStake, , , , , , , , , , , ) = truthBounty.settlementResults(claimId);
         assertEq(passed, true); // True vote won
         assertGt(winnerStake, 0);
 
@@ -424,10 +431,10 @@ contract TestnetDeployment is Test {
 
         // 1. Request parameter update
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.VERIFICATION_WINDOW_DURATION,
+            GovernanceHooks.ParameterType.VERIFICATION_WINDOW_DURATION,
             14 days
         );
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         // 2. Verify proposal is pending
         assertEq(governanceController.isProposalPending(proposalId), true);
@@ -443,7 +450,7 @@ contract TestnetDeployment is Test {
         governanceController.executeParameterUpdate(proposalId);
 
         // 6. Verify parameter updated
-        assertEq(governanceController.getParameterValue(GovernanceController.ParameterType.VERIFICATION_WINDOW_DURATION), 14 days);
+        assertEq(governanceController.getParameterValue(GovernanceHooks.ParameterType.VERIFICATION_WINDOW_DURATION), 14 days);
 
         vm.stopPrank();
     }
@@ -636,17 +643,17 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             25
         );
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         // Fast-forward past timelock
         vm.warp(block.timestamp + 3600 + 1);
 
         governanceController.executeParameterUpdate(proposalId);
         assertEq(
-            governanceController.getParameterValue(GovernanceController.ParameterType.SLASH_PERCENT),
+            governanceController.getParameterValue(GovernanceHooks.ParameterType.SLASH_PERCENT),
             25
         );
 
@@ -658,10 +665,10 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestAddressParameterUpdate(
-            GovernanceController.ParameterType.RESOLVER_ROLE,
+            GovernanceHooks.ParameterType.RESOLVER_ROLE,
             verifier1
         );
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         vm.warp(block.timestamp + 3600 + 1);
         governanceController.executeParameterUpdate(proposalId);
@@ -673,7 +680,7 @@ contract TestnetDeployment is Test {
     function test_governed_zero_address_rejection() public {
         vm.expectRevert("Zero address");
         governanceController.requestAddressParameterUpdate(
-            GovernanceController.ParameterType.RESOLVER_ROLE,
+            GovernanceHooks.ParameterType.RESOLVER_ROLE,
             address(0)
         );
     }
@@ -684,10 +691,10 @@ contract TestnetDeployment is Test {
 
         // Request update with same value
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             20 // Same as default
         );
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         vm.warp(block.timestamp + 3600 + 1);
         vm.expectRevert("No value change");
@@ -701,7 +708,7 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             25
         );
 
@@ -716,7 +723,7 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.SLASH_PERCENT,
+            GovernanceHooks.ParameterType.SLASH_PERCENT,
             25
         );
 
@@ -731,7 +738,7 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestUpgradeAuthorization(address(verifier1));
-        assertGt(proposalId, bytes32(0));
+        assertTrue(proposalId != bytes32(0));
 
         vm.warp(block.timestamp + 3600 + 1);
         governanceController.executeUpgrade(proposalId);
@@ -771,7 +778,7 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         bytes32 proposalId = governanceController.requestParameterUpdate(
-            GovernanceController.ParameterType.MIN_STAKE_AMOUNT,
+            GovernanceHooks.ParameterType.MIN_STAKE_AMOUNT,
             200 * 10**18
         );
 
@@ -791,27 +798,27 @@ contract TestnetDeployment is Test {
         vm.startPrank(deployer);
 
         // Propose new version
-        ParameterVersionRegistry.EconomicParameters memory params = ParameterVersionRegistry.EconomicParameters({
-            verifierRewardsBPS: 4000,
-            treasuryReserveBPS: 2000,
-            ecosystemIncentivesBPS: 1500,
-            governanceIncentivesBPS: 1000,
-            protocolDevelopmentBPS: 1000,
-            emergencyReserveBPS: 500,
-            emissionLimit: type(uint256).max,
-            rewardMultiplier: 1e18,
-            treasuryReserveTargetBPS: 2000,
-            claimSubmissionFee: 0.001e18,
-            verificationSubmissionFee: 0.001e18,
-            disputeInitiationFee: 0.002e18,
-            protocolReserveFeeBPS: 50,
-            minStakeAmount: 1e18,
-            minReputationScore: 0,
-            maxReputationScore: 10000,
-            defaultReputationScore: 5000,
-            slashPercentageBPS: 1000,
-            maxSlashPercentageBPS: 5000
-        });
+        // Start from the validated active set; override only the fields this scenario exercises.
+        IParameterVersionRegistry.EconomicParameters memory params = parameterVersionRegistry.getCurrentParameters();
+        params.verifierRewardsBPS = 4000;
+        params.treasuryReserveBPS = 2000;
+        params.ecosystemIncentivesBPS = 1500;
+        params.governanceIncentivesBPS = 1000;
+        params.protocolDevelopmentBPS = 1000;
+        params.emergencyReserveBPS = 500;
+        params.emissionLimit = type(uint256).max;
+        params.rewardMultiplier = 1e18;
+        params.treasuryReserveTargetBPS = 2000;
+        params.claimSubmissionFee = 0.001e18;
+        params.verificationSubmissionFee = 0.001e18;
+        params.disputeInitiationFee = 0.002e18;
+        params.protocolReserveFeeBPS = 50;
+        params.minStakeAmount = 1e18;
+        params.minReputationScore = 0;
+        params.maxReputationScore = 10000;
+        params.defaultReputationScore = 5000;
+        params.slashPercentageBPS = 1000;
+        params.maxSlashPercentageBPS = 5000;
 
         uint256 versionId = parameterVersionRegistry.proposeNewVersion(params);
         assertGt(versionId, 0);
@@ -835,27 +842,27 @@ contract TestnetDeployment is Test {
         assertEq(parameterVersionRegistry.currentActiveVersionId(), 1);
 
         // Propose new version
-        ParameterVersionRegistry.EconomicParameters memory params = ParameterVersionRegistry.EconomicParameters({
-            verifierRewardsBPS: 5000,
-            treasuryReserveBPS: 2000,
-            ecosystemIncentivesBPS: 1000,
-            governanceIncentivesBPS: 1000,
-            protocolDevelopmentBPS: 500,
-            emergencyReserveBPS: 500,
-            emissionLimit: type(uint256).max,
-            rewardMultiplier: 1e18,
-            treasuryReserveTargetBPS: 2000,
-            claimSubmissionFee: 0.001e18,
-            verificationSubmissionFee: 0.001e18,
-            disputeInitiationFee: 0.002e18,
-            protocolReserveFeeBPS: 50,
-            minStakeAmount: 1e18,
-            minReputationScore: 0,
-            maxReputationScore: 10000,
-            defaultReputationScore: 5000,
-            slashPercentageBPS: 1000,
-            maxSlashPercentageBPS: 5000
-        });
+        // Start from the validated active set; override only the fields this scenario exercises.
+        IParameterVersionRegistry.EconomicParameters memory params = parameterVersionRegistry.getCurrentParameters();
+        params.verifierRewardsBPS = 5000;
+        params.treasuryReserveBPS = 2000;
+        params.ecosystemIncentivesBPS = 1000;
+        params.governanceIncentivesBPS = 1000;
+        params.protocolDevelopmentBPS = 500;
+        params.emergencyReserveBPS = 500;
+        params.emissionLimit = type(uint256).max;
+        params.rewardMultiplier = 1e18;
+        params.treasuryReserveTargetBPS = 2000;
+        params.claimSubmissionFee = 0.001e18;
+        params.verificationSubmissionFee = 0.001e18;
+        params.disputeInitiationFee = 0.002e18;
+        params.protocolReserveFeeBPS = 50;
+        params.minStakeAmount = 1e18;
+        params.minReputationScore = 0;
+        params.maxReputationScore = 10000;
+        params.defaultReputationScore = 5000;
+        params.slashPercentageBPS = 1000;
+        params.maxSlashPercentageBPS = 5000;
 
         uint256 versionId = parameterVersionRegistry.proposeNewVersion(params);
         vm.warp(block.timestamp + 2 days + 1);
@@ -878,7 +885,7 @@ contract TestnetDeployment is Test {
         uint256 claimId = truthBounty.createClaim("Replay test claim");
 
         // Verify ClaimCreated event was emitted with correct schema
-        (uint256 id, , , , uint256 verificationWindowEnd, , , , , , , , , , ) = truthBounty.claims(claimId);
+        (uint256 id,,,, uint256 verificationWindowEnd,,,,,,, ) = truthBounty.claims(claimId);
         assertEq(id, claimId);
         assertGt(verificationWindowEnd, 0);
 
@@ -892,7 +899,7 @@ contract TestnetDeployment is Test {
         uint256 claimId = truthBounty.createClaim("Topic test claim");
 
         // Verify claim state
-        (uint256 id, address submitter, , , , , , , , , , , , , ) = truthBounty.claims(claimId);
+        (uint256 id, address submitter,,,,,,,,,, ) = truthBounty.claims(claimId);
         assertEq(id, claimId);
         assertEq(submitter, claimCreator);
 
@@ -909,7 +916,7 @@ contract TestnetDeployment is Test {
         truthBounty.stake(MIN_STAKE);
 
         // Verify verifier stake was recorded
-        (uint256 totalStaked, uint256 activeStakes) = truthBounty.verifierStakes(verifier1);
+        (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(verifier1);
         assertEq(totalStaked, MIN_STAKE);
 
         vm.stopPrank();
@@ -930,7 +937,7 @@ contract TestnetDeployment is Test {
         vm.stopPrank();
 
         // Verify vote was recorded
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted, bool support, uint256 stakeAmount,,, bool rewardClaimed, bool stakeReturned,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(support, true);
         assertEq(stakeAmount, MIN_STAKE);
@@ -958,7 +965,7 @@ contract TestnetDeployment is Test {
         truthBounty.settleClaim(claimId);
 
         // Verify settlement result
-        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake) = truthBounty.settlementResults(claimId);
+        (bool passed, uint256 totalRewards, uint256 totalSlashed, uint256 winnerStake, uint256 loserStake,,,,,,,,,, ) = truthBounty.settlementResults(claimId);
         assertEq(passed, true);
         assertGt(winnerStake, 0);
 
@@ -1012,7 +1019,7 @@ contract TestnetDeployment is Test {
     /// @notice Indexer replay: failure path - replay with invalid claim ID
     function test_indexer_replay_invalid_claim_reverts() public {
         // Accessing non-existent claim should return default values
-        (uint256 id, address submitter, , , , , , , , , , , , ) = truthBounty.claims(999);
+        (uint256 id, address submitter,,,,,,,,,, ) = truthBounty.claims(999);
         assertEq(id, 0);
         assertEq(submitter, address(0));
     }
@@ -1224,7 +1231,7 @@ contract TestnetDeployment is Test {
     /// @notice Invariant: verifier stakes are non-negative
     function invariant_verifierStakesNonNegative() public view {
         for (uint i = 0; i < truthBounty.claimCounter(); i++) {
-            (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(address(i));
+            (uint256 totalStaked, uint256 activeStakes, ) = truthBounty.verifierStakes(address(uint160(i)));
             assertLe(activeStakes, totalStaked);
         }
     }
@@ -1259,7 +1266,7 @@ contract TestnetDeployment is Test {
         truthBounty.vote(claimId, true, MIN_STAKE);
 
         // Verify vote state
-        (bool voted, bool support, uint256 stakeAmount, bool rewardClaimed, bool stakeReturned) = truthBounty.votes(claimId, verifier1);
+        (bool voted, bool support, uint256 stakeAmount,,, bool rewardClaimed, bool stakeReturned,,,, ) = truthBounty.votes(claimId, verifier1);
         assertEq(voted, true);
         assertEq(support, true);
         assertEq(stakeAmount, MIN_STAKE);

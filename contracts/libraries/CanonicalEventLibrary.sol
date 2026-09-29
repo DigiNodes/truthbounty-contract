@@ -26,7 +26,21 @@ library CanonicalEventLibrary {
         return keccak256(data);
     }
 
+    /// @notice Version tag of the operation-identifier scheme (V2-SC-160).
+    /// @dev = 0x8c64e5c5cfa178c0038b286a8308bc8123d76ea44174910a08ded4a9b9cf443e. It is the first
+    ///      ABI word of every V2 operation-id preimage, so a V2 id can never equal an id produced by
+    ///      the retired V1 packed scheme (whose preimage starts with the raw `domain` bytes), nor a
+    ///      digest of any other TruthBounty commitment schema.
+    bytes32 public constant OPERATION_ID_SCHEME_V2 =
+        keccak256("TruthBounty.CanonicalEventLibrary.operationId.v2");
+
     /// @notice Computes a deterministic operation identifier for financial/treasury actions.
+    /// @dev V2-SC-160: typed, length-delimited `abi.encode` under `OPERATION_ID_SCHEME_V2`.
+    ///      The retired V1 packed form let a caller-chosen `domain` absorb bytes of another
+    ///      packed schema (e.g. the V1 upgrade proposal id), producing cross-schema collisions;
+    ///      see docs/ENCODE_PACKED_POLICY.md and test/vectors/encode-packed-commitments.vectors.json.
+    ///      Off-chain: keccak256(AbiCoder.encode(["bytes32","string","uint256","address"],
+    ///      [OPERATION_ID_SCHEME_V2, domain, nonce, actor])).
     /// @param domain Domain separator string (e.g. "TREASURY_TRANSFER", "WITHDRAWAL").
     /// @param nonce Monotonic or unique counter.
     /// @param actor Primary entity or operator address.
@@ -36,6 +50,6 @@ library CanonicalEventLibrary {
         uint256 nonce,
         address actor
     ) internal pure returns (bytes32 opId) {
-        return keccak256(abi.encodePacked(domain, nonce, actor));
+        return keccak256(abi.encode(OPERATION_ID_SCHEME_V2, domain, nonce, actor));
     }
 }

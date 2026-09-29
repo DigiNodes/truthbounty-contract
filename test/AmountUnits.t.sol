@@ -30,6 +30,15 @@ contract BadDecimalsToken {
     }
 }
 
+contract LargeDecimalsReturnToken {
+    fallback() external {
+        assembly {
+            mstore(0, 18)
+            return(0, 0x10000)
+        }
+    }
+}
+
 /**
  * @title AmountUnitsTest
  * @notice Covers explicit raw <-> canonical unit conversion for non-18-decimal assets.
@@ -92,6 +101,16 @@ contract AmountUnitsTest is Test {
         address noDecimals = address(new AmountUnitsHarness());
         vm.expectRevert(abi.encodeWithSelector(AmountUnits.DecimalsUnavailable.selector, noDecimals));
         h.tokenDecimals(noDecimals);
+    }
+
+    function test_TokenDecimalsRejectsOversizedReturndataWithoutCopyingIt() public {
+        address token = address(new LargeDecimalsReturnToken());
+        uint256 gasBefore = gasleft();
+
+        vm.expectRevert(abi.encodeWithSelector(AmountUnits.DecimalsUnavailable.selector, token));
+        h.tokenDecimals(token);
+
+        assertLt(gasBefore - gasleft(), 250_000);
     }
 
     /// @notice StakeVault ledgers raw units; canonical conversion must reconcile for a 6-decimal bond.

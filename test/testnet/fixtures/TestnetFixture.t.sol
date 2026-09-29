@@ -17,6 +17,7 @@ import "../../../contracts/TruthBountyWeighted.sol";
 import "../../../contracts/VerificationAggregator.sol";
 import "../../../contracts/settlement/ProvisionalSettlementEngine.sol";
 import "../../../contracts/disputes/AppealVerificationRound.sol";
+import {StakeVault as AppealBondVault} from "../../../contracts/StakeVault.sol";
 import "../../../contracts/interfaces/IAppealVerificationRound.sol";
 import "../../../contracts/interfaces/ITruthBountyEvents.sol";
 import "../../../contracts/interfaces/IParameterVersionRegistry.sol";
@@ -116,12 +117,18 @@ contract TestnetFixture is Test {
         );
         appealRound = new AppealVerificationRound(
             address(token), address(claimRegistry), address(oracle),
+            address(new AppealBondVault(deployer, address(token))),
             IAppealVerificationRound.AppealRoundConfig({
                 roundDuration: APPEAL_WINDOW,
                 minStakeAmount: MIN_STAKE * 2,
                 stakeMultiplierBps: 15000,
                 maxWeightCap: 50000 * 10**18,
-                parameterVersion: 1
+                parameterVersion: 1,
+                maxAppealRounds: 1,
+                appealBond: 100 * 10**18,
+                appealBondEscalationBps: 15000,
+                maxAppealBond: 1000 * 10**18,
+                maxVotersPerRound: 100
             }),
             address(governanceController), deployer
         );
@@ -194,21 +201,21 @@ contract TestnetFixture is Test {
     }
 
     function verifyAllModulesNonZero(Deployment memory d) internal view {
-        assertGt(address(d.token), 0);
-        assertGt(address(d.governanceController), 0);
-        assertGt(address(d.emergencyController), 0);
-        assertGt(address(d.parameterVersionRegistry), 0);
-        assertGt(address(d.upgradeManager), 0);
-        assertGt(address(d.storageValidator), 0);
-        assertGt(address(d.claimRegistry), 0);
-        assertGt(address(d.truthBounty), 0);
-        assertGt(address(d.aggregator), 0);
-        assertGt(address(d.settlementEngine), 0);
-        assertGt(address(d.appealRound), 0);
-        assertGt(address(d.oracle), 0);
+        assertTrue(address(d.token) != address(0));
+        assertTrue(address(d.governanceController) != address(0));
+        assertTrue(address(d.emergencyController) != address(0));
+        assertTrue(address(d.parameterVersionRegistry) != address(0));
+        assertTrue(address(d.upgradeManager) != address(0));
+        assertTrue(address(d.storageValidator) != address(0));
+        assertTrue(address(d.claimRegistry) != address(0));
+        assertTrue(address(d.truthBounty) != address(0));
+        assertTrue(address(d.aggregator) != address(0));
+        assertTrue(address(d.settlementEngine) != address(0));
+        assertTrue(address(d.appealRound) != address(0));
+        assertTrue(address(d.oracle) != address(0));
     }
 
-    function verifyZeroAddressRejection() internal view {
+    function verifyZeroAddressRejection() internal {
         vm.expectRevert("Zero address");
         new EmergencyController(address(0), deployer, deployer);
     }

@@ -10,6 +10,12 @@ import {IV2Types} from "./IV2Types.sol";
 ///      zero digests, duplicates, invalid nonces, closed windows, finalized
 ///      claims, invalid status transitions, and failed external lookups.
 interface IEvidence is IV2Module {
+    /// @notice Metadata exceeded the 1 KiB calldata limit.
+    /// @param actual Supplied metadata size in bytes.
+    /// @param maximum Maximum accepted metadata size in bytes.
+    error MetadataTooLarge(uint256 actual, uint256 maximum);
+
+    /// @notice Emitted when an evidence commitment is accepted.
     /// @param evidenceId Deterministically derived evidence identifier.
     /// @param claimId Claim receiving the evidence.
     /// @param submitter Account that supplied the commitment.

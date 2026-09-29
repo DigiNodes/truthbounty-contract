@@ -25,6 +25,6 @@ contract MockERC1271Signer {
         if (mode == 4) {
             while (true) { }
         }
-        return digest == expectedDigest ? MAGICVALUE : 0xffffffff;
+        return digest == expectedDigest ? MAGICVALUE : bytes4(0xffffffff);
     }
 }
