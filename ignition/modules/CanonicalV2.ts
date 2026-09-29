@@ -30,6 +30,21 @@ const CanonicalV2Module = buildModule("CanonicalV2Module", (m) => {
   const maxAppealBond = m.getParameter("maxAppealBond", ethers.parseEther("5000").toString());
   const maxVotersPerRound = m.getParameter("maxVotersPerRound", 200n);
 
+  // Ignition parameters are unresolved deployment futures here. Validate their safe defaults;
+  // callers supplying overrides must use the preflighted deployCanonicalV2 script.
+  validateCanonicalV2Parameters({
+    initialSupply: ethers.parseEther("10000000"),
+    minVerificationCount: 1n,
+    minTotalWeight: 0n,
+    minConfidenceBps: 0n,
+    challengeWindowDuration: 3 * 24 * 3600,
+    appealDuration: 3 * 24 * 3600,
+    minAppealStake: ethers.parseEther("200"),
+    appealMultiplierBps: 15000,
+    maxWeightCap: ethers.parseEther("100000"),
+    parameterVersion: 1n,
+  });
+
   // 1. Deploy Governance Controller
   const governanceController = m.contract("GovernanceController", [deployer]);
 
