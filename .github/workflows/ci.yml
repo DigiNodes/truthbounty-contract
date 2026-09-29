@@ -41,8 +41,26 @@ jobs:
         run: npm ci
       - name: Repository Boundary and Lint Checks
         run: npm run lint
+      # V2-SC-152: the canonical EIP-712 vectors, the Solidity mirror, and both
+      # implementations must agree; drift fails here with an expected/found diff.
+      - name: EIP-712 canonical vector drift check
+        run: |
+          node scripts/check-eip712-vectors.mjs
+          node --test test/scripts/check-eip712-vectors.test.mjs
       - name: Solidity Lint
         run: npm run lint:sol --if-present
+      - name: Native Value Policy inventory (V2-SC-153)
+        run: node scripts/check-native-value-policy.mjs
+      - name: Native Value Policy self-tests (V2-SC-153)
+        run: node --test test/scripts/check-native-value-policy.test.mjs
+      # V2-SC-160: every packed encoding must match the reviewed policy (no ambiguous packed
+      # commitment may return), and the cross-tool digest vectors must reproduce with ethers.
+      - name: Packed-encoding commitment policy (V2-SC-160)
+        run: node scripts/check-encode-packed.mjs
+      - name: Packed-encoding commitment vectors (V2-SC-160)
+        run: node scripts/check-encode-packed-vectors.mjs
+      - name: Packed-encoding policy self-tests (V2-SC-160)
+        run: node --test test/scripts/check-encode-packed.test.mjs
 
   test:
     name: Test
@@ -76,6 +94,31 @@ jobs:
         run: forge test --no-match-path "test/{invariant,fuzz}/**"
       - name: Run Hardhat tests
         run: npx hardhat test
+
+  storage-layouts:
+    name: Storage Layout Manifests (V2-SC-121)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Verify frozen storage-layout manifests
+        run: npm run test:layouts
+      - name: Verify storage namespace and reserved-slot isolation (V2-SC-159)
+        run: node scripts/check-storage-namespaces.mjs
 
   fuzz-tests:
     name: Fuzz Tests

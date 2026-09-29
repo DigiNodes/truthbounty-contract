@@ -65,7 +65,10 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.staked(CLAIM_A, verifier), STAKE);
         assertEq(vault.totalStaked(CLAIM_A), STAKE);
-        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(
+            vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL),
+            STAKE
+        );
         assertEq(vault.claimableBalance(address(token), verifier), 0);
         assertEq(vault.totalCustody(address(token)), STAKE);
     }
@@ -610,6 +613,30 @@ contract StakeVaultTest is Test {
         vm.prank(verifier);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
         vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_timestampJumpCannotBypassSettlementAuthorizationOrCustody() public {
+        uint256 verifierBalanceBefore = token.balanceOf(verifier);
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.warp(block.timestamp + 30 days);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vm.prank(verifier);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(vault.totalCustody(address(token)), STAKE);
+        assertEq(token.balanceOf(address(vault)), STAKE);
+
+        vm.prank(settlement);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+        vm.prank(verifier);
+        vault.withdraw(address(token), STAKE);
+
+        assertEq(token.balanceOf(verifier), verifierBalanceBefore);
+        assertEq(token.balanceOf(address(vault)), 0);
+        assertEq(vault.totalCustody(address(token)), 0);
     }
 
     function test_finalUnlock_duplicateReverts() public {

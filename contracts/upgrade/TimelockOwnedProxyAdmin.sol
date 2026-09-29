@@ -67,6 +67,9 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     error ImplementationAlreadyUsed(address implementation);
     error EOANotAllowed(address account);
     error OperationIdCollision(bytes32 operationId);
+    /// @notice Native value was attached to the upgrade path (V2-SC-153).
+    /// @param value Rejected `msg.value`.
+    error UnexpectedNativeValue(uint256 value);
     
     modifier onlyTimelockController() {
         if (msg.sender != address(timelock)) revert OnlyTimelock();
@@ -266,12 +269,16 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     
     /**
      * @dev Override upgradeAndCall to keep ProxyAdmin owner checks while routing scheduled upgrades.
+     *      Native value isolation (V2-SC-153): a transparent proxy has no path that releases native
+     *      currency, so value forwarded here would be permanently stranded in the proxy. The upgrade
+     *      path therefore rejects `msg.value` instead of forwarding it to `upgradeToAndCall`.
      */
     function upgradeAndCall(
         ITransparentUpgradeableProxy proxy,
         address implementation,
         bytes memory data
     ) public payable override onlyOwner {
+        if (msg.value != 0) revert UnexpectedNativeValue(msg.value);
         super.upgradeAndCall(proxy, implementation, data);
     }
 

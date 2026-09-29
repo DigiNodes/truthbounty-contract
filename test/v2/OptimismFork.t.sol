@@ -2,6 +2,12 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
+import "../../contracts/ClaimRegistry.sol";
+import "../../contracts/MockERC20.sol";
+import "../../contracts/VerificationSubmission.sol";
+import "../../contracts/governance/ParameterVersionRegistry.sol";
+import "../../contracts/interfaces/IClaimRegistry.sol";
+import "../../contracts/interfaces/IVerificationSubmission.sol";
 import "../../contracts/v2/StakeVault.sol";
 import "../../contracts/v2/libraries/V2AmountUnits.sol";
 import "../../contracts/mocks/MockModuleRegistry.sol";
@@ -114,5 +120,43 @@ contract OptimismForkTest is Test {
         vm.stopPrank();
         assertEq(vault.staked(7, alice), 5 ether);
         assertEq(vault.totalCustody(WETH), 5 ether);
+    }
+
+    function test_VerificationDeadlineStaysClosedAfterSequencerTimestampJump() public onlyFork {
+        MockERC20 stakeToken = new MockERC20("Verification Stake", "VST");
+        ParameterVersionRegistry parameters = new ParameterVersionRegistry(address(this), address(this));
+        ClaimRegistry claims = new ClaimRegistry(address(this), address(parameters));
+        VerificationSubmission submissions = new VerificationSubmission(address(claims), address(stakeToken), 1);
+
+        claims.grantRole(claims.REGISTRY_UPDATER_ROLE(), address(this));
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        uint256 claimId = claims.createClaim(
+            "Sequencer outage deadline regression",
+            "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+            deadline
+        );
+        claims.updateClaimStatus(claimId, IClaimRegistry.ClaimStatus.UnderVerification);
+
+        address onTimeVerifier = makeAddr("onTimeVerifier");
+        address delayedVerifier = makeAddr("delayedVerifier");
+        stakeToken.mint(onTimeVerifier, 2);
+        stakeToken.mint(delayedVerifier, 2);
+        vm.prank(onTimeVerifier);
+        stakeToken.approve(address(submissions), 1);
+        vm.prank(delayedVerifier);
+        stakeToken.approve(address(submissions), 1);
+
+        vm.warp(deadline);
+        vm.prank(onTimeVerifier);
+        submissions.submitVerification(claimId, IVerificationSubmission.VerificationVerdict.TRUE, 1);
+        assertEq(submissions.getVerification(1).submittedAt, deadline);
+
+        vm.warp(uint256(deadline) + 7 days);
+        vm.expectRevert(IVerificationSubmission.VerificationWindowClosed.selector);
+        vm.prank(delayedVerifier);
+        submissions.submitVerification(claimId, IVerificationSubmission.VerificationVerdict.FALSE, 1);
+
+        assertEq(submissions.getVerificationCount(), 1);
+        assertEq(stakeToken.balanceOf(address(submissions)), 1);
     }
 }
