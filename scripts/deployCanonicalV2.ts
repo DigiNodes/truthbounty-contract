@@ -1,8 +1,14 @@
-import { ethers } from "hardhat";
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { network } from "hardhat";
+import type { Signer } from "ethers";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+export type DeploymentSigner = Signer & {
+  address: string;
+};
 
 export interface CanonicalV2Suite {
-  deployer: SignerWithAddress;
+  deployer: DeploymentSigner;
   governanceController: any;
   token: any;
   oracle: any;
@@ -38,9 +44,10 @@ export interface DeploymentOptions {
  * @param options Optional configuration parameters.
  */
 export async function deployCanonicalV2(
-  deployer: SignerWithAddress,
+  deployer: DeploymentSigner,
   options: DeploymentOptions = {}
 ): Promise<CanonicalV2Suite> {
+  const { ethers } = await network.connect();
   const initialSupply = options.initialSupply ?? ethers.parseEther("10000000");
   const minVerificationCount = options.minVerificationCount ?? 1n;
   const minTotalWeight = options.minTotalWeight ?? 0n;
@@ -68,12 +75,18 @@ export async function deployCanonicalV2(
   await token.waitForDeployment();
 
   // 2b. Bond-Custody StakeVault (V2-SC-016/059 appeal bonds live here, never in the module)
-  const StakeVaultFactory = await ethers.getContractFactory("contracts/StakeVault.sol:StakeVault", deployer);
+  const StakeVaultFactory = await ethers.getContractFactory(
+    "contracts/StakeVault.sol:StakeVault",
+    deployer,
+  );
   const bondVault = await StakeVaultFactory.deploy(deployer.address, await token.getAddress());
   await bondVault.waitForDeployment();
 
   // 3. Reputation Oracle
-  const OracleFactory = await ethers.getContractFactory("MockReputationOracle", deployer);
+  const OracleFactory = await ethers.getContractFactory(
+    "contracts/MockReputationOracle.sol:MockReputationOracle",
+    deployer,
+  );
   const oracle = await OracleFactory.deploy();
   await oracle.waitForDeployment();
 
@@ -177,6 +190,7 @@ export async function deployCanonicalV2(
 }
 
 async function main() {
+  const { ethers } = await network.connect();
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Canonical V2 Suite with deployer:", deployer.address);
   const suite = await deployCanonicalV2(deployer);
@@ -192,10 +206,7 @@ async function main() {
   console.log("- BondVault:", await suite.bondVault.getAddress());
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href;
-
-if (invokedDirectly) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
