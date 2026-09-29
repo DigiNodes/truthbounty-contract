@@ -42,6 +42,9 @@ contract EIP712Verifier {
 
     // ============ Type Hashes ============
 
+    uint256 internal constant MAX_SIGNATURE_BYTES = 65;
+    uint256 internal constant MAX_REASON_BYTES = 256;
+
     bytes32 public constant CLAIM_SUBMISSION_TYPEHASH = keccak256(
         "ClaimSubmission(address claimant,uint256 bountyId,bytes32 contentHash,uint256 nonce,uint256 deadline)"
     );
@@ -78,6 +81,7 @@ contract EIP712Verifier {
 
     error InvalidSignature();
     error SignatureExpired();
+    error ReasonTooLong(uint256 actual, uint256 maximum);
     error SignatureAlreadyUsed();
     error InvalidNonce();
 
@@ -145,6 +149,7 @@ contract EIP712Verifier {
         bytes calldata signature
     ) external returns (bool) {
         if (block.timestamp > deadline) revert SignatureExpired();
+        if (signature.length > MAX_SIGNATURE_BYTES) revert InvalidSignature();
 
         uint256 currentNonce = nonces[claimant];
 
@@ -195,6 +200,8 @@ contract EIP712Verifier {
         bytes calldata signature
     ) external returns (bool) {
         if (block.timestamp > deadline) revert SignatureExpired();
+        _requireReasonBound(reason);
+        if (signature.length > MAX_SIGNATURE_BYTES) revert InvalidSignature();
 
         uint256 currentNonce = nonces[verifier];
 
@@ -271,6 +278,7 @@ contract EIP712Verifier {
         uint256 nonce,
         uint256 deadline
     ) external view returns (bytes32) {
+        _requireReasonBound(reason);
         bytes32 structHash = keccak256(abi.encode(
             CLAIM_SUBMISSION_TYPEHASH,
             claimant,
@@ -280,6 +288,11 @@ contract EIP712Verifier {
             deadline
         ));
         return _hashTypedDataV4(structHash);
+    }
+
+    function _requireReasonBound(string calldata reason) private pure {
+        uint256 actual = bytes(reason).length;
+        if (actual > MAX_REASON_BYTES) revert ReasonTooLong(actual, MAX_REASON_BYTES);
     }
 
     /**

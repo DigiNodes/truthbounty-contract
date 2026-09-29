@@ -97,7 +97,7 @@ contract ThreatModelControls is Test {
         vm.expectRevert(
             abi.encodeWithSelector(ResolverRoleTimelock.ResolverRoleChangeNotReady.selector, readyAt)
         );
-        token.executeResolverRoleGrant(settler);
+        token.executeResolverRoleGrant(opId, settler);
     }
 
     /// @notice After the delay, the grant succeeds.
@@ -107,7 +107,7 @@ contract ThreatModelControls is Test {
         uint256 readyAt = token.resolverRoleChangeReadyAt(opId);
 
         vm.warp(readyAt + 1);
-        token.executeResolverRoleGrant(settler);
+        token.executeResolverRoleGrant(opId, settler);
 
         assertTrue(token.hasRole(token.RESOLVER_ROLE(), settler), "settler must hold RESOLVER_ROLE");
     }
@@ -211,10 +211,10 @@ contract ThreatModelControls is Test {
         uint256 readyAt = token.resolverRoleChangeReadyAt(opId);
 
         vm.warp(readyAt + 1);
-        token.executeResolverRoleGrant(settler);
+        token.executeResolverRoleGrant(opId, settler);
 
         vm.expectRevert(ResolverRoleTimelock.ResolverRoleChangeNotPending.selector);
-        token.executeResolverRoleGrant(settler);
+        token.executeResolverRoleGrant(opId, settler);
     }
 
     // =========================================================================
@@ -223,7 +223,7 @@ contract ThreatModelControls is Test {
 
     /// @notice RESOLVER_ROLE_CHANGE_DELAY must be exactly 2 days.
     function test_invariant_resolverRoleChangeDelayIs2Days() public view {
-        assertEq(token.RESOLVER_ROLE_CHANGE_DELAY(), 2 days, "delay must be 2 days per section 5.1");
+        assertEq(token.MIN_RESOLVER_ROLE_CHANGE_DELAY(), 2 days, "delay must be 2 days per section 5.1");
     }
 
     /// @notice No untrusted address holds RESOLVER_ROLE at deploy time.
@@ -240,7 +240,7 @@ contract ThreatModelControls is Test {
         bytes32 opId = token.scheduleResolverRoleGrant(settler);
         assertGt(token.resolverRoleChangeReadyAt(opId), 0, "must be pending before cancel");
 
-        token.cancelResolverRoleChange(settler, true);
+        token.cancelResolverRoleChange(opId, settler, true);
         assertEq(token.resolverRoleChangeReadyAt(opId), 0, "readyAt must be zero after cancel");
         vm.stopPrank();
     }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolExecutionBounds} from "../contracts/performance/ProtocolExecutionBounds.sol";
 import {GasBudgetRegistry} from "../contracts/performance/GasBudgetRegistry.sol";
@@ -124,7 +125,7 @@ contract GasBoundedExecutionTest is Test {
         vm.prank(userA);
         vm.expectRevert(
             abi.encodeWithSelector(
-                AccessControl.AccessControlUnauthorizedAccount.selector,
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
                 userA,
                 budgets.BUDGET_ADMIN_ROLE()
             )
@@ -152,6 +153,31 @@ contract GasBoundedExecutionTest is Test {
 
         vm.expectRevert(GasBudgetRegistry.EmptyBudgetDescription.selector);
         budgets.updateBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM, 1, "");
+    }
+
+    function test_UpdateBudgetRejectsZeroBudget() public {
+        (uint256 before,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GasBudgetRegistry.ZeroGasBudget.selector,
+                ICriticalPathGasBudgets.Operation.REWARD_CLAIM
+            )
+        );
+        budgets.updateBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM, 0, "zero budget");
+
+        (uint256 afterUpdate,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.REWARD_CLAIM);
+        assertEq(afterUpdate, before);
+    }
+
+    function test_UpdateBudgetAcceptsCeilingBoundary() public {
+        budgets.updateBudget(
+            ICriticalPathGasBudgets.Operation.APPEAL_SETTLEMENT,
+            ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING,
+            "ceiling boundary"
+        );
+        (uint256 maxGas,) = budgets.getBudget(ICriticalPathGasBudgets.Operation.APPEAL_SETTLEMENT);
+        assertEq(maxGas, ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING);
     }
 
     function test_ZeroAdminDeploymentFailsClosed() public {

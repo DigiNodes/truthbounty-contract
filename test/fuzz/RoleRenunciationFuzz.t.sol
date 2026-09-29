@@ -10,6 +10,7 @@ import {PostDeploymentRoleCheck} from "../../contracts/deployment/PostDeployment
 import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
@@ -36,7 +37,7 @@ contract RoleRenunciationFuzz is Test {
         address[] memory empty = new address[](0);
         timelock = new TimelockController(2 days, empty, empty, deployer);
         governor = new TruthBountyGovernor(
-            IVotes(address(govToken)), timelock, registry, guardian,
+            IVotes(address(govToken)), timelock, registry, IGovernanceSnapshot(address(0)), guardian,
             uint48(1 days), uint32(3 days), 100_000 ether, 4
         );
         guardianContract = new GovernanceGuardian(deployer, guardian, ITruthBountyGovernor(address(governor)));
@@ -109,7 +110,7 @@ contract RoleRenunciationFuzz is Test {
     }
 
     /// @notice Empty targets array always produces zero violations regardless of deployer.
-    function testFuzz_EmptyTargets_ZeroViolations(address account) public pure {
+    function testFuzz_EmptyTargets_ZeroViolations(address account) public view {
         address[] memory empty = new address[](0);
         PostDeploymentRoleCheck.RoleViolation[] memory v =
             PostDeploymentRoleCheck.checkAllRoles(account, empty);
@@ -117,7 +118,7 @@ contract RoleRenunciationFuzz is Test {
     }
 
     /// @notice Targets array filled with zero addresses produces zero violations.
-    function testFuzz_ZeroAddressTargets_ZeroViolations(uint8 size) public pure {
+    function testFuzz_ZeroAddressTargets_ZeroViolations(uint8 size) public view {
         vm.assume(size > 0 && size <= 20);
         address[] memory targets = new address[](size);
         // All entries are address(0) by default

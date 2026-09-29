@@ -157,7 +157,7 @@ contract V2SC095BondConservationFuzzTest is Test {
         MockModuleRegistry registry = new MockModuleRegistry();
         token = new MockERC20("Bond", "BOND");
         vault = new StakeVault(address(registry), address(token), address(this));
-        registry.registerModule(vault.MODULE_SETTLEMENT(), address(this));
+        registry.permitModule(vault.MODULE_SETTLEMENT(), address(this));
 
         token.mint(challenger, type(uint128).max);
         vm.prank(challenger);

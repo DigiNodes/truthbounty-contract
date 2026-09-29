@@ -29,7 +29,6 @@ contract StakeVaultTest is Test {
         token = new MockERC20("Bounty", "BOUNTY");
         vault = new StakeVault(admin, address(token));
 
-        // Resolve the role before pranking: the staticcall would otherwise consume the prank.
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(admin);
         vault.grantRole(operatorRole, operator);

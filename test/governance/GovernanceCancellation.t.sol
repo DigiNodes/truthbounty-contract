@@ -7,6 +7,7 @@ import {IGovernor} from "@openzeppelin/contracts/governance/IGovernor.sol";
 import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
@@ -61,6 +62,7 @@ contract GovernanceCancellationTest is Test {
             token,
             timelock,
             registry,
+            IGovernanceSnapshot(address(0)),
             guardian,
             VOTING_DELAY,
             VOTING_PERIOD,

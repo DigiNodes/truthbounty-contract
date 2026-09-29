@@ -214,3 +214,30 @@ against the canonical contracts:
 Fuzz properties: `test/v2/EmergencyGatekeeperFuzz.t.sol`.
 Invariants (pause effectiveness, escalation containment, exact ghost
 bookkeeping): `test/v2/EmergencyGatekeeperInvariant.t.sol`.
+
+## What stays available while paused (V2-SC-162)
+
+The authoritative per-operation matrix is `config/pause-matrix.json`
+(mirrored in `contracts/v2/libraries/PauseMatrix.sol`). The full
+specification is in `docs/v2/emergency-pause-exit-liveness.md`.
+
+- **Scoped pauses and protocol levels 1–2 never block user exits.** The
+  exits are `StakeVault.withdraw` of claimable balances,
+  `FinalRewardAllocator.claim`, `PullSettlementLedger.withdraw` and
+  `withdrawFromRef`, and a claimant's own `Claims.cancelClaim` refund.
+  Protective actions (`EvidenceRegistry.pause`, `cancelNonce`, revoking
+  a lock mutator) also stay available.
+- **Level 3 (SHUTDOWN) freezes value exits.** They resume as soon as DAO
+  governance calls `liftPause`. The emergency council cannot lift.
+- **Risk-increasing operations fail closed** on their scope: claim
+  creation, staking, verification and aggregation, evidence, settlement,
+  and governance parameters (`SCOPE_GOVERNANCE`). They also fail closed
+  whenever the pause authority is unreachable or misbehaving. Exits do
+  **not** depend on the authority being healthy.
+- **Before go-live**, register the gatekeeper under `EMERGENCY_CONTROLS`
+  in the module registry. Then call `setPauseAuthority(gatekeeper)` once
+  on Claims, EvidenceRegistry, and PullSettlementLedger. Wiring is
+  write-once: it cannot be used to lift a pause.
+- **Verification.** `isScopePaused(scope)` and `exitsFrozen()` on any
+  canonical module must match `EmergencyGatekeeper.paused(scope)` and
+  whether the level is 3.

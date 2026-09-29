@@ -112,6 +112,6 @@ library TestnetFuzzHelpers {
     }
 }
 
-function assertEq(uint256 a, uint256 b) internal pure {
+function assertEq(uint256 a, uint256 b) pure {
     if (a != b) revert("Values not equal");
 }

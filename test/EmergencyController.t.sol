@@ -62,6 +62,20 @@ contract EmergencyControllerTest is Test {
         assertEq(controller.currentPauseLevel(), level);
     }
 
+    function test_activatePauseRejectsReasonAboveByteLimit() public {
+        uint256 maximum = controller.MAX_REASON_BYTES();
+        string memory oversizedReason = new string(maximum + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(EmergencyController.ReasonTooLong.selector, maximum + 1, maximum)
+        );
+        vm.prank(emergencyCouncil);
+        controller.activatePause(controller.LEVEL_HIGH_RISK(), oversizedReason, bytes32(0));
+
+        assertEq(controller.currentPauseLevel(), controller.LEVEL_NORMAL());
+        assertEq(controller.getEmergencyHistoryCount(), 0);
+    }
+
     function test_daoGovernance_canActivateLevel2() public {
         uint8 level = controller.LEVEL_FINANCIAL();
         _activatePauseAs(daoGovernance, level, "Oracle failure");
