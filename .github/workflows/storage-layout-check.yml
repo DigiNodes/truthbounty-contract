@@ -33,6 +33,14 @@ jobs:
       - name: Validate upgradeable storage layouts against baseline
         run: npx tsx scripts/validateStorageLayouts.ts
 
+      # V2-SC-159: linear diffs cannot see ERC-7201 namespaces, unstructured slots or the
+      # ERC-1967 reserved slots; this gate fails on duplicate namespaces, overlapping computed
+      # slots, inheritance reorder, reserved-slot reuse and namespace-manifest drift.
+      - name: Detect storage namespace and reserved-slot collisions
+        run: |
+          node scripts/check-storage-namespaces.mjs
+          node --test test/scripts/check-storage-namespaces.test.mjs
+
       - name: Flag baseline manifest changes
         if: github.event_name == 'pull_request'
         run: |
