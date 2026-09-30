@@ -1,5 +1,6 @@
 # 📜 TruthBounty Smart Contracts
 
+
 **On-chain Incentives & Verification Logic**  
 *Smart contracts powering decentralized truth verification across Ethereum and Stellar*
 
