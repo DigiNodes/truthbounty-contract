@@ -52,7 +52,7 @@ contract V2EmergencyProtectedFixture is ERC165, IClaims {
         claimId = _nextClaimId++;
         _claims[claimId] = IV2Types.Claim(claimId, msg.sender, subject, reward, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), IV2Types.ClaimStatus.OPEN);
         _claimStates[claimId] = IV2Types.ClaimState.VerificationOpen;
-        emit ClaimCreated(claimId, msg.sender, subject, reward, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), 1);
+        emit ClaimCreated(claimId, msg.sender, subject, reward);
     }
 
     function cancelClaim(uint256 claimId)
@@ -65,7 +65,7 @@ contract V2EmergencyProtectedFixture is ERC165, IClaims {
         IV2Types.ClaimState previous = _claimStates[claimId];
         claim.status = IV2Types.ClaimStatus.CANCELLED;
         _claimStates[claimId] = IV2Types.ClaimState.None;
-        emit ClaimStateChanged(claimId, previous, IV2Types.ClaimState.None, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), bytes32("cancelled"), 1);
+        emit ClaimStateChanged(claimId, previous, IV2Types.ClaimState.None, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), bytes32("cancelled"));
     }
 
     function getClaim(uint256 claimId) external view override returns (IV2Types.Claim memory) {
