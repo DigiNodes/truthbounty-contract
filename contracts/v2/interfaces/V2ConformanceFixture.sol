@@ -26,7 +26,7 @@ contract V2ConformanceFixture is ERC165, IClaims, IAggregation {
         claimId = _nextClaimId++;
         _claims[claimId] = IV2Types.Claim(claimId, msg.sender, subject, reward, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), IV2Types.ClaimStatus.OPEN);
         _claimStates[claimId] = IV2Types.ClaimState.VerificationOpen;
-        emit ClaimCreated(claimId, msg.sender, subject, reward, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), 1);
+        emit ClaimCreated(claimId, msg.sender, subject, reward);
     }
 
     function cancelClaim(uint256 claimId) external override {
@@ -35,11 +35,11 @@ contract V2ConformanceFixture is ERC165, IClaims, IAggregation {
         IV2Types.ClaimState previous = _claimStates[claimId];
         claim.status = IV2Types.ClaimStatus.CANCELLED;
         _claimStates[claimId] = IV2Types.ClaimState.None;
-        emit ClaimStateChanged(claimId, previous, IV2Types.ClaimState.None, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), bytes32("cancelled"), 1);
+        emit ClaimStateChanged(claimId, previous, IV2Types.ClaimState.None, msg.sender, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), bytes32("cancelled"));
     }
 
     function getClaim(uint256 claimId) external view override returns (IV2Types.Claim memory) { return _claims[claimId]; }
     function stateOf(uint256 claimId) external view override returns (IV2Types.ClaimState) { return _claimStates[claimId]; }
-    function finalizeAggregation(uint256 claimId) external override { _finalized[claimId] = true; emit AggregationFinalized(claimId, true, 0, 0, V2SafeCast.timestamp64(V2SafeCast.FIELD_FIXTURE_TIMESTAMP), 1); }
+    function finalizeAggregation(uint256 claimId) external override { _finalized[claimId] = true; emit AggregationFinalized(claimId, true, 0, 0); }
     function outcome(uint256 claimId) external view override returns (bool finalized, bool accepted, uint256 supportingWeight, uint256 opposingWeight) { return (_finalized[claimId], true, 0, 0); }
 }
