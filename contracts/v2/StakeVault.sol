@@ -12,13 +12,17 @@ import {IStakeCustody} from "./interfaces/IStakeCustody.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {EmergencyGuarded} from "./EmergencyGuarded.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2Scopes} from "./libraries/V2Scopes.sol";
 
 /// @title StakeVault
 /// @notice Canonical V2 custody module with typed locks, exact-balance accounting, and pull-based withdrawals.
 /// @dev Every token in custody belongs to a named bucket: claimable, locked (by category), or protocol allocation.
 ///      Only registered canonical modules may mutate locks. User withdrawals cannot affect another account or claim.
-contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
+///      Every state-mutating entry point is additionally gated by the canonical emergency control plane through
+///      `EmergencyGuarded`, so no custody mutation can proceed while its operation scope is paused.
+contract StakeVault is ERC165, AccessControl, ReentrancyGuard, EmergencyGuarded, IStakeCustody {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -100,7 +104,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
 
     /// @inheritdoc IStakeCustody
-    function depositStake(uint256 claimId, uint256 amount) external override nonReentrant {
+    function depositStake(uint256 claimId, uint256 amount)
+        external
+        override
+        nonReentrant
+        whenOperationAllowed(V2Scopes.STAKING)
+    {
         address asset = address(stakingToken);
         address account = msg.sender;
         _deposit(account, asset, amount);
@@ -109,7 +118,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     }
 
     /// @inheritdoc IStakeCustody
-    function releaseStake(uint256 claimId, address account, uint256 amount) external override nonReentrant {
+    function releaseStake(uint256 claimId, address account, uint256 amount)
+        external
+        override
+        nonReentrant
+        whenOperationAllowed(V2Scopes.STAKE_RELEASE)
+    {
         _onlyAuthorizedMutator();
         address asset = address(stakingToken);
         _unlock(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount);
@@ -117,7 +131,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     }
 
     /// @inheritdoc IStakeCustody
-    function slashStake(uint256 claimId, address account, uint256 amount, bytes32 reason) external override nonReentrant {
+    function slashStake(uint256 claimId, address account, uint256 amount, bytes32 reason)
+        external
+        override
+        nonReentrant
+        whenOperationAllowed(V2Scopes.SLASH_EXECUTION)
+    {
         _onlyAuthorizedMutator();
         address asset = address(stakingToken);
         _slash(asset, account, claimId, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL, amount, reason);
@@ -139,7 +158,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
 
     /// @notice Deposits a supported asset into the caller's claimable balance.
-    function deposit(address asset, uint256 amount) external nonReentrant {
+    function deposit(address asset, uint256 amount) external nonReentrant whenOperationAllowed(V2Scopes.STAKING) {
         _deposit(msg.sender, asset, amount);
     }
 
@@ -151,7 +170,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 round,
         IV2Types.LockCategory category,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.STAKING) {
         _onlyAuthorizedMutator();
         _lock(asset, account, claimId, round, category, amount);
     }
@@ -164,7 +183,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 round,
         IV2Types.LockCategory category,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.STAKE_RELEASE) {
         _onlyAuthorizedMutator();
         _unlock(asset, account, claimId, round, category, amount);
     }
@@ -178,7 +197,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         IV2Types.LockCategory category,
         uint256 amount,
         bytes32 reason
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.SLASH_EXECUTION) {
         _onlyAuthorizedMutator();
         _slash(asset, account, claimId, round, category, amount, reason);
     }
@@ -195,7 +214,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 round,
         uint256 principalAmount,
         uint256 rewardAmount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _assertSettlementNotFinalized(claimId, round);
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.CONCLUDED;
@@ -216,7 +235,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 claimId,
         uint256 round,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _assertSettlementNotFinalized(claimId, round);
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.REFUNDED;
@@ -233,7 +252,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _assertSettlementNotFinalized(claimId, fromRound);
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.CARRIED_FORWARD;
@@ -250,7 +269,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _assertSettlementNotFinalized(claimId, fromRound);
         _settlementOutcome[claimId][fromRound] = IV2Types.SettlementOutcome.ROLLED_OVER;
@@ -266,7 +285,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
         uint256 claimId,
         uint256 round,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _assertSettlementNotFinalized(claimId, round);
         _settlementOutcome[claimId][round] = IV2Types.SettlementOutcome.UNLOCKED;
@@ -281,7 +300,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     }
 
     /// @notice Pull-based withdrawal of the caller's claimable balance.
-    function withdraw(address asset, uint256 amount) external nonReentrant {
+    function withdraw(address asset, uint256 amount) external nonReentrant whenOperationAllowed(V2Scopes.WITHDRAWAL) {
         _withdraw(msg.sender, asset, amount);
     }
 
@@ -325,15 +344,30 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody {
     // -------------------------------------------------------------------------
 
     /// @notice Enables or disables an asset for custody operations.
-    function setSupportedAsset(address asset, bool enabled) external onlyRole(ADMIN_ROLE) {
+    function setSupportedAsset(address asset, bool enabled)
+        external
+        onlyRole(ADMIN_ROLE)
+        whenOperationAllowed(V2Scopes.CONFIGURATION_PUBLISH)
+    {
         if (asset == address(0)) revert V2Errors.ZeroAddress();
         supportedAssets[asset] = enabled;
     }
 
     /// @notice Grants or revokes explicit lock-mutation authority (governance override).
-    function setLockMutator(address module, bool enabled) external onlyRole(ADMIN_ROLE) {
+    function setLockMutator(address module, bool enabled)
+        external
+        onlyRole(ADMIN_ROLE)
+        whenOperationAllowed(V2Scopes.CONFIGURATION_PUBLISH)
+    {
         if (module == address(0)) revert V2Errors.ZeroAddress();
         lockMutators[module] = enabled;
+    }
+
+    /// @notice Wires this vault to the canonical emergency control plane.
+    /// @dev Deliberately not emergency-guarded: governance must be able to repair the reference
+    ///      while the vault is paused. Until this is called, every guarded mutation reverts.
+    function setEmergencyControls(address controls) external onlyRole(ADMIN_ROLE) {
+        _setEmergencyControls(controls);
     }
 
     /// @notice Returns whether an address may mutate locks.

@@ -197,6 +197,48 @@ library V2Errors {
     /// @notice Operation requires emergency authority.
     error EmergencyAuthorityRequired();
 
+    /// @notice The referenced scope is not part of the canonical emergency scope manifest.
+    /// @dev Raised instead of silently allowing an unrecognised operation. Emergency controls
+    ///      fail closed: an unknown scope is never treated as unpaused.
+    error UnknownOperation(bytes32 scope);
+
+    /// @notice The scope is currently paused and the mutation must not proceed.
+    error ScopePaused(bytes32 scope);
+
+    /// @notice The scope is not paused, so the requested recovery action is invalid.
+    error ScopeNotPaused(bytes32 scope);
+
+    /// @notice The scope is already paused.
+    error ScopeAlreadyPaused(bytes32 scope);
+
+    /// @notice The scope is already part of the known-scope set.
+    error ScopeAlreadyRegistered(bytes32 scope);
+
+    /// @notice The recovery timelock for the scope has not elapsed yet.
+    error RecoveryTimelockActive(bytes32 scope, uint256 readyAt);
+
+    /// @notice Recovery cannot complete because no recovery conditions were documented for the scope.
+    error NoRecoveryConditionsDeclared(bytes32 scope);
+
+    /// @notice A declared recovery condition has not been satisfied or waived.
+    error RecoveryPrerequisitesUnmet(bytes32 scope, bytes32 conditionId);
+
+    /// @notice A recovery condition with this identifier is already declared for the scope.
+    error RecoveryConditionAlreadyDeclared(bytes32 scope, bytes32 conditionId);
+
+    /// @notice No recovery condition with this identifier is declared for the scope.
+    error RecoveryConditionNotFound(bytes32 scope, bytes32 conditionId);
+
+    /// @notice The recovery condition has already been satisfied or waived.
+    error RecoveryConditionAlreadyResolved(bytes32 scope, bytes32 conditionId);
+
+    /// @notice The caller does not hold the role required for this emergency action.
+    error UnauthorizedEmergencyCaller(address caller);
+
+    /// @notice A guarded module has no emergency-control dependency configured.
+    /// @dev Raised instead of allowing the mutation. An unwired module is frozen, never open.
+    error EmergencyControlsNotConfigured();
+
     // =========================================================================
     // Generic Validation Errors
     // =========================================================================

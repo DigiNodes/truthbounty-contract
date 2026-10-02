@@ -46,6 +46,13 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     error ZeroAddress();
     error NoChangeRequested();
 
+    /// @notice Raised when an operation identifier is not part of the classified operation set.
+    /// @dev Emergency checks fail closed: an unclassified operation is rejected, never allowed.
+    error UnknownOperation(bytes32 operationType);
+
+    /// @notice Raised by the enforcement variant when a known operation is blocked at the current level.
+    error OperationBlocked(bytes32 operationType, uint8 pauseLevel);
+
     // ─── Constants ────────────────────────────────────────────────────
 
     /// @notice Normal operation — no restrictions
@@ -59,6 +66,17 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint8 public constant MAX_PAUSE_LEVEL = 3;
+
+    // ─── Operation Tiers ──────────────────────────────────────────────
+
+    /// @notice Operation is not classified; emergency checks reject it.
+    uint8 internal constant TIER_UNKNOWN = 0;
+    /// @notice Blocked from LEVEL_HIGH_RISK upward.
+    uint8 internal constant TIER_HIGH_RISK = 1;
+    /// @notice Blocked from LEVEL_FINANCIAL upward.
+    uint8 internal constant TIER_FINANCIAL = 2;
+    /// @notice Permitted at every level; reserved for governance recovery.
+    uint8 internal constant TIER_GOVERNANCE = 3;
 
     // ─── Roles ────────────────────────────────────────────────────────
 
@@ -292,38 +310,92 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     /**
      * @notice Check if a specific operation type is currently allowed.
      * @dev Called by protocol modules before executing restricted operations.
+     *      FAIL CLOSED: an unrecognised operation identifier does not return `true`. It reverts
+     *      with `UnknownOperation`, so a caller that forgets to classify an operation is frozen
+     *      rather than silently permitted. Use `isKnownOperation` to probe without reverting.
      * @param operationType The operation category to check
      * @return True if the operation is allowed at the current pause level
      */
     function isOperationAllowed(bytes32 operationType) external view returns (bool) {
+        return _isOperationAllowed(operationType);
+    }
+
+    /**
+     * @notice Reverts unless the operation is recognised and currently allowed.
+     * @dev Enforcement variant for integrators that prefer a revert over a boolean.
+     */
+    function requireOperationAllowed(bytes32 operationType) external view {
+        if (!_isOperationAllowed(operationType)) {
+            revert OperationBlocked(operationType, currentPauseLevel);
+        }
+    }
+
+    /**
+     * @notice Returns true when the operation identifier is classified.
+     * @dev Never reverts; unknown identifiers report `false`.
+     */
+    function isKnownOperation(bytes32 operationType) external pure returns (bool) {
+        return operationTier(operationType) != TIER_UNKNOWN;
+    }
+
+    /**
+     * @notice Classifies an operation identifier into its pause tier.
+     * @dev Returns `TIER_UNKNOWN` (0) for anything not explicitly classified. Emergency controls
+     *      treat that as a rejection, never as an allowance.
+     * @return Tier: 0 unknown, 1 high-risk, 2 financial, 3 governance-only
+     */
+    function operationTier(bytes32 operationType) public pure returns (uint8) {
+        if (operationType == keccak256("governance_recovery")) return TIER_GOVERNANCE;
+
+        // Financial tier — blocked from LEVEL_FINANCIAL upward.
+        if (
+            operationType == keccak256("reward_distribution") ||
+            operationType == keccak256("reward_accrual") ||
+            operationType == keccak256("treasury_transfer") ||
+            operationType == keccak256("treasury_deposit") ||
+            operationType == keccak256("withdrawal") ||
+            operationType == keccak256("settlement_execution") ||
+            operationType == keccak256("slash_execution")
+        ) return TIER_FINANCIAL;
+
+        // High-risk tier — blocked from LEVEL_HIGH_RISK upward.
+        if (
+            operationType == keccak256("claim_creation") ||
+            operationType == keccak256("claim_transition") ||
+            operationType == keccak256("evidence_submission") ||
+            operationType == keccak256("evidence_status") ||
+            operationType == keccak256("staking") ||
+            operationType == keccak256("stake_release") ||
+            operationType == keccak256("verification_submission") ||
+            operationType == keccak256("aggregation_finalization") ||
+            operationType == keccak256("settlement_queue") ||
+            operationType == keccak256("dispute_open") ||
+            operationType == keccak256("dispute_resolution") ||
+            operationType == keccak256("slash_proposal") ||
+            operationType == keccak256("configuration_publish") ||
+            operationType == keccak256("module_registry") ||
+            operationType == keccak256("reputation_root") ||
+            operationType == keccak256("upgrade_proposal") ||
+            operationType == keccak256("upgrade_execution")
+        ) return TIER_HIGH_RISK;
+
+        return TIER_UNKNOWN;
+    }
+
+    /// @dev Shared gate. Reverts for unknown operations; otherwise applies the level policy.
+    function _isOperationAllowed(bytes32 operationType) private view returns (bool) {
+        uint8 tier = operationTier(operationType);
+        if (tier == TIER_UNKNOWN) revert UnknownOperation(operationType);
+
         uint8 level = currentPauseLevel;
 
         if (level == LEVEL_NORMAL) return true;
-        if (level == LEVEL_SHUTDOWN) {
-            // Only governance recovery operations are allowed at shutdown
-            return operationType == keccak256("governance_recovery");
-        }
-
-        if (level == LEVEL_FINANCIAL) {
-            // Financial operations are blocked at L2+
-            if (
-                operationType == keccak256("reward_distribution") ||
-                operationType == keccak256("treasury_transfer") ||
-                operationType == keccak256("withdrawal")
-            ) return false;
-        }
-
-        if (level >= LEVEL_HIGH_RISK) {
-            // High-risk operations are blocked at L1+
-            if (
-                operationType == keccak256("claim_creation") ||
-                operationType == keccak256("staking") ||
-                operationType == keccak256("verification_submission")
-            ) return false;
-        }
-
-        // Read operations and governance are always allowed
-        return true;
+        // Governance recovery stays available at every level, including full shutdown.
+        if (tier == TIER_GOVERNANCE) return true;
+        // High-risk operations are blocked from LEVEL_HIGH_RISK upward.
+        if (tier == TIER_HIGH_RISK) return false;
+        // Financial operations are permitted at LEVEL_HIGH_RISK and blocked from LEVEL_FINANCIAL up.
+        return level < LEVEL_FINANCIAL;
     }
 
     /**
