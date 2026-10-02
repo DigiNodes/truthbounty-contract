@@ -2,22 +2,28 @@
 pragma solidity ^0.8.20;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IClaimRegistry} from "../interfaces/IClaimRegistry.sol";
 import {ITruthBountyEvents} from "../interfaces/ITruthBountyEvents.sol";
+import {EmergencyGuarded} from "./EmergencyGuarded.sol";
 import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {V2Scopes} from "./libraries/V2Scopes.sol";
 
 /// @title EvidenceRegistry
 /// @notice Content-addressed V2 evidence commitment registry.
 /// @dev Stores only immutable digests and deterministic IDs. Raw evidence
 ///      content, CIDs, URLs, signatures, and private data stay off-chain.
-contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents {
+///
+///      Mutations are gated by the canonical operation-scoped emergency control plane
+///      (`EmergencyGuarded`), not by a module-local circuit breaker. The previous standalone
+///      OpenZeppelin `Pausable` switch was disconnected from the protocol control plane and let a
+///      local pauser freeze this module while the rest of the protocol believed it was operable;
+///      it has been removed in favour of the `evidence_submission` and `evidence_status` scopes.
+contract EvidenceRegistry is ERC165, AccessControl, EmergencyGuarded, IEvidence, ITruthBountyEvents {
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
@@ -70,7 +76,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(EVIDENCE_ADMIN_ROLE, initialAdmin);
-        _grantRole(PAUSER_ROLE, initialAdmin);
     }
 
     function protocolVersion() external pure override returns (uint16 major, uint16 minor) {
@@ -82,6 +87,13 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
             interfaceId == type(IV2Module).interfaceId ||
             interfaceId == type(IEvidence).interfaceId ||
             super.supportsInterface(interfaceId);
+    }
+
+    /// @notice Wires this registry to the canonical emergency control plane.
+    /// @dev Deliberately not emergency-guarded: governance must be able to repair the reference
+    ///      while the module is paused. Until this is called, every guarded mutation reverts.
+    function setEmergencyControls(address controls) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setEmergencyControls(controls);
     }
 
     /// @inheritdoc IEvidence
@@ -100,7 +112,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @param nonce Contributor nonce used in deterministic evidence ID derivation.
     function commitEvidence(uint256 claimId, bytes32 contentDigest, bytes32 metadataDigest, uint256 nonce)
         public
-        whenNotPaused
+        whenOperationAllowed(V2Scopes.EVIDENCE_SUBMISSION)
         returns (uint256 evidenceId)
     {
         if (contentDigest == bytes32(0) || metadataDigest == bytes32(0)) revert ZeroDigest();
@@ -155,6 +167,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         external
         override
         onlyRole(EVIDENCE_ADMIN_ROLE)
+        whenOperationAllowed(V2Scopes.EVIDENCE_STATUS)
     {
         EvidenceCommitment storage evidence = _evidenceById[evidenceId];
         if (evidence.status == IV2Types.EvidenceStatus.NONE) revert EvidenceNotFound(evidenceId);
@@ -225,14 +238,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
     function evidenceCount(uint256 claimId) external view returns (uint256) {
         return _claimEvidenceIds[claimId].length;
-    }
-
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _unpause();
     }
 
     function _existingEvidence(uint256 evidenceId) private view returns (EvidenceCommitment storage evidence) {

@@ -4,12 +4,14 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
 import "../../contracts/v2/StakeVault.sol";
+import "../../contracts/v2/EmergencyControls.sol";
 import "../../contracts/v2/interfaces/IV2Types.sol";
 import "../../contracts/mocks/MockModuleRegistry.sol";
 import "../../contracts/MockERC20.sol";
 
 contract StakeVaultInvariantHandler is Test {
     StakeVault public vault;
+    EmergencyControls public emergency;
     MockERC20 public token;
     MockModuleRegistry public registry;
 
@@ -25,7 +27,9 @@ contract StakeVaultInvariantHandler is Test {
     constructor() {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
+        emergency = new EmergencyControls(address(this), 24 hours);
         vault = new StakeVault(address(registry), address(token), address(this));
+        vault.setEmergencyControls(address(emergency));
 
         settlement = makeAddr("settlement");
         userA = address(0xA);

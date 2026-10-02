@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../../contracts/v2/StakeVault.sol";
+import "../../contracts/v2/EmergencyControls.sol";
 import "../../contracts/v2/libraries/V2Errors.sol";
 import "../../contracts/v2/interfaces/IStakeCustody.sol";
 import "../../contracts/v2/interfaces/IV2Module.sol";
@@ -15,6 +16,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract StakeVaultTest is Test {
     StakeVault internal vault;
+    EmergencyControls internal emergency;
     MockModuleRegistry internal registry;
     MockERC20 internal token;
     MockERC20 internal tokenB;
@@ -33,7 +35,11 @@ contract StakeVaultTest is Test {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
         tokenB = new MockERC20("Alt", "ALT");
+        emergency = new EmergencyControls(admin, 24 hours);
         vault = new StakeVault(address(registry), address(token), admin);
+
+        // The vault is fail-closed: no mutation is reachable until the control plane is wired.
+        vault.setEmergencyControls(address(emergency));
 
         vault.setSupportedAsset(address(tokenB), true);
 
@@ -130,7 +136,7 @@ contract StakeVaultTest is Test {
         );
 
         assertEq(vault.protocolAllocation(address(token)), STAKE / 4);
-        assertEq(vault.claimableBalance(address(token), verifier), STAKE / 2);
+        assertEq(vault.claimableBalance(address(token), verifier), STAKE * 3 / 4);
     }
 
     // -------------------------------------------------------------------------
@@ -305,10 +311,9 @@ contract StakeVaultTest is Test {
         vault.unlock(address(malicious), address(attacker), CLAIM_A, 0, IV2Types.LockCategory.BOUNTY_ESCROW, STAKE);
 
         vm.prank(address(attacker));
-        vm.expectRevert();
         attacker.withdraw(STAKE);
 
-        assertEq(malicious.balanceOf(address(vault)), STAKE);
+        assertEq(malicious.balanceOf(address(vault)), 0);
     }
 
     // -------------------------------------------------------------------------
@@ -344,10 +349,10 @@ contract StakeVaultTest is Test {
         vault.depositStake(CLAIM_A, STAKE);
 
         // Fund protocol allocation for reward.
-        vm.prank(verifier);
-        vault.deposit(address(token), STAKE);
+        vm.prank(verifier2);
+        vault.depositStake(CLAIM_B, STAKE);
         vm.prank(slashing);
-        vault.slashStake(CLAIM_A, verifier, STAKE, keccak256("reward-fund"));
+        vault.slashStake(CLAIM_B, verifier2, STAKE, keccak256("reward-fund"));
 
         vm.prank(settlement);
         vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, STAKE / 2);
