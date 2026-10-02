@@ -3,13 +3,14 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {EmergencyPauseOrdering} from "./libraries/EmergencyPauseOrdering.sol";
 
 /**
  * @title EmergencyController
  * @notice Emergency Pause & Circuit Breaker Framework for TruthBounty Protocol
  * @dev Implements multi-level protocol pause with governance-controlled recovery.
  *
- * ## Pause Levels
+ * \## Pause Levels
  *
  * | Level | Name     | Effect |
  * |-------|----------|--------|
@@ -18,7 +19,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * | 2     | Financial| Pause reward distribution, treasury transfers, withdrawals. Read-only + governance still active. |
  * | 3     | Shutdown | Global emergency shutdown. Only governance recovery operations remain. |
  *
- * ## Roles
+ * \## Roles
  *
  * | Role                 | Can Activate | Can Lift | Notes |
  * |----------------------|-------------|----------|-------|
@@ -26,13 +27,14 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * | DAO_GOVERNANCE       | Yes (L1-L2) | Yes      | Full governance control |
  * | TIMELOCK_CONTROLLER  | Yes (L1)    | No       | Narrow scope, time-delayed |
  *
- * ## Security Properties
+ * \## Security Properties
  *
  * - Emergency Council can pause but CANNOT unpause (separation of powers)
  * - DAO Governance is required for recovery (no unilateral unpause)
  * - All emergency actions emit immutable audit events
  * - Protected functions query this contract's pause state
  * - Read operations remain available at all levels
+ * - Operation allow/deny matrix: EmergencyPauseOrdering (V2-SC-117)
  */
 contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     // ─── Custom Errors ────────────────────────────────────────────────
@@ -45,6 +47,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     error InvalidRecoveryStep(uint8 step);
     error ZeroAddress();
     error NoChangeRequested();
+    error ReasonTooLong(uint256 actual, uint256 maximum);
 
     /// @notice Raised when an operation identifier is not part of the classified operation set.
     /// @dev Emergency checks fail closed: an unclassified operation is rejected, never allowed.
@@ -66,6 +69,8 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint8 public constant MAX_PAUSE_LEVEL = 3;
+    /// @notice Maximum emergency reason length persisted on-chain.
+    uint256 public constant MAX_REASON_BYTES = 256;
 
     // ─── Operation Tiers ──────────────────────────────────────────────
 
@@ -217,6 +222,9 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
             }
         }
 
+        uint256 reasonLength = bytes(reason).length;
+        if (reasonLength > MAX_REASON_BYTES) revert ReasonTooLong(reasonLength, MAX_REASON_BYTES);
+
         currentPauseLevel = level;
         lastPauseTimestamp = block.timestamp;
         lastLiftTimestamp = 0;
@@ -281,6 +289,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
      * @notice Complete a step of the staged recovery procedure.
      * @dev Recovery must be performed sequentially (step 1 → 2 → 3).
      *      Protocol must be at LEVEL_NORMAL before recovery begins.
+     *      Step bounds enforced by EmergencyPauseOrdering (V2-SC-117).
      * @param description Description of the recovery action taken
      */
     function completeRecoveryStep(string calldata description) external {
@@ -291,7 +300,7 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
         }
 
         uint8 nextStep = recoveryStep + 1;
-        if (nextStep > MAX_RECOVERY_STEP) revert InvalidRecoveryStep(nextStep);
+        EmergencyPauseOrdering.requireValidRecoveryStep(nextStep);
 
         recoveryStep = nextStep;
 
@@ -310,92 +319,13 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     /**
      * @notice Check if a specific operation type is currently allowed.
      * @dev Called by protocol modules before executing restricted operations.
-     *      FAIL CLOSED: an unrecognised operation identifier does not return `true`. It reverts
-     *      with `UnknownOperation`, so a caller that forgets to classify an operation is frozen
-     *      rather than silently permitted. Use `isKnownOperation` to probe without reverting.
+     *      Authoritative matrix: EmergencyPauseOrdering (V2-SC-117 / #503).
+     *      Operation id hashes are unchanged vs the prior inline implementation.
      * @param operationType The operation category to check
      * @return True if the operation is allowed at the current pause level
      */
     function isOperationAllowed(bytes32 operationType) external view returns (bool) {
-        return _isOperationAllowed(operationType);
-    }
-
-    /**
-     * @notice Reverts unless the operation is recognised and currently allowed.
-     * @dev Enforcement variant for integrators that prefer a revert over a boolean.
-     */
-    function requireOperationAllowed(bytes32 operationType) external view {
-        if (!_isOperationAllowed(operationType)) {
-            revert OperationBlocked(operationType, currentPauseLevel);
-        }
-    }
-
-    /**
-     * @notice Returns true when the operation identifier is classified.
-     * @dev Never reverts; unknown identifiers report `false`.
-     */
-    function isKnownOperation(bytes32 operationType) external pure returns (bool) {
-        return operationTier(operationType) != TIER_UNKNOWN;
-    }
-
-    /**
-     * @notice Classifies an operation identifier into its pause tier.
-     * @dev Returns `TIER_UNKNOWN` (0) for anything not explicitly classified. Emergency controls
-     *      treat that as a rejection, never as an allowance.
-     * @return Tier: 0 unknown, 1 high-risk, 2 financial, 3 governance-only
-     */
-    function operationTier(bytes32 operationType) public pure returns (uint8) {
-        if (operationType == keccak256("governance_recovery")) return TIER_GOVERNANCE;
-
-        // Financial tier — blocked from LEVEL_FINANCIAL upward.
-        if (
-            operationType == keccak256("reward_distribution") ||
-            operationType == keccak256("reward_accrual") ||
-            operationType == keccak256("treasury_transfer") ||
-            operationType == keccak256("treasury_deposit") ||
-            operationType == keccak256("withdrawal") ||
-            operationType == keccak256("settlement_execution") ||
-            operationType == keccak256("slash_execution")
-        ) return TIER_FINANCIAL;
-
-        // High-risk tier — blocked from LEVEL_HIGH_RISK upward.
-        if (
-            operationType == keccak256("claim_creation") ||
-            operationType == keccak256("claim_transition") ||
-            operationType == keccak256("evidence_submission") ||
-            operationType == keccak256("evidence_status") ||
-            operationType == keccak256("staking") ||
-            operationType == keccak256("stake_release") ||
-            operationType == keccak256("verification_submission") ||
-            operationType == keccak256("aggregation_finalization") ||
-            operationType == keccak256("settlement_queue") ||
-            operationType == keccak256("dispute_open") ||
-            operationType == keccak256("dispute_resolution") ||
-            operationType == keccak256("slash_proposal") ||
-            operationType == keccak256("configuration_publish") ||
-            operationType == keccak256("module_registry") ||
-            operationType == keccak256("reputation_root") ||
-            operationType == keccak256("upgrade_proposal") ||
-            operationType == keccak256("upgrade_execution")
-        ) return TIER_HIGH_RISK;
-
-        return TIER_UNKNOWN;
-    }
-
-    /// @dev Shared gate. Reverts for unknown operations; otherwise applies the level policy.
-    function _isOperationAllowed(bytes32 operationType) private view returns (bool) {
-        uint8 tier = operationTier(operationType);
-        if (tier == TIER_UNKNOWN) revert UnknownOperation(operationType);
-
-        uint8 level = currentPauseLevel;
-
-        if (level == LEVEL_NORMAL) return true;
-        // Governance recovery stays available at every level, including full shutdown.
-        if (tier == TIER_GOVERNANCE) return true;
-        // High-risk operations are blocked from LEVEL_HIGH_RISK upward.
-        if (tier == TIER_HIGH_RISK) return false;
-        // Financial operations are permitted at LEVEL_HIGH_RISK and blocked from LEVEL_FINANCIAL up.
-        return level < LEVEL_FINANCIAL;
+        return EmergencyPauseOrdering.isOperationAllowed(currentPauseLevel, operationType);
     }
 
     /**
