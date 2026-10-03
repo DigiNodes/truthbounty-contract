@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../../contracts/v2/StakeVault.sol";
+import "../../contracts/v2/EmergencyControls.sol";
 import "../../contracts/v2/libraries/V2Errors.sol";
 import "../../contracts/v2/interfaces/IStakeCustody.sol";
 import "../../contracts/v2/interfaces/IV2Module.sol";
@@ -15,6 +16,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract StakeVaultTest is Test {
     StakeVault internal vault;
+    EmergencyControls internal emergency;
     MockModuleRegistry internal registry;
     MockERC20 internal token;
     MockERC20 internal tokenB;
@@ -33,7 +35,11 @@ contract StakeVaultTest is Test {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
         tokenB = new MockERC20("Alt", "ALT");
+        emergency = new EmergencyControls(admin, 24 hours);
         vault = new StakeVault(address(registry), address(token), admin);
+
+        // The vault is fail-closed: no mutation is reachable until the control plane is wired.
+        vault.setEmergencyControls(address(emergency));
 
         vault.setSupportedAsset(address(tokenB), true);
 

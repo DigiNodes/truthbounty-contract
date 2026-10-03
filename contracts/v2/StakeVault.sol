@@ -12,6 +12,7 @@ import {IStakeCustody} from "./interfaces/IStakeCustody.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
+import {EmergencyGuarded} from "./EmergencyGuarded.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
 import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
@@ -220,7 +221,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
     }
 
     /// @inheritdoc IStakeCustody
-    function releaseStake(uint256 claimId, address account, uint256 amount) external override nonReentrant {
+    function releaseStake(uint256 claimId, address account, uint256 amount)
+        external
+        override
+        nonReentrant
+        whenOperationAllowed(V2Scopes.STAKE_RELEASE)
+    {
         _onlyAuthorizedMutator();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, 0);
@@ -281,7 +287,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         uint256 round,
         IV2Types.LockCategory category,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.STAKING) {
         _onlyAuthorizedMutator();
         _requireScopeNotPaused(PauseMatrix.SCOPE_STAKING);
         _assertSettlementNotFinalized(claimId, round);
@@ -304,7 +310,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         uint256 round,
         IV2Types.LockCategory category,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.STAKE_RELEASE) {
         _onlyAuthorizedMutator();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, round);
@@ -329,7 +335,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         IV2Types.LockCategory category,
         uint256 amount,
         bytes32 reason
-    ) external nonReentrant {
+    ) external nonReentrant whenOperationAllowed(V2Scopes.SLASH_EXECUTION) {
         _onlyAuthorizedMutator();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, round);
@@ -348,7 +354,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         uint256 round,
         uint256 principalAmount,
         uint256 rewardAmount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, round);
@@ -387,7 +393,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, fromRound);
@@ -405,7 +411,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         uint256 fromRound,
         uint256 toRound,
         uint256 amount
-    ) external override nonReentrant {
+    ) external override nonReentrant whenOperationAllowed(V2Scopes.SETTLEMENT_EXECUTION) {
         _onlySettlementModule();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         _assertSettlementNotFinalized(claimId, fromRound);
@@ -551,6 +557,13 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         if (module == address(0)) revert V2Errors.ZeroAddress();
         lockMutators[module] = enabled;
         emit LockMutatorUpdated(module, enabled, msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+    }
+
+    /// @notice Wires this vault to the canonical emergency control plane.
+    /// @dev Deliberately not emergency-guarded: governance must be able to repair the reference
+    ///      while the vault is paused. Until this is called, every guarded mutation reverts.
+    function setEmergencyControls(address controls) external onlyRole(ADMIN_ROLE) {
+        _setEmergencyControls(controls);
     }
 
     /// @notice Returns whether an address may mutate locks.

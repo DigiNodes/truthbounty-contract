@@ -49,6 +49,13 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     error NoChangeRequested();
     error ReasonTooLong(uint256 actual, uint256 maximum);
 
+    /// @notice Raised when an operation identifier is not part of the classified operation set.
+    /// @dev Emergency checks fail closed: an unclassified operation is rejected, never allowed.
+    error UnknownOperation(bytes32 operationType);
+
+    /// @notice Raised by the enforcement variant when a known operation is blocked at the current level.
+    error OperationBlocked(bytes32 operationType, uint8 pauseLevel);
+
     // ─── Constants ────────────────────────────────────────────────────
 
     /// @notice Normal operation — no restrictions
@@ -64,6 +71,17 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     uint8 public constant MAX_PAUSE_LEVEL = 3;
     /// @notice Maximum emergency reason length persisted on-chain.
     uint256 public constant MAX_REASON_BYTES = 256;
+
+    // ─── Operation Tiers ──────────────────────────────────────────────
+
+    /// @notice Operation is not classified; emergency checks reject it.
+    uint8 internal constant TIER_UNKNOWN = 0;
+    /// @notice Blocked from LEVEL_HIGH_RISK upward.
+    uint8 internal constant TIER_HIGH_RISK = 1;
+    /// @notice Blocked from LEVEL_FINANCIAL upward.
+    uint8 internal constant TIER_FINANCIAL = 2;
+    /// @notice Permitted at every level; reserved for governance recovery.
+    uint8 internal constant TIER_GOVERNANCE = 3;
 
     // ─── Roles ────────────────────────────────────────────────────────
 

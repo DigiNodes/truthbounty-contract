@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IClaimRegistry} from "../interfaces/IClaimRegistry.sol";
 import {ITruthBountyEvents} from "../interfaces/ITruthBountyEvents.sol";
+import {EmergencyGuarded} from "./EmergencyGuarded.sol";
 import {IEvidence} from "./interfaces/IEvidence.sol";
 import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
@@ -32,7 +32,6 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      lifts the local switch and can never override the scoped authority.
 contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents, V2WiredPauseGuard {
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
@@ -122,7 +121,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(EVIDENCE_ADMIN_ROLE, initialAdmin);
-        _grantRole(PAUSER_ROLE, initialAdmin);
     }
 
     /// @inheritdoc IV2Module
@@ -137,6 +135,13 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
             interfaceId == type(IV2Module).interfaceId ||
             interfaceId == type(IEvidence).interfaceId ||
             super.supportsInterface(interfaceId);
+    }
+
+    /// @notice Wires this registry to the canonical emergency control plane.
+    /// @dev Deliberately not emergency-guarded: governance must be able to repair the reference
+    ///      while the module is paused. Until this is called, every guarded mutation reverts.
+    function setEmergencyControls(address controls) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setEmergencyControls(controls);
     }
 
     /// @inheritdoc IEvidence
@@ -164,7 +169,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @return evidenceId Deterministic ID bound to the commitment and contributor nonce.
     function commitEvidence(uint256 claimId, bytes32 contentDigest, bytes32 metadataDigest, uint256 nonce)
         public
-        whenNotPaused
+        whenOperationAllowed(V2Scopes.EVIDENCE_SUBMISSION)
         returns (uint256 evidenceId)
     {
         _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
@@ -232,6 +237,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         external
         override
         onlyRole(EVIDENCE_ADMIN_ROLE)
+        whenOperationAllowed(V2Scopes.EVIDENCE_STATUS)
     {
         _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
         EvidenceCommitment storage evidence = _evidenceById[evidenceId];
