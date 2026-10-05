@@ -251,7 +251,7 @@ export async function buildVectors() {
   const fieldOrderStructHashValue = mutatedFieldOrderStructHash();
   const mutatedTypeStructHashValue = ethers.TypedDataEncoder.hashStruct(
     "ClaimSubmission",
-    MUTATED_TYPES,
+    typesFor("ClaimSubmission", MUTATED_TYPES),
     CLAIM_A
   );
 
