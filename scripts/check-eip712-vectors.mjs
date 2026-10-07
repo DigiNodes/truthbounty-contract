@@ -136,16 +136,29 @@ export function domainFor(chainId, verifyingContract = VERIFYING_CONTRACT) {
   return { name: DOMAIN_NAME, version: DOMAIN_VERSION, chainId, verifyingContract };
 }
 
+/**
+ * Return only the requested primary type.
+ *
+ * ethers v6 rejects a type map containing two unrelated roots because it cannot
+ * infer one unambiguous primary type. Keeping both canonical operations in the
+ * registry is useful, but every encoder/signature call must select exactly one.
+ */
+export function typesFor(primaryType, types = TYPES) {
+  const fields = types[primaryType];
+  if (!fields) throw new Error(`unknown EIP-712 primary type: ${primaryType}`);
+  return { [primaryType]: fields };
+}
+
 /** Struct hash exactly as the Solidity `keccak256(abi.encode(typeHash, ...fields))` does it. */
 export function structHash(primaryType, message, types = TYPES) {
-  return ethers.TypedDataEncoder.hashStruct(primaryType, types, message);
+  return ethers.TypedDataEncoder.hashStruct(primaryType, typesFor(primaryType, types), message);
 }
 
 /** Digest exactly as `_hashTypedDataV4` does it: keccak256(0x1901 || domainSeparator || structHash). */
 export function digestFor(chainId, primaryType, message, types = TYPES, verifyingContract = VERIFYING_CONTRACT) {
   return ethers.TypedDataEncoder.hash(
     domainFor(chainId, verifyingContract),
-    types,
+    typesFor(primaryType, types),
     message
   );
 }
@@ -238,7 +251,7 @@ export async function buildVectors() {
   const fieldOrderStructHashValue = mutatedFieldOrderStructHash();
   const mutatedTypeStructHashValue = ethers.TypedDataEncoder.hashStruct(
     "ClaimSubmission",
-    MUTATED_TYPES,
+    typesFor("ClaimSubmission", MUTATED_TYPES),
     CLAIM_A
   );
 
@@ -621,14 +634,15 @@ export function compareDocuments(expected, actual, prefix = "") {
 /** A signature over a vector digest must recover to the signing wallet (no key is stored). */
 export async function checkSignatureRecovery(domain, primaryType, message, expectedDigest) {
   const wallet = ethers.Wallet.createRandom();
-  const signature = await wallet.signTypedData(domain, TYPES, message);
+  const selectedTypes = typesFor(primaryType);
+  const signature = await wallet.signTypedData(domain, selectedTypes, message);
   const recovered = ethers.recoverAddress(expectedDigest, signature);
   if (recovered !== wallet.address) {
     throw new Error(
       `signature recovery drift: recovered ${recovered} but signed by ${wallet.address}`
     );
   }
-  const viaTypes = ethers.verifyTypedData(domain, TYPES, message, signature);
+  const viaTypes = ethers.verifyTypedData(domain, selectedTypes, message, signature);
   if (viaTypes !== wallet.address) {
     throw new Error(`verifyTypedData drift: ${viaTypes} != ${wallet.address}`);
   }

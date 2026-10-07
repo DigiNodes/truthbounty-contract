@@ -26,10 +26,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -72,7 +74,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -85,7 +87,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: latest
+          version: v1.8.3
       - name: Build contracts (forge build)
         run: forge build
       # V2-SC-129: rebuilt artifacts must match the approved release manifest
@@ -109,7 +111,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -136,7 +138,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -149,7 +151,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: latest
+          version: v1.8.3
       - name: Run Foundry fuzz tests
         run: forge test --match-path "test/fuzz/**"
 
@@ -165,7 +167,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -178,7 +180,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: latest
+          version: v1.8.3
       - name: Run Foundry invariant tests
         run: forge test --match-path "test/invariant/**"
 
@@ -238,7 +240,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -251,7 +253,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: latest
+          version: v1.8.3
       - name: Check gas snapshots
         run: forge snapshot --check
 
@@ -267,7 +269,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -280,7 +282,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: latest
+          version: v1.8.3
       - name: Generate coverage report
         run: forge coverage --report lcov --report summary --skip script
       - name: Run coverage quality gate
