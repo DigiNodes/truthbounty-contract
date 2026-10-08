@@ -87,7 +87,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1",
     "@openzeppelin/contracts-upgradeable": "^5.6.1",
-    "dotenv": "^18.0.3",
+    "dotenv": "^18.0.5",
     "solc": "0.8.37"
   }
 }
