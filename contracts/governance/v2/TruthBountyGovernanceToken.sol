@@ -5,6 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {ERC20Votes} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import {Nonces} from "@openzeppelin/contracts/utils/Nonces.sol";
+import {V2SafeCast} from "../../v2/libraries/V2SafeCast.sol";
 
 /**
  * @title TruthBountyGovernanceToken
@@ -27,9 +28,12 @@ contract TruthBountyGovernanceToken is ERC20, ERC20Permit, ERC20Votes {
     }
 
     /// @notice Returns the timestamp-based voting clock.
-    /// @return timestamp Current Unix timestamp truncated to the clock type.
+    /// @return timestamp Current Unix timestamp as uint48 seconds.
+    /// @dev V2-SC-161: reverts `V2Errors.SafeCastOverflow("GovernanceToken.clock", now, type(uint48).max)`
+    ///      instead of truncating once `block.timestamp` exceeds `type(uint48).max`, so checkpoints can
+    ///      never be written at a wrapped (earlier) timepoint.
     function clock() public view override returns (uint48 timestamp) {
-        return uint48(block.timestamp);
+        return V2SafeCast.timestamp48(V2SafeCast.FIELD_GOVERNANCE_CLOCK);
     }
 
     /// @notice Describes the timestamp clock used by governance voting checkpoints.

@@ -11,20 +11,26 @@ interface IStakeCustody is IV2Module {
     /// @param account Account whose balance was credited.
     /// @param claimId Claim receiving the stake.
     /// @param amount Amount in staking-token base units.
-    event StakeDeposited(address indexed account, uint256 indexed claimId, uint256 amount);
+    /// @param timestamp Block timestamp the credit was applied.
+    /// @param version Event schema version.
+    event StakeDeposited(address indexed account, uint256 indexed claimId, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when authorized custody logic releases primary stake to claimable balance.
     /// @param account Account receiving claimable credit.
     /// @param claimId Claim whose stake was released.
     /// @param amount Amount in staking-token base units.
-    event StakeReleased(address indexed account, uint256 indexed claimId, uint256 amount);
+    /// @param timestamp Block timestamp the credit was applied.
+    /// @param version Event schema version.
+    event StakeReleased(address indexed account, uint256 indexed claimId, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when authorized custody logic converts locked stake to protocol allocation.
     /// @param account Account whose locked stake was reduced.
     /// @param claimId Claim whose stake was slashed.
     /// @param amount Amount in staking-token base units.
     /// @param reason Stable slash reason code.
-    event StakeSlashed(address indexed account, uint256 indexed claimId, uint256 amount, bytes32 indexed reason);
+    /// @param timestamp Block timestamp the slash was applied.
+    /// @param version Event schema version.
+    event StakeSlashed(address indexed account, uint256 indexed claimId, uint256 amount, bytes32 indexed reason, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when a conclusive settlement converts frozen principal into claimable principal and reward.
     /// @param asset ERC-20 asset address.
@@ -33,7 +39,9 @@ interface IStakeCustody is IV2Module {
     /// @param round Settlement round.
     /// @param principalAmount Principal unlocked in asset base units.
     /// @param rewardAmount Reward credited in asset base units.
-    event VaultSettledConclusive(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 principalAmount, uint256 rewardAmount);
+    /// @param timestamp Block timestamp the settlement was applied.
+    /// @param version Event schema version.
+    event VaultSettledConclusive(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 principalAmount, uint256 rewardAmount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when an inconclusive round refunds frozen principal back to the account.
     /// @param asset ERC-20 asset address.
@@ -41,7 +49,9 @@ interface IStakeCustody is IV2Module {
     /// @param claimId Refunded claim.
     /// @param round Settlement round.
     /// @param amount Amount in asset base units.
-    event VaultRefundedInconclusive(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 amount);
+    /// @param timestamp Block timestamp the refund was applied.
+    /// @param version Event schema version.
+    event VaultRefundedInconclusive(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when an appeal carries a lock forward to the next round.
     /// @param asset ERC-20 asset address.
@@ -50,7 +60,9 @@ interface IStakeCustody is IV2Module {
     /// @param fromRound Source round.
     /// @param toRound Destination round.
     /// @param amount Amount in asset base units.
-    event VaultCarriedForward(address indexed asset, address indexed account, uint256 indexed claimId, uint256 fromRound, uint256 toRound, uint256 amount);
+    /// @param timestamp Block timestamp the carry was applied.
+    /// @param version Event schema version.
+    event VaultCarriedForward(address indexed asset, address indexed account, uint256 indexed claimId, uint256 fromRound, uint256 toRound, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when a round rolls a lock forward without settlement.
     /// @param asset ERC-20 asset address.
@@ -59,7 +71,9 @@ interface IStakeCustody is IV2Module {
     /// @param fromRound Source round.
     /// @param toRound Destination round.
     /// @param amount Amount in asset base units.
-    event VaultRolledOver(address indexed asset, address indexed account, uint256 indexed claimId, uint256 fromRound, uint256 toRound, uint256 amount);
+    /// @param timestamp Block timestamp the rollover was applied.
+    /// @param version Event schema version.
+    event VaultRolledOver(address indexed asset, address indexed account, uint256 indexed claimId, uint256 fromRound, uint256 toRound, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Emitted when a lock is finally unlocked to claimable balance.
     /// @param asset ERC-20 asset address.
@@ -67,7 +81,9 @@ interface IStakeCustody is IV2Module {
     /// @param claimId Unlocked claim.
     /// @param round Finalized round.
     /// @param amount Amount in asset base units.
-    event VaultFinalUnlocked(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 amount);
+    /// @param timestamp Block timestamp the unlock was applied.
+    /// @param version Event schema version.
+    event VaultFinalUnlocked(address indexed asset, address indexed account, uint256 indexed claimId, uint256 round, uint256 amount, uint64 timestamp, uint16 version);
 
     /// @notice Deposits caller funds and locks them as verifier principal for a claim.
     /// @dev Pulls the exact configured staking token amount; fee-on-transfer or otherwise inexact deposits revert. Reverts on unsupported asset, zero amount, or reconciliation failure.

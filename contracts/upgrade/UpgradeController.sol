@@ -20,6 +20,21 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
     bytes32 public constant EMERGENCY_UPGRADE_ROLE = keccak256("EMERGENCY_UPGRADE_ROLE");
     bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
 
+    /// @notice Version tag of the upgrade-hash commitment scheme (V2-SC-160).
+    /// @dev = 0x811553cc20c92c3707264c87d19f1ed9f2ca671214b9d6a3ecc419c6a7523b5c.
+    ///      upgradeHash = keccak256(abi.encode(UPGRADE_HASH_SCHEME_V2, targetContract,
+    ///      currentImplementation, newImplementation, version, upgradeType, block.timestamp)).
+    bytes32 public constant UPGRADE_HASH_SCHEME_V2 = keccak256("TruthBounty.UpgradeController.upgradeHash.v2");
+
+    /// @notice Version tag of the upgrade proposal-id scheme (V2-SC-160).
+    /// @dev = 0x22015412ba7af32cf094b083b6dc19f23039090bf7813354d4d610afddfc54e4.
+    ///      proposalId = keccak256(abi.encode(UPGRADE_PROPOSAL_ID_SCHEME_V2, targetContract,
+    ///      newImplementation, version, proposer, block.timestamp)).
+    ///      This contract is not upgradeable, so proposals created by an earlier deployment under
+    ///      the retired V1 packed scheme keep their ids there. A V2 preimage (32-byte tag first)
+    ///      can never equal a V1 preimage (ASCII "UPGRADE" first), so a V2 id never aliases a V1 id.
+    bytes32 public constant UPGRADE_PROPOSAL_ID_SCHEME_V2 = keccak256("TruthBounty.UpgradeController.proposalId.v2");
+
     uint256 public constant MIN_DELAY = 1 hours;
     uint256 public constant MAX_DELAY = 30 days;
     uint256 public constant DEFAULT_STANDARD_DELAY = 1 days;
@@ -112,7 +127,12 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
 
         address currentImpl = _currentImplementation[targetContract];
 
-        bytes32 upgradeHash = keccak256(abi.encodePacked(
+        // V2-SC-160: typed, length-delimited, version-tagged commitments. The retired packed
+        // forms spliced the caller-chosen `version` string between fixed-width fields, which let
+        // other packed schemas (e.g. CanonicalEventLibrary's V1 operation id) reproduce the same
+        // preimage. See docs/ENCODE_PACKED_POLICY.md.
+        bytes32 upgradeHash = keccak256(abi.encode(
+            UPGRADE_HASH_SCHEME_V2,
             targetContract,
             currentImpl,
             newImplementation,
@@ -121,8 +141,8 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
             block.timestamp
         ));
 
-        proposalId = keccak256(abi.encodePacked(
-            "UPGRADE",
+        proposalId = keccak256(abi.encode(
+            UPGRADE_PROPOSAL_ID_SCHEME_V2,
             targetContract,
             newImplementation,
             version,

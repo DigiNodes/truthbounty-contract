@@ -50,6 +50,8 @@ interface ICreate2AddressPlanner {
     error AddressCollision(address predicted, bytes32 existingModuleId);
     error TargetAlreadyHasCode(address predicted);
     error BytecodeHashMismatch(bytes32 expected, bytes32 actual);
+    /// @notice Runtime bytecode exceeds the EIP-170 maximum code size.
+    error RuntimeBytecodeTooLarge(uint256 actual, uint256 maximum);
     error BytecodeNotVerified(bytes32 moduleId);
     error DeploymentCodeMissing(address predicted);
     error NotReadyForRegistration(bytes32 moduleId);
@@ -83,6 +85,7 @@ interface ICreate2AddressPlanner {
 
     /**
      * @notice Verifies runtime bytecode against the hash recorded (or set) for the plan.
+     * @dev Accepts at most 24,576 bytes, the EIP-170 runtime-code limit.
      * @dev If the plan has no runtime hash yet, the provided bytecode hash becomes the expected hash.
      *      If an expected hash is already set, the bytecode must match it.
      */

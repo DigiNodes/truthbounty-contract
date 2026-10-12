@@ -86,7 +86,7 @@ contract V2SecurityAuditFuzz_StakeVault is Test {
         vault    = new StakeVault(address(registry), address(token), admin);
 
         registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.permitModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_SLASHING(),   slashing);
     }
 
     /// @notice FUZZ-VAULT-001: custody == obligations after any deposit + release + withdraw.

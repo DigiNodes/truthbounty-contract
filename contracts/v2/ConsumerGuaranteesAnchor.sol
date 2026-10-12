@@ -8,6 +8,7 @@ import { IConsumerGuarantees } from "./interfaces/IConsumerGuarantees.sol";
 import { IV2Module } from "./interfaces/IV2Module.sol";
 import { V2Errors } from "./libraries/V2Errors.sol";
 import { V2Guarantees } from "./libraries/V2Guarantees.sol";
+import { V2SafeCast } from "./libraries/V2SafeCast.sol";
 
 /// @title ConsumerGuaranteesAnchor
 /// @notice Read-only discovery anchor that publishes the authoritative chain
@@ -51,7 +52,8 @@ contract ConsumerGuaranteesAnchor is ERC165, IV2Module, IConsumerGuarantees {
         _eventsAreReplayable = guarantees_.eventsAreReplayable;
         _eventKeysAreUnique = guarantees_.eventKeysAreUnique;
         _eventsAreTerminalOnEmission = guarantees_.eventsAreTerminalOnEmission;
-        CHAIN_ID = uint64(block.chainid);
+        // V2-SC-161: EIP-155 chain ids are not bounded by the EVM; refuse to truncate one.
+        CHAIN_ID = V2SafeCast.toUint64(block.chainid, V2SafeCast.FIELD_GUARANTEES_CHAIN_ID);
         deployer = deployer_;
         emit ConsumerGuaranteesPublished(guarantees_);
     }

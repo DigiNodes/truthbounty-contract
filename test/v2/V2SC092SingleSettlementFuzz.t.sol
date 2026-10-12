@@ -17,7 +17,7 @@ contract V2SC092SingleSettlementFuzzTest is Test {
         MockModuleRegistry registry = new MockModuleRegistry();
         MockERC20 token = new MockERC20("Stake", "STK");
         StakeVault vault = new StakeVault(address(registry), address(token), address(this));
-        registry.registerModule(vault.MODULE_SETTLEMENT(), address(this));
+        registry.permitModule(vault.MODULE_SETTLEMENT(), address(this));
 
         token.mint(address(this), STAKE);
         token.approve(address(vault), STAKE);
@@ -57,7 +57,7 @@ contract V2SC092SingleSettlementFuzzTest is Test {
         MockModuleRegistry registry = new MockModuleRegistry();
         MockERC20 token = new MockERC20("Reward", "RWD");
         FinalRewardAllocator allocator = new FinalRewardAllocator(address(registry), 2);
-        registry.registerModule(allocator.MODULE_SETTLEMENT(), address(this));
+        registry.permitModule(allocator.MODULE_SETTLEMENT(), address(this));
 
         bytes32 settlementId = keccak256(abi.encode("single-claim", funding));
         token.mint(address(this), funding);

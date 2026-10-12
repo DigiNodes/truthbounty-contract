@@ -2,17 +2,24 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IFinalRewardAllocator} from "./interfaces/IFinalRewardAllocator.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {V2Precision} from "./libraries/V2Precision.sol";
+import {PauseMatrix} from "./libraries/PauseMatrix.sol";
+import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
 
 /// @title FinalRewardAllocator
 /// @notice Records pull-based reward entitlements from one immutable final outcome.
 /// @dev The settlement module is the sole writer. It must pass frozen effective weights
 ///      and an explicit recipient for integer-division remainders.
-contract FinalRewardAllocator is IFinalRewardAllocator {
+///
+///      Pause matrix (V2-SC-162, `PauseMatrix` v1): the pause authority is resolved from
+///      `moduleRegistry` under `EMERGENCY_CONTROLS`. `fund` and `finalizeRewards` fail closed under
+///      `SCOPE_SETTLEMENT`; `claim` of an already-final entitlement is a RISK_REDUCING exit that is
+///      never scope-gated and freezes only at protocol SHUTDOWN.
+contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant MODULE_SETTLEMENT = keccak256("SETTLEMENT");
@@ -55,6 +62,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
 
     function fund(address asset, uint256 amount, bytes32 settlementId) external override {
         _onlySettlementModule();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (asset == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
@@ -70,6 +78,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
         Allocation[] calldata allocations
     ) external override {
         _onlySettlementModule();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (_finalized[settlementId]) revert SettlementAlreadyFinalized(settlementId);
         if (asset == address(0)) revert ZeroAddress();
         if (allocations.length > 5) revert InvalidRecipientCount();
@@ -100,7 +109,11 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
         emit RewardsFinalized(settlementId, asset, outcome, totalAmount);
     }
 
+    /// @notice Pulls the caller's already-final reward entitlement.
+    /// @dev V2-SC-162: RISK_REDUCING exit. Never scope-gated; frozen only at protocol SHUTDOWN.
+    ///      Idempotent: claiming more than the remaining entitlement reverts with `InsufficientClaimable`.
     function claim(address asset, uint256 amount) external override {
+        _requireExitsNotShutdown();
         uint256 available = _claimable[asset][msg.sender];
         if (amount == 0 || amount > available) revert InsufficientClaimable(amount, available);
         _claimable[asset][msg.sender] = available - amount;
@@ -126,6 +139,11 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
 
     function finalOutcome(bytes32 settlementId) external view override returns (FinalOutcome) {
         return _finalOutcome[settlementId];
+    }
+
+    /// @dev Pause authority resolved from the module registry (timelocked replacement path).
+    function _pauseAuthority() internal view override returns (bool resolved, address authority) {
+        return _registryPauseAuthority(address(moduleRegistry));
     }
 
     function _onlySettlementModule() internal view {

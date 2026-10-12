@@ -189,6 +189,17 @@ contract Create2AddressPlannerTest is Test {
         planner.verifyBytecode(MODULE_A, bytes("wrong-bytecode"));
     }
 
+    function test_verifyBytecode_rejectsRuntimeCodeAboveEip170Limit() public {
+        uint256 maximum = planner.MAX_RUNTIME_BYTECODE_BYTES();
+        bytes memory oversized = new bytes(maximum + 1);
+
+        vm.prank(plannerRole);
+        vm.expectRevert(
+            abi.encodeWithSelector(ICreate2AddressPlanner.RuntimeBytecodeTooLarge.selector, maximum + 1, maximum)
+        );
+        planner.verifyBytecode(MODULE_A, oversized);
+    }
+
     function test_confirmDeployment_revertsWithoutVerification() public {
         bytes32 initHash = _initCodeHash(3);
         vm.prank(plannerRole);

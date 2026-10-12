@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../../contracts/v2/StakeVault.sol";
+import "../../contracts/v2/EmergencyControls.sol";
 import "../../contracts/v2/libraries/V2Errors.sol";
 import "../../contracts/v2/interfaces/IStakeCustody.sol";
 import "../../contracts/v2/interfaces/IV2Module.sol";
@@ -15,6 +16,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract StakeVaultTest is Test {
     StakeVault internal vault;
+    EmergencyControls internal emergency;
     MockModuleRegistry internal registry;
     MockERC20 internal token;
     MockERC20 internal tokenB;
@@ -33,7 +35,11 @@ contract StakeVaultTest is Test {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
         tokenB = new MockERC20("Alt", "ALT");
+        emergency = new EmergencyControls(admin, 24 hours);
         vault = new StakeVault(address(registry), address(token), admin);
+
+        // The vault is fail-closed: no mutation is reachable until the control plane is wired.
+        vault.setEmergencyControls(address(emergency));
 
         vault.setSupportedAsset(address(tokenB), true);
 
@@ -65,7 +71,10 @@ contract StakeVaultTest is Test {
 
         assertEq(vault.staked(CLAIM_A, verifier), STAKE);
         assertEq(vault.totalStaked(CLAIM_A), STAKE);
-        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(
+            vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL),
+            STAKE
+        );
         assertEq(vault.claimableBalance(address(token), verifier), 0);
         assertEq(vault.totalCustody(address(token)), STAKE);
     }
@@ -610,6 +619,30 @@ contract StakeVaultTest is Test {
         vm.prank(verifier);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
         vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+    }
+
+    function test_timestampJumpCannotBypassSettlementAuthorizationOrCustody() public {
+        uint256 verifierBalanceBefore = token.balanceOf(verifier);
+        vm.prank(verifier);
+        vault.depositStake(CLAIM_A, STAKE);
+
+        vm.warp(block.timestamp + 30 days);
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.UnauthorizedModule.selector, verifier));
+        vm.prank(verifier);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+
+        assertEq(vault.lockedPrincipal(address(token), verifier, CLAIM_A, 0, IV2Types.LockCategory.VERIFIER_PRINCIPAL), STAKE);
+        assertEq(vault.totalCustody(address(token)), STAKE);
+        assertEq(token.balanceOf(address(vault)), STAKE);
+
+        vm.prank(settlement);
+        vault.finalUnlock(address(token), verifier, CLAIM_A, 0, STAKE);
+        vm.prank(verifier);
+        vault.withdraw(address(token), STAKE);
+
+        assertEq(token.balanceOf(verifier), verifierBalanceBefore);
+        assertEq(token.balanceOf(address(vault)), 0);
+        assertEq(vault.totalCustody(address(token)), 0);
     }
 
     function test_finalUnlock_duplicateReverts() public {

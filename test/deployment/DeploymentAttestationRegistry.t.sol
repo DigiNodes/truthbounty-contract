@@ -31,7 +31,7 @@ contract DeploymentAttestationRegistryTest is Test {
         assertEq(attestation.chainId, block.chainid);
         assertEq(attestation.artifactDigest, digest);
         assertEq(attestation.configurationVersion, 7);
-        assertEq(attestation.governanceAuthority, authority);
+        assertEq(registry.governanceAuthority(), authority);
         assertEq(registry.attestationCount(), 1);
         assertEq(registry.getModuleCount(releaseId), 2);
 

@@ -8,7 +8,7 @@ import "../../contracts/mocks/MockModuleRegistry.sol";
 import "../../contracts/mocks/FeeOnTransferERC20.sol";
 import "../../contracts/MockERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeERC20 as OZSafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @dev Returns false instead of reverting on every transfer.
 contract FalseReturnERC20 is MockERC20 {
@@ -183,7 +183,7 @@ contract AdversarialERC20Test is Test {
         t.mint(alice, 1 ether);
         vm.startPrank(alice);
         t.approve(address(vault), 1 ether);
-        vm.expectRevert(abi.encodeWithSelector(SafeERC20.SafeERC20FailedOperation.selector, address(t)));
+        vm.expectRevert(abi.encodeWithSelector(OZSafeERC20.SafeERC20FailedOperation.selector, address(t)));
         vault.deposit(address(t), 1 ether);
         vm.stopPrank();
         assertEq(vault.claimableBalance(address(t), alice), 0);

@@ -19,6 +19,7 @@ pragma solidity ^0.8.20;
 ///      | Governance        | NotGovernance, ZeroGuardian*, Module*   | Authority / allowlist                   |
 ///      | Slashing          | Slash*, SlashingNotPermitted            | Over-slash / policy                     |
 ///      | Emergency         | ProtocolPaused, EmergencyAuthority*     | Pause / guardian path                   |
+///      | Integer widths    | SafeCastOverflow, SafeCastNegative      | Narrowing past the field's width        |
 ///
 ///      Modules MUST revert with these selectors (via `V2Errors.<Error>`) instead of
 ///      `require`/`revert` string reasons or ad-hoc local errors that collide by name
@@ -157,6 +158,9 @@ library V2Errors {
 
     /// @notice Invalid settlement amount.
     error InvalidSettlementAmount();
+
+    /// @notice Canonical asset conservation invariant is violated; on-chain balance and accounting buckets must match exactly.
+    error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
 
     /// @notice Settlement outcome already recorded for this claim-round.
     /// @param claimId Settlement claim.
@@ -376,6 +380,48 @@ library V2Errors {
     /// @notice Operation requires emergency authority.
     error EmergencyAuthorityRequired();
 
+    /// @notice The referenced scope is not part of the canonical emergency scope manifest.
+    /// @dev Raised instead of silently allowing an unrecognised operation. Emergency controls
+    ///      fail closed: an unknown scope is never treated as unpaused.
+    error UnknownOperation(bytes32 scope);
+
+    /// @notice The scope is currently paused and the mutation must not proceed.
+    error ScopePaused(bytes32 scope);
+
+    /// @notice The scope is not paused, so the requested recovery action is invalid.
+    error ScopeNotPaused(bytes32 scope);
+
+    /// @notice The scope is already paused.
+    error ScopeAlreadyPaused(bytes32 scope);
+
+    /// @notice The scope is already part of the known-scope set.
+    error ScopeAlreadyRegistered(bytes32 scope);
+
+    /// @notice The recovery timelock for the scope has not elapsed yet.
+    error RecoveryTimelockActive(bytes32 scope, uint256 readyAt);
+
+    /// @notice Recovery cannot complete because no recovery conditions were documented for the scope.
+    error NoRecoveryConditionsDeclared(bytes32 scope);
+
+    /// @notice A declared recovery condition has not been satisfied or waived.
+    error RecoveryPrerequisitesUnmet(bytes32 scope, bytes32 conditionId);
+
+    /// @notice A recovery condition with this identifier is already declared for the scope.
+    error RecoveryConditionAlreadyDeclared(bytes32 scope, bytes32 conditionId);
+
+    /// @notice No recovery condition with this identifier is declared for the scope.
+    error RecoveryConditionNotFound(bytes32 scope, bytes32 conditionId);
+
+    /// @notice The recovery condition has already been satisfied or waived.
+    error RecoveryConditionAlreadyResolved(bytes32 scope, bytes32 conditionId);
+
+    /// @notice The caller does not hold the role required for this emergency action.
+    error UnauthorizedEmergencyCaller(address caller);
+
+    /// @notice A guarded module has no emergency-control dependency configured.
+    /// @dev Raised instead of allowing the mutation. An unwired module is frozen, never open.
+    error EmergencyControlsNotConfigured();
+
     // =========================================================================
     // Generic Validation (typed — avoid string reasons)
     // Module Registry Errors
@@ -474,6 +520,11 @@ library V2Errors {
     /// @notice Invalid checksum (zero or malformed).
     error InvalidChecksum();
 
+    /// @notice A variable-length attestation field contains the '|' field delimiter (V2-SC-160).
+    /// @dev Delimiter-joined records are only unambiguous when no field can contain the
+    ///      delimiter; otherwise field boundaries shift on read-back.
+    error AttestationFieldContainsDelimiter();
+
     // =========================================================================
     // Precision & Arithmetic Errors (V2-SC-100)
     // =========================================================================
@@ -503,4 +554,20 @@ library V2Errors {
 
     /// @notice Two arrays that must be index-aligned had different lengths.
     error LengthMismatch();
+
+    // =========================================================================
+    // Safe-Cast & Integer-Width Boundaries (V2-SC-161)
+    // =========================================================================
+
+    /// @notice A value does not fit the narrower integer width of the named field.
+    /// @dev Raised by `V2SafeCast` instead of silently truncating to the low bits.
+    /// @param field Left-aligned ASCII identifier of the field (`"<Module>.<field>"`).
+    /// @param value The rejected value.
+    /// @param max The largest value the destination width can hold (`type(uintN).max`).
+    error SafeCastOverflow(bytes32 field, uint256 value, uint256 max);
+
+    /// @notice A negative signed value was converted to an unsigned field.
+    /// @param field Left-aligned ASCII identifier of the field.
+    /// @param value The rejected signed value.
+    error SafeCastNegative(bytes32 field, int256 value);
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {BoundedStaticCall} from "./BoundedStaticCall.sol";
+
 /**
  * @title AmountUnits
  * @notice Explicit conversion between raw token units and the protocol's canonical 18-decimal units.
@@ -31,9 +33,11 @@ library AmountUnits {
      */
     function tokenDecimals(address token) internal view returns (uint8 decimals) {
         if (token.code.length == 0) revert DecimalsUnavailable(token);
-        (bool ok, bytes memory data) = token.staticcall(abi.encodeWithSignature("decimals()"));
-        if (!ok || data.length != 32) revert DecimalsUnavailable(token);
-        uint256 raw = abi.decode(data, (uint256));
+        (bool ok, uint256 raw, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            token,
+            abi.encodeWithSignature("decimals()")
+        );
+        if (!ok || returnSize != 32) revert DecimalsUnavailable(token);
         if (raw > MAX_DECIMALS) revert UnsupportedDecimals(raw > type(uint8).max ? type(uint8).max : uint8(raw));
         decimals = uint8(raw);
     }

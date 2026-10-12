@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {BoundedStaticCall} from "../libraries/BoundedStaticCall.sol";
 
 /**
  * @title PostDeploymentRoleCheck
@@ -228,10 +229,11 @@ library PostDeploymentRoleCheck {
         // Guard: target must have code
         if (target.code.length == 0) return false;
 
-        (bool ok, bytes memory data) = target.staticcall(
+        (bool ok, uint256 value, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            target,
             abi.encodeCall(IAccessControl.hasRole, (role, account))
         );
-        if (!ok || data.length < 32) return false;
-        return abi.decode(data, (bool));
+        if (!ok || returnSize < 32 || value > 1) return false;
+        return value == 1;
     }
 }

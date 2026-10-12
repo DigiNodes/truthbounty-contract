@@ -11,6 +11,7 @@ import {PostDeploymentRoleCheck} from "../../contracts/deployment/PostDeployment
 import {GovernedModuleRegistry} from "../../contracts/governance/v2/GovernedModuleRegistry.sol";
 import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBountyGovernanceToken.sol";
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";

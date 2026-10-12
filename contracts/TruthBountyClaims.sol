@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "./libraries/BoundedSafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -62,6 +62,8 @@ contract TruthBountyClaims is AccessControl, ReentrancyGuard {
     error SettlementAlreadyExecuted(bytes32 settlementId);
     /// @notice A zero-value settlementId is not permitted.
     error ZeroSettlementId();
+    /// @notice A token transfer failed; raw token revert data is intentionally not retained.
+    error TokenTransferFailed(address token, address beneficiary, uint256 amount);
 
     // ============ Constants ============
 
@@ -157,8 +159,14 @@ contract TruthBountyClaims is AccessControl, ReentrancyGuard {
             try this._tryTransfer(beneficiary, amount) {
                 emit ClaimSettled(beneficiary, amount, settlementId);
                 unchecked { ++successCount; }
-            } catch (bytes memory reason) {
+            } catch {
                 // Log the skip so off-chain systems can resubmit this row.
+                bytes memory reason = abi.encodeWithSelector(
+                    TokenTransferFailed.selector,
+                    address(bountyToken),
+                    beneficiary,
+                    amount
+                );
                 emit SettlementSkipped(settlementId, beneficiary, amount, reason);
             }
 

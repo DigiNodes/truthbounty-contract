@@ -60,13 +60,17 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     error TimelockNotElapsed();
     error UpgradeAlreadyExecuted();
     error UpgradeAlreadyCancelled();
-    error UpgradeExpired();
+    error UpgradeWindowExpired();
+    error UpgradeNotYetExpired();
     error PredecessorNotCompleted(bytes32 predecessorId);
     error InvalidDelay(uint256 delay);
     error InvalidImplementation(string reason);
     error ImplementationAlreadyUsed(address implementation);
     error EOANotAllowed(address account);
     error OperationIdCollision(bytes32 operationId);
+    /// @notice Native value was attached to the upgrade path (V2-SC-153).
+    /// @param value Rejected `msg.value`.
+    error UnexpectedNativeValue(uint256 value);
     
     modifier onlyTimelockController() {
         if (msg.sender != address(timelock)) revert OnlyTimelock();
@@ -163,7 +167,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
             // Mark as expired and clean up
             delete pendingUpgrades[upgradeId];
             emit UpgradeExpired(upgradeId);
-            revert UpgradeExpired();
+            revert UpgradeWindowExpired();
         }
         
         // Validate predecessor if specified
@@ -209,7 +213,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     function cleanupExpiredUpgrade(bytes32 upgradeId) external {
         PendingUpgrade storage upgrade = pendingUpgrades[upgradeId];
         if (upgrade.proxy == address(0)) revert UpgradeNotScheduled();
-        if (block.timestamp <= upgrade.expireAt) revert UpgradeExpired(); // Only allow cleanup if actually expired
+        if (block.timestamp <= upgrade.expireAt) revert UpgradeNotYetExpired(); // Only allow cleanup if actually expired
         
         // Remove from storage
         delete pendingUpgrades[upgradeId];
@@ -252,9 +256,10 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         // Validate storage compatibility using the storage validator
         try storageValidator.validateUpgrade(proxy, address(0), newImplementation) {
             // Storage layout is compatible
-        } catch (bytes memory reason) {
-            emit InvalidImplementationRejected(newImplementation, string(reason));
-            revert InvalidImplementation(string(reason));
+        } catch {
+            string memory reason = "Storage layout validation failed";
+            emit InvalidImplementationRejected(newImplementation, reason);
+            revert InvalidImplementation(reason);
         }
         
         // Mark implementation as used to prevent future reuse
@@ -265,12 +270,16 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     
     /**
      * @dev Override upgradeAndCall to keep ProxyAdmin owner checks while routing scheduled upgrades.
+     *      Native value isolation (V2-SC-153): a transparent proxy has no path that releases native
+     *      currency, so value forwarded here would be permanently stranded in the proxy. The upgrade
+     *      path therefore rejects `msg.value` instead of forwarding it to `upgradeToAndCall`.
      */
     function upgradeAndCall(
         ITransparentUpgradeableProxy proxy,
         address implementation,
         bytes memory data
     ) public payable override onlyOwner {
+        if (msg.value != 0) revert UnexpectedNativeValue(msg.value);
         super.upgradeAndCall(proxy, implementation, data);
     }
 

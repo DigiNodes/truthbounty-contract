@@ -64,16 +64,15 @@ contract DisputeResolutionTest is Test {
         bytes32 operatorRole = vault.OPERATOR_ROLE();
 
         // Authorise the dispute module to transition claims.
-        vm.prank(admin);
-        registry.grantRole(updaterRole, address(dispute));
-
-        // Authorise the local test updater used to drive claims to outcomes.
-        vm.prank(admin);
-        registry.grantRole(updaterRole, updater);
+        bytes32 registryUpdaterRole = registry.REGISTRY_UPDATER_ROLE();
+        vm.startPrank(admin);
+        registry.grantRole(registryUpdaterRole, address(dispute));
+        // The helper `_driveToOutcome` impersonates `updater`, which also needs the role.
+        registry.grantRole(registryUpdaterRole, updater);
 
         // Authorise the dispute module as the vault operator.
-        vm.prank(admin);
         vault.grantRole(operatorRole, address(dispute));
+        vm.stopPrank();
 
         // Fund challengers and users.
         token.mint(challenger, 100_000e18);
@@ -103,8 +102,8 @@ contract DisputeResolutionTest is Test {
     }
 
     function _approveChallenge(address who, uint256 amount) internal {
-        // The contract checks allowance(msg.sender -> vault): the challenger
-        // authorizes the vault directly as the ERC-20 spender.
+        // The vault is the ERC-20 spender and bond custodian: the challenger
+        // authorises the vault directly.
         vm.prank(who);
         token.approve(address(vault), amount);
     }
@@ -220,6 +219,20 @@ contract DisputeResolutionTest is Test {
         assertDisputeNotCommitted(claimId);
     }
 
+    function test_OpenDispute_RevertsAtVerificationDeadline() public {
+        uint256 claimId = _createClaim();
+        uint256 deadline = registry.getClaim(claimId).verificationDeadline;
+        _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
+        vm.warp(deadline);
+        _approveChallenge(challenger, BOND);
+
+        vm.expectRevert(IDisputeResolution.ChallengeWindowNotOpen.selector);
+        vm.prank(challenger);
+        dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
+
+        assertDisputeNotCommitted(claimId);
+    }
+
     function test_OpenDispute_RevertsLate_AfterFrozenDeadline() public {
         uint256 claimId = _createClaim();
         uint256 deadline = registry.getClaim(claimId).verificationDeadline;
@@ -234,6 +247,27 @@ contract DisputeResolutionTest is Test {
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
 
         assertDisputeNotCommitted(claimId);
+    }
+
+    function test_OpenDispute_SucceedsAtFrozenDeadline() public {
+        uint256 claimId = _createClaim();
+        uint256 verificationDeadline = registry.getClaim(claimId).verificationDeadline;
+        uint256 frozenDeadline = verificationDeadline + WINDOW;
+        _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
+        vm.warp(frozenDeadline);
+        _approveChallenge(challenger, BOND);
+
+        vm.prank(challenger);
+        uint256 disputeId = dispute.openDispute(
+            claimId,
+            IDisputeResolution.ChallengedOutcome.TRUE,
+            RATIONALE
+        );
+
+        assertEq(disputeId, 1);
+        assertEq(dispute.getDispute(disputeId).openedAt, frozenDeadline);
+        assertEq(dispute.getDispute(disputeId).appealDeadline, frozenDeadline);
+        assertEq(vault.totalLocked(), BOND);
     }
 
     // =========================================================================
@@ -268,12 +302,18 @@ contract DisputeResolutionTest is Test {
         vm.prank(challenger);
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
 
-        // Claim is now Disputed; the one-appeal-path-per-claim guard runs before the
-        // status check, so a recursive open attempt fails with DisputeAlreadyOpen.
+        // Claim is now Disputed. A recursive reopen is rejected before the status
+        // check because the one-appeal-path guard runs first, so the more precise
+        // `DisputeAlreadyOpen` surfaces. Either way the reopen cannot succeed.
         vm.expectRevert(
             abi.encodeWithSelector(IDisputeResolution.DisputeAlreadyOpen.selector, claimId)
         );
         dispute.openDispute(claimId, IDisputeResolution.ChallengedOutcome.TRUE, RATIONALE);
+
+        // The claim remains Disputed and no second dispute or bond was created.
+        assertEq(uint256(registry.getClaimStatus(claimId)), uint256(IClaimRegistry.ClaimStatus.Disputed));
+        assertEq(dispute.totalDisputes(), 1);
+        assertEq(vault.totalLocked(), BOND);
     }
 
     // =========================================================================
@@ -354,12 +394,12 @@ contract DisputeResolutionTest is Test {
             WINDOW,
             admin
         );
-        bytes32 updaterRole2 = registry.REGISTRY_UPDATER_ROLE();
-        bytes32 operatorRole2 = vault.OPERATOR_ROLE();
-        vm.prank(admin);
-        registry.grantRole(updaterRole2, address(failingModule));
-        vm.prank(admin);
-        vault.grantRole(operatorRole2, address(failingModule));
+        bytes32 failingUpdaterRole = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 failingOperatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(admin);
+        registry.grantRole(failingUpdaterRole, address(failingModule));
+        vault.grantRole(failingOperatorRole, address(failingModule));
+        vm.stopPrank();
 
         // Failing token mints to ITS deployer (this test contract); grant the
         // challenger tokens and an allowance toward the vault (the ERC-20 spender).
@@ -383,8 +423,9 @@ contract DisputeResolutionTest is Test {
     }
 
     function test_CustodyFailure_LeavesNoResidualAllowance() public {
-        // After a failed open, the module must not retain a dangling allowance
-        // toward the vault that could be abused by a later caller.
+        // After a failed open, the challenger's bond must be untouched: the vault
+        // is the ERC-20 spender, so a failed pull must not have consumed any of
+        // the challenger's standing approval toward the vault.
         MockFailingBondERC20 failing = new MockFailingBondERC20();
         DisputeResolution failingModule = new DisputeResolution(
             address(registry),
@@ -394,16 +435,19 @@ contract DisputeResolutionTest is Test {
             WINDOW,
             admin
         );
-        bytes32 updaterRole2 = registry.REGISTRY_UPDATER_ROLE();
-        bytes32 operatorRole2 = vault.OPERATOR_ROLE();
-        vm.prank(admin);
-        registry.grantRole(updaterRole2, address(failingModule));
-        vm.prank(admin);
-        vault.grantRole(operatorRole2, address(failingModule));
+        bytes32 failingUpdaterRole = registry.REGISTRY_UPDATER_ROLE();
+        bytes32 failingOperatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(admin);
+        registry.grantRole(failingUpdaterRole, address(failingModule));
+        vault.grantRole(failingOperatorRole, address(failingModule));
+        vm.stopPrank();
 
         failing.mint(challenger, 100_000e18);
         vm.prank(challenger);
         failing.approve(address(vault), BOND);
+
+        uint256 balanceBefore = failing.balanceOf(challenger);
+        uint256 allowanceBefore = failing.allowance(challenger, address(vault));
 
         uint256 claimId = _createClaim();
         _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
@@ -414,12 +458,19 @@ contract DisputeResolutionTest is Test {
             fail("expected revert");
         } catch {}
 
-        // The module must not have left an approval for the vault on the token.
+        // No bond was taken and the challenger's approval is preserved intact.
+        assertEq(failing.balanceOf(challenger), balanceBefore, "bond must not be pulled on failure");
+        assertEq(
+            failing.allowance(challenger, address(vault)),
+            allowanceBefore,
+            "challenger allowance toward the vault must be untouched"
+        );
         assertEq(
             failing.allowance(address(failingModule), address(vault)),
             0,
-            "no residual vault allowance after custody failure"
+            "module must never hold a vault allowance"
         );
+        assertEq(vault.totalLocked(), 0, "no lock may be recorded on custody failure");
     }
 
     // =========================================================================
@@ -428,10 +479,10 @@ contract DisputeResolutionTest is Test {
 
     function test_OpenDispute_RevertsWhenPaused() public {
         bytes32 pauserRole = dispute.PAUSER_ROLE();
-        vm.prank(admin);
+        vm.startPrank(admin);
         dispute.grantRole(pauserRole, admin);
-        vm.prank(admin);
         dispute.pause();
+        vm.stopPrank();
 
         uint256 claimId = _createClaim();
         _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);
@@ -447,12 +498,11 @@ contract DisputeResolutionTest is Test {
 
     function test_OpenDispute_SucceedsAfterUnpause() public {
         bytes32 pauserRole = dispute.PAUSER_ROLE();
-        vm.prank(admin);
+        vm.startPrank(admin);
         dispute.grantRole(pauserRole, admin);
-        vm.prank(admin);
         dispute.pause();
-        vm.prank(admin);
         dispute.unpause();
+        vm.stopPrank();
 
         uint256 claimId = _createClaim();
         _driveToOutcome(claimId, IClaimRegistry.ClaimStatus.VerifiedTrue);

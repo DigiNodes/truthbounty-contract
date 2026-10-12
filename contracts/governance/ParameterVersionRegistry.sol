@@ -163,7 +163,7 @@ contract ParameterVersionRegistry is
     function _createGenesisVersion() internal {
         versionCounter = 1;
         
-        // Initialize genesis parameters with default values
+        // Set genesis version as active
         EconomicParameters memory genesisParams = EconomicParameters({
             verifierRewardsBPS: 4000,
             treasuryReserveBPS: 2000,
@@ -394,7 +394,16 @@ contract ParameterVersionRegistry is
         if (versionId == 0) revert ClaimNotFound(claimId);
         return _versions[versionId].parameters;
     }
-    
+
+    /**
+     * @notice Get the parameter version a claim was frozen to at creation
+     * @param claimId The ID of the claim
+     * @return The linked version ID, or 0 if the claim was never recorded
+     */
+    function getClaimVersion(uint256 claimId) external view returns (uint256) {
+        return _claimVersionMap[claimId];
+    }
+
     /**
      * @notice Get the currently active parameters
      * @return The current economic parameters

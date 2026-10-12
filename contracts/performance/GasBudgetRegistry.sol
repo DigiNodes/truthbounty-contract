@@ -20,6 +20,8 @@ contract GasBudgetRegistry is ICriticalPathGasBudgets, AccessControl {
 
     error UnknownOperation(Operation operation);
     error ZeroAdmin();
+    /// @notice Thrown when a budget of zero gas is configured for an operation.
+    error ZeroGasBudget(Operation operation);
     error EmptyBudgetDescription();
     error GasBudgetExceedsTransactionCeiling(uint256 budget, uint256 ceiling);
 
@@ -94,7 +96,8 @@ contract GasBudgetRegistry is ICriticalPathGasBudgets, AccessControl {
     }
 
     function _set(Operation operation, uint256 maxGas, string memory description) internal {
-        if (maxGas > ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING) {
+        if (maxGas == 0) revert ZeroGasBudget(operation);
+        if (maxGas >ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING) {
             revert GasBudgetExceedsTransactionCeiling(maxGas, ProtocolExecutionBounds.RECOMMENDED_TX_GAS_CEILING);
         }
         if (bytes(description).length == 0) revert EmptyBudgetDescription();
@@ -123,8 +126,8 @@ contract GasBudgetRegistry is ICriticalPathGasBudgets, AccessControl {
      * @param operation The operation whose enforced budget is being updated.
      * @param maxGasAtMaxConfig Maximum permitted gas under the documented maximum configuration.
      * @param boundDescription Description of the configuration used for the benchmark.
-     * @dev Only the budget administrator may change a budget. Invalid ceilings and blank
-     *      descriptions revert so CI cannot silently accept an incomplete configuration.
+     * @dev Only the budget administrator may change a budget. Zero or over-ceiling budgets and
+     *      blank descriptions revert so CI cannot silently accept an incomplete configuration.
      */
     function updateBudget(
         Operation operation,

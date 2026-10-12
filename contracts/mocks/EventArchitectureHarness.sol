@@ -146,7 +146,7 @@ contract EventArchitectureHarness is ITruthBountyEvents, IVerificationRoundEvent
         uint16 passingThreshold,
         uint32 paramVersion
     ) external {
-        emit RoundOpened(claimId, roundId, roundType, startedAt, deadline, minStake, maxStake, weightCap, passingThreshold, paramVersion, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+        emit RoundOpened(claimId, roundId, roundType, startedAt, deadline, minStake, maxStake, weightCap, passingThreshold, paramVersion);
     }
 
     function emitRoundClosedV1(
@@ -155,7 +155,7 @@ contract EventArchitectureHarness is ITruthBountyEvents, IVerificationRoundEvent
         uint64 closedAt,
         uint256 totalVotes
     ) external {
-        emit RoundClosed(claimId, roundId, closedAt, totalVotes, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+        emit RoundClosed(claimId, roundId, closedAt, totalVotes);
     }
 
     function emitRoundStartedV1(

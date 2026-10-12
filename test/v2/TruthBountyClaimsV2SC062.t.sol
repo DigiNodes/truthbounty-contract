@@ -40,7 +40,12 @@ contract HostileRecipientERC20 is MockERC20 {
     function setHostile(address h) external { hostile = h; }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
-        if (to == hostile) revert("HostileRecipient: blocked");
+        if (to == hostile) {
+            assembly {
+                mstore(0, 0x12345678)
+                revert(0, 0x10000)
+            }
+        }
         return super.transfer(to, amount);
     }
 }

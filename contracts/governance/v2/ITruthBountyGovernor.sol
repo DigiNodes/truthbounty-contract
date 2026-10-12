@@ -20,7 +20,12 @@ interface ITruthBountyGovernor is IGovernor {
     function queue(uint256 proposalId) external;
 
     /// @notice Executes a queued proposal after the timelock delay.
-    /// @dev `msg.value` must satisfy all payable operations. Any failed target call reverts the complete execution and cannot produce partial protocol mutation.
+    /// @dev Native value isolation (V2-SC-153): TruthBounty V2 is token-denominated, so `msg.value`
+    ///      must be zero. Attaching native currency reverts with
+    ///      `TruthBountyGovernor.UnexpectedNativeValue`, and any proposal operation with a non-zero
+    ///      native value reverts with `TruthBountyGovernor.NativeValueProposalNotAllowed` — the
+    ///      governor never forwards or accounts for native currency. Any failed target call reverts
+    ///      the complete execution and cannot produce partial protocol mutation.
     /// @param proposalId Proposal to execute.
     function execute(uint256 proposalId) external payable;
 }

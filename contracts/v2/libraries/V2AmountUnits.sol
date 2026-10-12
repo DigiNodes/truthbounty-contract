@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { BoundedStaticCall } from "../../libraries/BoundedStaticCall.sol";
 
 /// @title V2AmountUnits
 /// @notice Explicit conversion between an asset's native base units and 18-decimal normalized units.
@@ -23,9 +24,11 @@ library V2AmountUnits {
     /// @notice Reads an asset's decimals, failing closed on missing, malformed, or out-of-range values.
     function decimalsOf(address asset) internal view returns (uint8) {
         if (asset.code.length == 0) revert UnsupportedDecimals(asset);
-        (bool ok, bytes memory data) = asset.staticcall(abi.encodeCall(IERC20Metadata.decimals, ()));
-        if (!ok || data.length != 32) revert UnsupportedDecimals(asset);
-        uint256 raw = abi.decode(data, (uint256));
+        (bool ok, uint256 raw, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            asset,
+            abi.encodeCall(IERC20Metadata.decimals, ())
+        );
+        if (!ok || returnSize != 32) revert UnsupportedDecimals(asset);
         if (raw > MAX_ASSET_DECIMALS) revert UnsupportedDecimals(asset);
         return uint8(raw);
     }

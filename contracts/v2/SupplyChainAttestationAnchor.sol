@@ -7,6 +7,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { ISupplyChainAttestations } from "./interfaces/ISupplyChainAttestations.sol";
 import { IV2Module } from "./interfaces/IV2Module.sol";
 import { V2Errors } from "./libraries/V2Errors.sol";
+import { V2SafeCast } from "./libraries/V2SafeCast.sol";
 
 /// @title SupplyChainAttestationAnchor
 /// @notice Read-only discovery anchor that publishes the authoritative
@@ -18,8 +19,15 @@ import { V2Errors } from "./libraries/V2Errors.sol";
 ///         `SupplyChainAttestationPublished` event; no off-chain actor gains any
 ///         settlement or treasury authority from this contract.
 contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestations {
+    /// @notice Schema version for the attestation format.
+    uint16 public constant ATTESTATION_SCHEMA_VERSION = 1;
+
+    /// @notice Predicate type URI for in-toto / SLSA provenance attestations.
+    string public constant PREDICATE_TYPE =
+        "https://truthbounty.protocol/attestation/contract-release/v1";
+
     /// @notice The immutable attestation fields for this deployment.
-    /// @dev Published individually as immutables (structs are not value types);
+    /// @dev Written once in the constructor and never mutated (strings, arrays and structs cannot be `immutable`);
     ///      `supplyChainAttestation()` reassembles the authoritative record.
     string private _protocol;
     string private _releaseVersion;
@@ -85,7 +93,8 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         _releaseVersion = attestation_.releaseVersion;
         _sourceCommit = attestation_.sourceCommit;
         _compiler = attestation_.compiler;
-        CHAIN_ID = uint64(block.chainid);
+        // V2-SC-161: EIP-155 chain ids are not bounded by the EVM; refuse to truncate one.
+        CHAIN_ID = V2SafeCast.toUint64(block.chainid, V2SafeCast.FIELD_ATTESTATION_CHAIN_ID);
         deployer = deployer_;
 
         _dependencyData = packDependencies(attestation_.dependencies);
@@ -141,10 +150,29 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         return true;
     }
 
+    /// @dev V2-SC-160: a delimiter-joined record is injective only if no variable-length field
+    ///      can contain the delimiter. Without this guard `name = "a|b", version = "c"` and
+    ///      `name = "a", version = "b|c"` pack to the same record and read back as the latter,
+    ///      silently shifting every later field (including `integrity`). Fixed-format fields
+    ///      (lowercase hex digests and decimal sizes rendered on-chain) cannot contain '|'.
+    function _requireNoDelimiter(string memory field) internal pure {
+        bytes memory b = bytes(field);
+        for (uint256 i = 0; i < b.length; i++) {
+            if (b[i] == bytes1("|")) {
+                revert V2Errors.AttestationFieldContainsDelimiter();
+            }
+        }
+    }
+
     /// @dev Packs dependencies into delimiter-separated strings for immutable storage.
     function packDependencies(ISupplyChainAttestations.DependencyEntry[] memory deps) internal pure returns (string[] memory) {
         string[] memory packed = new string[](deps.length);
         for (uint256 i = 0; i < deps.length; i++) {
+            _requireNoDelimiter(deps[i].name);
+            _requireNoDelimiter(deps[i].version);
+            _requireNoDelimiter(deps[i].kind);
+            _requireNoDelimiter(deps[i].rev);
+            _requireNoDelimiter(deps[i].integrity);
             packed[i] = string(
                 abi.encodePacked(
                     deps[i].name, "|",
@@ -162,6 +190,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packArtifacts(ISupplyChainAttestations.ArtifactHash[] memory artifacts) internal pure returns (string[] memory) {
         string[] memory packed = new string[](artifacts.length);
         for (uint256 i = 0; i < artifacts.length; i++) {
+            _requireNoDelimiter(artifacts[i].path);
             packed[i] = string(
                 abi.encodePacked(
                     artifacts[i].path, "|",
@@ -177,6 +206,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packSubjects(ISupplyChainAttestations.AttestationSubject[] memory subjects) internal pure returns (string[] memory) {
         string[] memory packed = new string[](subjects.length);
         for (uint256 i = 0; i < subjects.length; i++) {
+            _requireNoDelimiter(subjects[i].name);
             packed[i] = string(
                 abi.encodePacked(
                     subjects[i].name, "|",
@@ -191,6 +221,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function packMaterials(ISupplyChainAttestations.AttestationMaterial[] memory materials) internal pure returns (string[] memory) {
         string[] memory packed = new string[](materials.length);
         for (uint256 i = 0; i < materials.length; i++) {
+            _requireNoDelimiter(materials[i].uri);
             packed[i] = string(
                 abi.encodePacked(
                     materials[i].uri, "|",
@@ -326,14 +357,11 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     function hexStringToBytes32(string memory hexStr) internal pure returns (bytes32) {
         bytes memory b = bytes(hexStr);
         require(b.length == 64, "invalid hex length");
-        bytes32 result;
-        for (uint256 i = 0; i < 32; i++) {
-            uint8 hi = parseHexNibble(uint8(b[i * 2]));
-            uint8 lo = parseHexNibble(uint8(b[i * 2 + 1]));
-            uint256 byteValue = (uint256(hi) << 4) | uint256(lo);
-            result = bytes32(uint256(result) | (byteValue << (8 * (31 - i))));
+        uint256 result;
+        for (uint256 i = 0; i < 64; i++) {
+            result = (result << 4) | parseHexNibble(uint8(b[i]));
         }
-        return result;
+        return bytes32(result);
     }
 
     /// @dev Parses a single hex nibble.
@@ -380,9 +408,9 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         bytes memory hexBytes = new bytes(64);
         bytes memory alphabet = "0123456789abcdef";
         for (uint256 i = 0; i < 32; i++) {
-            uint256 chunk = uint256(data >> (8 * (31 - i)));
-            hexBytes[i * 2] = alphabet[(chunk >> 4) & 0x0f];
-            hexBytes[i * 2 + 1] = alphabet[chunk & 0x0f];
+            uint8 byteValue = uint8(data[i]);
+            hexBytes[i * 2] = alphabet[byteValue >> 4];
+            hexBytes[i * 2 + 1] = alphabet[byteValue & 0x0f];
         }
         return string(hexBytes);
     }

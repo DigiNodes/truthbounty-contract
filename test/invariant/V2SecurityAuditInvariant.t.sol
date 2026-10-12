@@ -56,7 +56,7 @@ contract V2SecurityAuditInvariantHandler is Test {
         bob        = makeAddr("bob");
 
         registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.permitModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_SLASHING(),   slashing);
 
         token.mint(alice, type(uint128).max / 2);
         token.mint(bob,   type(uint128).max / 2);

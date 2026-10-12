@@ -24,7 +24,7 @@ interface ITokenomicsEngineView {
 
 contract TokenomicsFuzzTest is Test {
     TokenomicsEngine tokenomics;
-    TreasuryAccounting treasury;
+    TreasuryAccounting treasuryAccounting;
     MockERC20 token;
 
     address admin = address(0xDeAD);
@@ -36,19 +36,19 @@ contract TokenomicsFuzzTest is Test {
         token = new MockERC20("TruthBounty Test", "TBT");
         token.mint(address(this), INITIAL_SUPPLY);
 
-        treasury = new TreasuryAccounting(
+        treasuryAccounting = new TreasuryAccounting(
             address(token),
             address(0),
             admin
         );
 
         vm.startPrank(admin);
-        treasury.grantRole(treasury.ADMIN_ROLE(), distributor);
-        treasury.grantRole(treasury.TREASURY_MANAGER_ROLE(), admin);
+        treasuryAccounting.grantRole(treasuryAccounting.ADMIN_ROLE(), distributor);
+        treasuryAccounting.grantRole(treasuryAccounting.TREASURY_MANAGER_ROLE(), admin);
         vm.stopPrank();
 
         tokenomics = new TokenomicsEngine(
-            address(treasury),
+            address(treasuryAccounting),
             address(token),
             admin,
             address(0)
@@ -62,7 +62,7 @@ contract TokenomicsFuzzTest is Test {
         // ratio invariant (mirrors TokenomicsEngine.t.sol) so treasury validation does
         // not trip on allocations that never touch the staking reserve.
         vm.startPrank(admin);
-        treasury.setMinStakingReserveRatio(0);
+        treasuryAccounting.setMinStakingReserveRatio(0);
         vm.stopPrank();
     }
 
@@ -78,7 +78,7 @@ contract TokenomicsFuzzTest is Test {
 
     function testFuzz_AllocationConfig_ValidBPSSummation(
         uint256 verifier,
-        uint256 treasury,
+        uint256 treasuryAmount,
         uint256 ecosystem,
         uint256 governance,
         uint256 protocol,
@@ -86,15 +86,16 @@ contract TokenomicsFuzzTest is Test {
     ) external {
         // Clamp each to valid BPS range
         verifier = bound(verifier, 0, 10000);
-        treasury = bound(treasury, 0, 10000);
+        treasuryAmount = bound(treasuryAmount, 0, 10000);
         ecosystem = bound(ecosystem, 0, 10000);
         governance = bound(governance, 0, 10000);
         protocol = bound(protocol, 0, 10000);
         emergency = bound(emergency, 0, 10000);
+        require(verifier + treasuryAmount + ecosystem + governance + protocol + emergency == 10000, "BPS sum must be 10000");
 
         // Only test valid configurations
         if (
-            verifier + treasury + ecosystem + governance + protocol + emergency != 10000
+            verifier + treasuryAmount + ecosystem + governance + protocol + emergency != 10000
         ) {
             return;
         }
@@ -102,7 +103,7 @@ contract TokenomicsFuzzTest is Test {
         vm.startPrank(admin);
         ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: verifier,
-            treasuryReserveBPS: treasury,
+            treasuryReserveBPS: treasuryAmount,
             ecosystemIncentivesBPS: ecosystem,
             governanceIncentivesBPS: governance,
             protocolDevelopmentBPS: protocol,
@@ -119,7 +120,7 @@ contract TokenomicsFuzzTest is Test {
             ITokenomicsEngine.RevenueSource.PROTOCOL_FEES
         );
         assertEq(stored.verifierRewardsBPS, verifier);
-        assertEq(stored.treasuryReserveBPS, treasury);
+        assertEq(stored.treasuryReserveBPS, treasuryAmount);
         assertEq(stored.ecosystemIncentivesBPS, ecosystem);
         assertEq(stored.governanceIncentivesBPS, governance);
         assertEq(stored.protocolDevelopmentBPS, protocol);
@@ -292,7 +293,7 @@ contract TokenomicsFuzzTest is Test {
 
     function testFuzz_InvalidBPSConfiguration_Reverts(
         uint256 verifier,
-        uint256 treasury,
+        uint256 treasuryAmount,
         uint256 ecosystem,
         uint256 governance,
         uint256 protocol,
@@ -300,19 +301,19 @@ contract TokenomicsFuzzTest is Test {
     ) external {
         // Bound first, then only exercise configurations that do NOT sum to 10000.
         verifier = bound(verifier, 1, 9999);
-        treasury = bound(treasury, 1, 9999);
+        treasuryAmount = bound(treasuryAmount, 1, 9999);
         ecosystem = bound(ecosystem, 1, 9999);
         governance = bound(governance, 1, 9999);
         protocol = bound(protocol, 1, 9999);
         emergency = bound(emergency, 1, 9999);
 
-        uint256 total = verifier + treasury + ecosystem + governance + protocol + emergency;
+        uint256 total = verifier + treasuryAmount + ecosystem + governance + protocol + emergency;
         if (total == 10000) return;
 
         vm.startPrank(admin);
         ITokenomicsEngine.SourceAllocation memory config = ITokenomicsEngine.SourceAllocation({
             verifierRewardsBPS: verifier,
-            treasuryReserveBPS: treasury,
+            treasuryReserveBPS: treasuryAmount,
             ecosystemIncentivesBPS: ecosystem,
             governanceIncentivesBPS: governance,
             protocolDevelopmentBPS: protocol,
