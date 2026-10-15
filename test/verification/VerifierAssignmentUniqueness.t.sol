@@ -2,8 +2,8 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import {VerifierAssignmentGuard} from "../contracts/verification/VerifierAssignmentGuard.sol";
-import {IVerifierAssignment} from "../contracts/interfaces/IVerifierAssignment.sol";
+import {VerifierAssignmentGuard} from "../../contracts/verification/VerifierAssignmentGuard.sol";
+import {IVerifierAssignment} from "../../contracts/interfaces/IVerifierAssignment.sol";
 
 contract VerifierAssignmentUniquenessTest is Test {
     VerifierAssignmentGuard internal guard;
@@ -20,10 +20,10 @@ contract VerifierAssignmentUniquenessTest is Test {
     uint256 internal constant MIN_REP = 100;
 
     function setUp() public {
-        vm.prank(admin);
         guard = new VerifierAssignmentGuard(admin);
+        bytes32 assignerRole = guard.ASSIGNER_ROLE();
         vm.prank(admin);
-        guard.grantRole(guard.ASSIGNER_ROLE(), assigner);
+        guard.grantRole(assignerRole, assigner);
 
         address[] memory vs = new address[](2);
         vs[0] = verifierA;

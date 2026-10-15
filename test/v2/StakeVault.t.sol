@@ -35,7 +35,7 @@ contract StakeVaultTest is Test {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
         tokenB = new MockERC20("Alt", "ALT");
-        emergency = new EmergencyControls(admin, 24 hours);
+        emergency = new EmergencyControls(admin, admin, admin);
         vault = new StakeVault(address(registry), address(token), admin);
 
         // The vault is fail-closed: no mutation is reachable until the control plane is wired.

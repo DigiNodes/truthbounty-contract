@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-import "../../contracts/v2/EmergencyControls.sol";
+import {FailClosedEmergencyControls as EmergencyControls} from "./helpers/FailClosedEmergencyControls.sol";
 import "../../contracts/v2/interfaces/IEmergencyControls.sol";
 import "../../contracts/v2/interfaces/IV2Module.sol";
 import "../../contracts/v2/libraries/V2Errors.sol";
@@ -499,7 +499,7 @@ contract EmergencyControlsTest is Test {
         vm.expectEmit(true, true, true, true);
         emit IEmergencyControls.EmergencyPaused(scope, responder);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.ScopePauseRecorded(
+        emit EmergencyControls.ScopePauseRecorded(
             scope, responder, 1, block.timestamp + RECOVERY_DELAY, "oracle incident"
         );
         controls.pauseWithReason(scope, "oracle incident");
@@ -513,12 +513,12 @@ contract EmergencyControlsTest is Test {
 
         vm.prank(governance);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.RecoveryConditionDeclared(scope, CONDITION_ONE, "documented precondition");
+        emit EmergencyControls.RecoveryConditionDeclared(scope, CONDITION_ONE, "documented precondition");
         controls.declareRecoveryCondition(scope, CONDITION_ONE, "documented precondition");
 
         vm.prank(recoveryExecutor);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.RecoveryConditionSatisfied(scope, CONDITION_ONE, recoveryExecutor, "recovery evidence");
+        emit EmergencyControls.RecoveryConditionSatisfied(scope, CONDITION_ONE, recoveryExecutor, "recovery evidence");
         controls.satisfyRecoveryCondition(scope, CONDITION_ONE, "recovery evidence");
 
         uint256 pausedAt = block.timestamp;
@@ -528,7 +528,7 @@ contract EmergencyControlsTest is Test {
         vm.expectEmit(true, true, true, true);
         emit IEmergencyControls.EmergencyUnpaused(scope, governance);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.ScopeUnpauseRecorded(
+        emit EmergencyControls.ScopeUnpauseRecorded(
             scope, governance, 2, bytes32("proposal-42"), RECOVERY_DELAY
         );
         controls.unpauseWithReference(scope, bytes32("proposal-42"));
@@ -544,7 +544,7 @@ contract EmergencyControlsTest is Test {
 
         vm.prank(governance);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.RecoveryConditionWaived(
+        emit EmergencyControls.RecoveryConditionWaived(
             scope, CONDITION_ONE, governance, "compensating control verified"
         );
         controls.waiveRecoveryCondition(scope, CONDITION_ONE, "compensating control verified");
@@ -555,12 +555,12 @@ contract EmergencyControlsTest is Test {
 
         vm.prank(governance);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.ScopeRegistered(futureScope, "Future module mutation");
+        emit EmergencyControls.ScopeRegistered(futureScope, "Future module mutation");
         controls.registerScope(futureScope, "Future module mutation");
 
         vm.prank(governance);
         vm.expectEmit(true, true, true, true);
-        emit IEmergencyControls.RecoveryDelayUpdated(RECOVERY_DELAY, 8 hours);
+        emit EmergencyControls.RecoveryDelayUpdated(RECOVERY_DELAY, 8 hours);
         controls.setRecoveryDelay(8 hours);
     }
 

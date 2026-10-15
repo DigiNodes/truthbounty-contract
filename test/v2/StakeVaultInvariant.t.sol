@@ -27,7 +27,7 @@ contract StakeVaultInvariantHandler is Test {
     constructor() {
         registry = new MockModuleRegistry();
         token = new MockERC20("Stake", "STK");
-        emergency = new EmergencyControls(address(this), 24 hours);
+        emergency = new EmergencyControls(address(this), address(this), address(this));
         vault = new StakeVault(address(registry), address(token), address(this));
         vault.setEmergencyControls(address(emergency));
 

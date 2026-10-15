@@ -32,8 +32,9 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      switch (nested pause: either one blocks, lifting one never reopens the
 ///      other). `pause()` is a protective RISK_REDUCING action; `unpause()` only
 ///      lifts the local switch and can never override the scoped authority.
-contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents, V2WiredPauseGuard {
+contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents, V2WiredPauseGuard, EmergencyGuarded {
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
@@ -123,6 +124,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(EVIDENCE_ADMIN_ROLE, initialAdmin);
+        _grantRole(PAUSER_ROLE, initialAdmin);
     }
 
     /// @inheritdoc IV2Module
