@@ -13,7 +13,6 @@ import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
 import {V2SafeCast} from "./libraries/V2SafeCast.sol";
-import {V2Scopes} from "./libraries/V2Scopes.sol";
 import {V2WiredPauseGuard} from "./libraries/V2PauseGuard.sol";
 import {PauseMatrix} from "./libraries/PauseMatrix.sol";
 import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.sol";
@@ -34,6 +33,7 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      lifts the local switch and can never override the scoped authority.
 contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthBountyEvents, V2WiredPauseGuard {
     bytes32 public constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     uint256 public constant MAX_PAGE_SIZE = 100;
@@ -171,7 +171,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @return evidenceId Deterministic ID bound to the commitment and contributor nonce.
     function commitEvidence(uint256 claimId, bytes32 contentDigest, bytes32 metadataDigest, uint256 nonce)
         public
-        whenOperationAllowed(V2Scopes.EVIDENCE_SUBMISSION)
         returns (uint256 evidenceId)
     {
         _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
@@ -239,7 +238,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         external
         override
         onlyRole(EVIDENCE_ADMIN_ROLE)
-        whenOperationAllowed(V2Scopes.EVIDENCE_STATUS)
     {
         _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
         EvidenceCommitment storage evidence = _evidenceById[evidenceId];
