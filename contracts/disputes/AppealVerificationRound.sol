@@ -12,6 +12,7 @@ import "../governance/GovernanceHooks.sol";
 import "../interfaces/IClaimRegistry.sol";
 import "../interfaces/ISTakeVault.sol";
 import "../interfaces/IAppealVerificationRound.sol";
+import "../interfaces/IDisputeResolution.sol";
 import "../IReputationOracle.sol";
 
 /**
@@ -132,6 +133,12 @@ contract AppealVerificationRound is
 
     /// @notice Terminal flag: once set for a claim, no further appeal round can open.
     mapping(uint256 => bool) private _appealPathTerminal;
+
+    /// @notice Canonical DisputeResolution engine for parent dispute binding.
+    address public override disputeResolution;
+
+    /// @notice Tracks bound appeals for replay protection: parentDisputeId => roundIndex => opened.
+    mapping(uint256 => mapping(uint256 => bool)) private _boundAppeals;
 
     // =========================================================================
     // Constructor
@@ -254,7 +261,12 @@ contract AppealVerificationRound is
             maxRounds: cfg.maxAppealRounds,
             requiredBond: requiredBond,
             bondLockId: bondLockId,
-            maxVoters: cfg.maxVotersPerRound
+            maxVoters: cfg.maxVotersPerRound,
+            parentDisputeId: 0,
+            parentOutcome: 0,
+            appellant: msg.sender,
+            bondPayer: msg.sender,
+            bondBeneficiary: msg.sender
         });
         _appealRoundIndex[claimId] = nextRound;
 
@@ -269,6 +281,183 @@ contract AppealVerificationRound is
             requiredBond,
             bondLockId
         );
+    }
+
+    /**
+     * @inheritdoc IAppealVerificationRound
+     */
+    function openBoundAppealRound(BoundAppealParams calldata params) external override nonReentrant whenNotPaused {
+        if (params.claimId == 0) revert ZeroClaimId();
+        if (_appealPathTerminal[params.claimId]) revert AppealPathTerminal(params.claimId);
+        if (params.appellant == address(0) || params.bondPayer == address(0) || params.bondBeneficiary == address(0)) {
+            revert InvalidBondSource(params.bondPayer, params.bondBeneficiary);
+        }
+        if (msg.sender != params.appellant && msg.sender != params.bondPayer) {
+            revert UnauthorizedAppellant(msg.sender);
+        }
+        if (_boundAppeals[params.parentDisputeId][params.roundIndex]) {
+            revert DuplicateAppeal(params.parentDisputeId, params.roundIndex);
+        }
+
+        AppealRoundConfig memory cfg = defaultConfig;
+        uint256 nextRound = _appealRoundIndex[params.claimId] + 1;
+        if (params.roundIndex != nextRound) {
+            revert WrongRound(params.roundIndex, nextRound);
+        }
+        if (nextRound > cfg.maxAppealRounds) {
+            revert MaxAppealRoundsExceeded(params.claimId, nextRound, cfg.maxAppealRounds);
+        }
+
+        AppealRound storage prev = _rounds[params.claimId];
+        if (prev.status == AppealRoundStatus.OPEN) revert AppealRoundAlreadyExists(params.claimId);
+
+        IClaimRegistry.Claim memory claim = claimRegistry.getClaim(params.claimId);
+        if (claim.creator == address(0)) revert ClaimDoesNotExist(params.claimId);
+
+        if (disputeResolution != address(0)) {
+            IDisputeResolution.Dispute memory dispute = IDisputeResolution(disputeResolution).getDispute(params.parentDisputeId);
+            if (dispute.id == 0 || dispute.claimId != params.claimId) {
+                revert WrongParentDispute(params.claimId, params.parentDisputeId);
+            }
+            if (uint8(dispute.challengedOutcome) != params.parentOutcome) {
+                revert InvalidParentOutcome(params.parentOutcome, uint8(dispute.challengedOutcome));
+            }
+            if (block.timestamp > dispute.appealDeadline) {
+                revert AppealWindowExpired(params.claimId, block.timestamp, dispute.appealDeadline);
+            }
+            if (params.appellant != dispute.challenger && params.appellant != claim.creator) {
+                revert UnauthorizedAppellant(params.appellant);
+            }
+        }
+
+        if (address(vault) == address(0) || cfg.appealBond == 0) revert BondNotConfigured();
+
+        uint256 requiredBond = _requiredBondForRound(cfg, nextRound);
+        if (IERC20(address(stakingToken)).allowance(params.bondPayer, address(vault)) < requiredBond) {
+            revert InsufficientBondAllowance();
+        }
+
+        _boundAppeals[params.parentDisputeId][params.roundIndex] = true;
+
+        uint256 bondLockId = _appealLockId(params.claimId, nextRound);
+        try vault.lockBond(bondLockId, address(stakingToken), params.bondPayer, requiredBond) {
+            // success
+        } catch {
+            _boundAppeals[params.parentDisputeId][params.roundIndex] = false;
+            revert CustodyTransitionFailed();
+        }
+
+        uint256 deadline = block.timestamp + cfg.roundDuration;
+
+        _rounds[params.claimId] = AppealRound({
+            claimId: params.claimId,
+            status: AppealRoundStatus.OPEN,
+            openedAt: block.timestamp,
+            deadline: deadline,
+            minStakeAmount: cfg.minStakeAmount,
+            stakeMultiplierBps: cfg.stakeMultiplierBps,
+            maxWeightCap: cfg.maxWeightCap,
+            totalTrueStake: 0,
+            totalFalseStake: 0,
+            totalTrueWeight: 0,
+            totalFalseWeight: 0,
+            verifierCount: 0,
+            roundIndex: nextRound,
+            maxRounds: cfg.maxAppealRounds,
+            requiredBond: requiredBond,
+            bondLockId: bondLockId,
+            maxVoters: cfg.maxVotersPerRound,
+            parentDisputeId: params.parentDisputeId,
+            parentOutcome: params.parentOutcome,
+            appellant: params.appellant,
+            bondPayer: params.bondPayer,
+            bondBeneficiary: params.bondBeneficiary
+        });
+        _appealRoundIndex[params.claimId] = nextRound;
+
+        emit BoundAppealRoundOpened(
+            params.claimId,
+            params.parentDisputeId,
+            params.parentOutcome,
+            nextRound,
+            params.appellant,
+            params.bondPayer,
+            params.bondBeneficiary,
+            requiredBond,
+            bondLockId
+        );
+
+        emit AppealRoundOpened(
+            params.claimId,
+            deadline,
+            cfg.minStakeAmount,
+            cfg.stakeMultiplierBps,
+            params.appellant,
+            nextRound,
+            cfg.maxAppealRounds,
+            requiredBond,
+            bondLockId
+        );
+    }
+
+    /**
+     * @inheritdoc IAppealVerificationRound
+     */
+    function refundAppealBond(uint256 claimId) external override nonReentrant whenNotPaused {
+        if (
+            !hasRole(GOVERNANCE_ROLE, msg.sender) &&
+            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender) &&
+            !hasRole(ADMIN_ROLE, msg.sender) &&
+            !hasRole(DISPUTE_ROUTER_ROLE, msg.sender) &&
+            msg.sender != emergencyAdmin
+        ) {
+            revert UnauthorizedGovernance();
+        }
+        if (claimId == 0) revert ZeroClaimId();
+        AppealRound storage round = _rounds[claimId];
+        if (round.status == AppealRoundStatus.OPEN && block.timestamp < round.deadline) {
+            revert BondDispositionNotAllowed(claimId);
+        }
+        if (round.requiredBond == 0) revert BondDispositionNotAllowed(claimId);
+
+        address beneficiary = round.bondBeneficiary == address(0) ? round.appellant : round.bondBeneficiary;
+        uint256 bondLockId = round.bondLockId;
+        uint256 amount = round.requiredBond;
+        round.requiredBond = 0;
+
+        vault.releaseBond(bondLockId, beneficiary);
+
+        emit AppealBondRefunded(claimId, bondLockId, beneficiary, amount);
+    }
+
+    /**
+     * @inheritdoc IAppealVerificationRound
+     */
+    function slashAppealBond(uint256 claimId, address slashRecipient) external override nonReentrant whenNotPaused {
+        if (
+            !hasRole(GOVERNANCE_ROLE, msg.sender) &&
+            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender) &&
+            !hasRole(ADMIN_ROLE, msg.sender) &&
+            !hasRole(DISPUTE_ROUTER_ROLE, msg.sender) &&
+            msg.sender != emergencyAdmin
+        ) {
+            revert UnauthorizedGovernance();
+        }
+        if (claimId == 0) revert ZeroClaimId();
+        if (slashRecipient == address(0)) revert ZeroAddress();
+        AppealRound storage round = _rounds[claimId];
+        if (round.status == AppealRoundStatus.OPEN && block.timestamp < round.deadline) {
+            revert BondDispositionNotAllowed(claimId);
+        }
+        if (round.requiredBond == 0) revert BondDispositionNotAllowed(claimId);
+
+        uint256 bondLockId = round.bondLockId;
+        uint256 amount = round.requiredBond;
+        round.requiredBond = 0;
+
+        vault.releaseBond(bondLockId, slashRecipient);
+
+        emit AppealBondSlashed(claimId, bondLockId, slashRecipient, amount);
     }
 
     /**
@@ -561,6 +750,13 @@ contract AppealVerificationRound is
 
     function setReputationOracle(address newOracle) external onlyGovernanceOrAdmin {
         reputationOracle = IReputationOracle(newOracle);
+    }
+
+    function setDisputeResolution(address newDisputeResolution) external override onlyGovernanceOrAdmin {
+        if (newDisputeResolution == address(0)) revert ZeroAddress();
+        address old = disputeResolution;
+        disputeResolution = newDisputeResolution;
+        emit DisputeResolutionUpdated(old, newDisputeResolution);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {
