@@ -48,6 +48,6 @@ abstract contract EmergencyGuarded {
     function _requireOperationAllowed(bytes32 scope) internal view {
         IEmergencyControls controls = emergencyControls;
         if (address(controls) == address(0)) revert V2Errors.EmergencyControlsNotConfigured();
-        controls.requireOperationAllowed(scope);
+        if (controls.paused(scope)) revert V2Errors.ScopePaused(scope);
     }
 }

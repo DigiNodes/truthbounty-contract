@@ -14,6 +14,7 @@ import {IV2Module} from "./interfaces/IV2Module.sol";
 import {IV2Types} from "./interfaces/IV2Types.sol";
 import {EmergencyGuarded} from "./EmergencyGuarded.sol";
 import {V2Errors} from "./libraries/V2Errors.sol";
+import {V2Scopes} from "./libraries/V2Scopes.sol";
 import {V2SafeCast} from "./libraries/V2SafeCast.sol";
 import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
 import {PauseMatrix} from "./libraries/PauseMatrix.sol";
@@ -30,7 +31,7 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      governance mutations fail closed under `SCOPE_GOVERNANCE`. `withdraw` of an already-claimable
 ///      balance is never scope-gated and never depends on registry or authority health; it freezes only
 ///      at protocol SHUTDOWN.
-contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2PauseGuard {
+contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2PauseGuard, EmergencyGuarded {
     using SafeERC20 for IERC20;
 
     /// @notice Administrative role allowed to configure supported assets and explicit lock mutators.

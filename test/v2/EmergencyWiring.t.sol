@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import "../../contracts/v2/EmergencyControls.sol";
+import {FailClosedEmergencyControls as EmergencyControls} from "./helpers/FailClosedEmergencyControls.sol";
 import "../../contracts/v2/EmergencyGuarded.sol";
 import "../../contracts/v2/EvidenceRegistry.sol";
 import "../../contracts/v2/StakeVault.sol";
@@ -23,6 +23,10 @@ import "../../contracts/MockERC20.sol";
 ///      own rejection instead of falling open when the controller is unhelpful.
 contract RejectingEmergencyControls {
     function requireOperationAllowed(bytes32 scope) external pure {
+        revert V2Errors.UnknownOperation(scope);
+    }
+
+    function paused(bytes32 scope) external pure returns (bool) {
         revert V2Errors.UnknownOperation(scope);
     }
 }
@@ -74,7 +78,7 @@ contract EmergencyWiringTest is Test {
         vault.setEmergencyControls(address(controls));
         evidence.setEmergencyControls(address(controls));
 
-        moduleRegistry.registerModule(vault.MODULE_SETTLEMENT(), settlementModule);
+        moduleRegistry.permitModule(vault.MODULE_SETTLEMENT(), settlementModule);
         vault.setLockMutator(settlementModule, true);
 
         claimRegistry.setClaim(CLAIM_ID, user, uint64(block.timestamp + 7 days), IClaimRegistry.ClaimStatus.Pending);
