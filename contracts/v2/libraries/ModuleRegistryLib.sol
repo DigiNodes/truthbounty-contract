@@ -33,9 +33,13 @@ library ModuleRegistryLib {
     uint8 internal constant CANONICAL_MODULE_COUNT = 14;
 
     // Canonical ERC-165 interface IDs frozen by V2-SC-001. Each MUST equal type(IX).interfaceId.
+    // INTERFACE_EVIDENCE was updated from 0x549aab2c to 0xd9d6ad01 when IEvidence was hardened
+    // (commit 0fe40ee) to add computeEvidenceId, verifyEvidenceCommitment, nextContributorNonce,
+    // and evidenceCount. The constant in this library was not updated at that time (selector drift
+    // detected by test_canonicalManifest_interfaceIdsMatchAbi; fixed in Gate B / PR #688).
     bytes4 internal constant INTERFACE_CONFIGURATION = 0x6b73d71f;
     bytes4 internal constant INTERFACE_CLAIMS = 0x38a3ec24;
-    bytes4 internal constant INTERFACE_EVIDENCE = 0x549aab2c;
+    bytes4 internal constant INTERFACE_EVIDENCE = 0xd9d6ad01;
     bytes4 internal constant INTERFACE_STAKE_CUSTODY = 0x3e53b374;
     bytes4 internal constant INTERFACE_VERIFICATION = 0x3833e81d;
     bytes4 internal constant INTERFACE_AGGREGATION = 0xf06520f1;
