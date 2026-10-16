@@ -7,6 +7,7 @@ import {BoundedSafeERC20 as SafeERC20} from "./libraries/BoundedSafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./interfaces/ISTakeVault.sol";
+import {AuthorityAudit} from "./libraries/AuthorityAudit.sol";
 
 /**
  * @title StakeVault
@@ -178,7 +179,25 @@ contract StakeVault is ISTakeVault, ReentrancyGuard, Pausable, AccessControl {
      */
     function setBondToken(address newToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newToken == address(0)) revert ZeroAddress();
+
+        address previous = _bondToken;
         _bondToken = newToken;
+
+        // PREWAVE-SC-071 (#747): the bond token is the asset every bond lock is
+        // denominated in and previously emitted nothing.
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_BOND_TOKEN,
+            previous,
+            msg.sender,
+            newToken
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_BOND_TOKEN,
+            previous,
+            newToken,
+            msg.sender,
+            newToken
+        );
     }
 
     /**

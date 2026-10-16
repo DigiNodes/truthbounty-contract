@@ -452,6 +452,38 @@ interface ITruthBountyEvents {
         uint16 version
     );
 
+    /// @notice Emitted when an authority capability is granted to an account.
+    /// @dev PREWAVE-SC-071 (#747). Additive successor to `RoleGrantedV1`, which
+    ///      cannot carry a `source` discriminator: it already consumes the full
+    ///      three-topic budget (`docs/event-architecture.md` §3). Per
+    ///      `docs/event-catalogue-v1.md` §63 "Additive Modifications", a new
+    ///      field is expressed by a new signature rather than by mutating a
+    ///      published one. `source` is deliberately non-indexed for the same
+    ///      reason. `timestamp`/`version` remain the trailing fields.
+    /// @param role   Authority identifier (see `AuthorityAudit.ROLE_*`).
+    /// @param account Subject receiving the authority (the address acted upon).
+    /// @param actor  Address that performed the mutation (`msg.sender`).
+    /// @param source Authority source discriminator, see `AuthorityAudit`.
+    event AuthorityGrantedV2(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed actor,
+        uint8 source,
+        uint64 timestamp,
+        uint16 version
+    );
+
+    /// @notice Emitted when an authority capability is revoked from an account.
+    /// @dev Additive successor to `RoleRevokedV1`. See `AuthorityGrantedV2`.
+    event AuthorityRevokedV2(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed actor,
+        uint8 source,
+        uint64 timestamp,
+        uint16 version
+    );
+
     // -------------------------------------------------------------------------
     // 15. Emergency & Pauses
     // -------------------------------------------------------------------------

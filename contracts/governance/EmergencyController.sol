@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {EmergencyPauseOrdering} from "./libraries/EmergencyPauseOrdering.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title EmergencyController
@@ -404,8 +405,29 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     /**
      * @notice Update the timelock controller's cooldown period.
      * @dev Only DAO_GOVERNANCE can change this.
+     * @dev PREWAVE-SC-071 (#747): the cooldown gates every emergency timelock
+     *      activation, so moving it moves authority and previously emitted nothing.
      */
     function setTimelockCooldown(uint256 newCooldown) external onlyRole(DAO_GOVERNANCE) {
+        uint256 previousCooldown = timelockCooldown;
         timelockCooldown = newCooldown;
+
+        if (previousCooldown != newCooldown) {
+            // PREWAVE-SC-071 (#747): the cooldown gates emergency timelock
+            // activation. A duration is not an address, so each value is carried
+            // in the `account` topic as `address(uint160(cooldown))`.
+            AuthorityAudit.revokeFlag(
+                AuthorityAudit.ROLE_TIMELOCK_COOLDOWN,
+                address(uint160(previousCooldown)),
+                msg.sender,
+                previousCooldown != 0
+            );
+            AuthorityAudit.grantFlag(
+                AuthorityAudit.ROLE_TIMELOCK_COOLDOWN,
+                address(uint160(newCooldown)),
+                msg.sender,
+                false
+            );
+        }
     }
 }

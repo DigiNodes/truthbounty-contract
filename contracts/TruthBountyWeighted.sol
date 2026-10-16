@@ -11,6 +11,7 @@ import "./IReputationOracle.sol";
 import "./IReputationUpdateEngine.sol";
 import "./governance/GovernanceOwnable.sol";
 import "./interfaces/ITruthBountyEvents.sol";
+import {AuthorityAudit} from "./libraries/AuthorityAudit.sol";
 
 /**
  * @title TruthBountyWeighted
@@ -1568,6 +1569,23 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         require(_newBountyToken != address(0), "Invalid token address");
         require(_newBountyToken != address(bountyToken), "Token already active");
 
+        address previous = address(bountyToken);
         bountyToken = IERC20(_newBountyToken);
+
+        // PREWAVE-SC-071 (#747): the bounty token is the unit every stake and
+        // reward settles in and previously emitted nothing.
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_BOUNTY_TOKEN,
+            previous,
+            msg.sender,
+            _newBountyToken
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_BOUNTY_TOKEN,
+            previous,
+            _newBountyToken,
+            msg.sender,
+            _newBountyToken
+        );
     }
 }

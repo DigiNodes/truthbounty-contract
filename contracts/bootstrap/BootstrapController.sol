@@ -9,6 +9,7 @@ import "../interfaces/ITruthBountyEvents.sol";
 import "../governance/GovernanceHooks.sol";
 import "../governance/GovernanceController.sol";
 import "../IReputationOracle.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 interface ITruthBountyWeighted {
     function grantRole(bytes32 role, address account) external;
@@ -221,8 +222,34 @@ contract BootstrapController is ReentrancyGuard, Pausable, GovernanceOwnable, IT
 
     // ============ Configuration ============
 
+    /// @dev PREWAVE-SC-071 (#747): the bootstrap config is the parameter set every
+    ///      module is initialised from, so replacing it moves authority and
+    ///      previously emitted nothing.
     function setBootstrapConfig(BootstrapConfig calldata _config) external onlyRole(DEPLOYER_ROLE) {
+        BootstrapConfig memory previous = config;
         config = _config;
+
+        bytes32 previousDigest = keccak256(abi.encode(previous));
+        bytes32 nextDigest = keccak256(abi.encode(_config));
+        if (previousDigest != nextDigest) {
+            // PREWAVE-SC-071 (#747): the bootstrap config is the parameter set
+            // every module is initialised from. A struct is not an address, so
+            // each config is carried in the `account` topic as the low 160 bits
+            // of its digest.
+            AuthorityAudit.revokeIfReplaced(
+                AuthorityAudit.ROLE_BOOTSTRAP_CONFIG,
+                address(uint160(uint256(previousDigest))),
+                msg.sender,
+                address(uint160(uint256(nextDigest)))
+            );
+            AuthorityAudit.grantIfAssigned(
+                AuthorityAudit.ROLE_BOOTSTRAP_CONFIG,
+                address(uint160(uint256(previousDigest))),
+                address(uint160(uint256(nextDigest))),
+                msg.sender,
+                address(uint160(uint256(nextDigest)))
+            );
+        }
     }
 
     // ============ Bootstrap Execution ============

@@ -14,6 +14,7 @@ import "../interfaces/ISTakeVault.sol";
 import "../interfaces/IAppealVerificationRound.sol";
 import "../interfaces/IDisputeResolution.sol";
 import "../IReputationOracle.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title AppealVerificationRound
@@ -748,8 +749,28 @@ contract AppealVerificationRound is
         vault = ISTakeVault(newVault);
     }
 
+    /// @dev PREWAVE-SC-071 (#747): the reputation oracle decides who is eligible to
+    ///      vote in an appeal round, so swapping it moves authority. Note that
+    ///      this setter has no zero-address guard; the helpers below treat zero
+    ///      as "unset" and simply do not log a grant.
     function setReputationOracle(address newOracle) external onlyGovernanceOrAdmin {
+        address previous = address(reputationOracle);
         reputationOracle = IReputationOracle(newOracle);
+
+        // PREWAVE-SC-071 (#747): the reputation oracle gates appeal eligibility.
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_REPUTATION_ORACLE,
+            previous,
+            msg.sender,
+            newOracle
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_REPUTATION_ORACLE,
+            previous,
+            newOracle,
+            msg.sender,
+            newOracle
+        );
     }
 
     function setDisputeResolution(address newDisputeResolution) external override onlyGovernanceOrAdmin {

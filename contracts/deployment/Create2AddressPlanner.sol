@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ICreate2AddressPlanner} from "./ICreate2AddressPlanner.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title Create2AddressPlanner
@@ -101,9 +102,30 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         if (plan.bytecodeVerified && plan.runtimeCodeHash != runtimeCodeHash) {
             revert BytecodeHashMismatch(plan.runtimeCodeHash, runtimeCodeHash);
         }
+        bytes32 previousRuntimeCodeHash = plan.runtimeCodeHash;
         plan.runtimeCodeHash = runtimeCodeHash;
         plan.bytecodeVerified = false;
         plan.deploymentConfirmed = false;
+
+        if (previousRuntimeCodeHash != runtimeCodeHash) {
+            // PREWAVE-SC-071 (#747): the expected runtime hash is the sole
+            // authority for accepting a plan's bytecode, so moving it moves
+            // authority and previously emitted nothing. A hash is not an
+            // address, so it is carried in the `account` topic as
+            // `address(uint160(uint256(hash)))`.
+            AuthorityAudit.revokeFlag(
+                AuthorityAudit.ROLE_RUNTIME_CODE_HASH,
+                address(uint160(uint256(previousRuntimeCodeHash))),
+                msg.sender,
+                previousRuntimeCodeHash != bytes32(0)
+            );
+            AuthorityAudit.grantFlag(
+                AuthorityAudit.ROLE_RUNTIME_CODE_HASH,
+                address(uint160(uint256(runtimeCodeHash))),
+                msg.sender,
+                false
+            );
+        }
     }
 
     /// @inheritdoc ICreate2AddressPlanner

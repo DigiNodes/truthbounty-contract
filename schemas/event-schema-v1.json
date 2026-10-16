@@ -139,6 +139,8 @@
       "name": "Access Control & Roles",
       "description": "Tracks role granting, revocation, and admin role hierarchy changes across protocol modules.",
       "eventNames": [
+        "AuthorityGrantedV2",
+        "AuthorityRevokedV2",
         "RoleAdminChangedV1",
         "RoleGrantedV1",
         "RoleRevokedV1"
@@ -211,6 +213,92 @@
       "stateReplayRole": "Reconstructs parameters state transitions for indexer projection.",
       "financialImpact": false,
       "description": "Canonical V1 event for AddressParameterUpdatedV1."
+    },
+    {
+      "name": "AuthorityGrantedV2",
+      "family": "roles",
+      "signature": "event AuthorityGrantedV2(bytes32 indexed role, address indexed account, address indexed actor, uint8 source, uint64 timestamp, uint16 version)",
+      "topic0": "0x0c118519347b5e105c95dfd9125496f3bc2f6b69dc8b41d2d29b2b4b403198a1",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "source",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs roles state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for AuthorityGrantedV2."
+    },
+    {
+      "name": "AuthorityRevokedV2",
+      "family": "roles",
+      "signature": "event AuthorityRevokedV2(bytes32 indexed role, address indexed account, address indexed actor, uint8 source, uint64 timestamp, uint16 version)",
+      "topic0": "0xbc543c24b6c57a80a365f41ebc7c52e04a8e33243873eb635eb0070f4858cdd6",
+      "version": 1,
+      "indexedFieldsCount": 3,
+      "parameters": [
+        {
+          "name": "role",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "name": "account",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "actor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "source",
+          "type": "uint8",
+          "indexed": false
+        },
+        {
+          "name": "timestamp",
+          "type": "uint64",
+          "indexed": false
+        },
+        {
+          "name": "version",
+          "type": "uint16",
+          "indexed": false
+        }
+      ],
+      "stateReplayRole": "Reconstructs roles state transitions for indexer projection.",
+      "financialImpact": false,
+      "description": "Canonical V1 event for AuthorityRevokedV2."
     },
     {
       "name": "BatchRewardClaimedV1",
@@ -2348,5 +2436,5 @@
       "description": "Canonical V1 event for WithdrawalQueuedV1."
     }
   ],
-  "checksum": "0x66ae40a63656615c2620ae328b971bcdaeb033eb02f6265d3b0f08627460cd3f"
+  "checksum": "0x07318397fcc77dcf32a7ca630e5f198d8bbc85ccf19de9ae964599d63472228e"
 }

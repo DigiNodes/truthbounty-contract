@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./IUpgradeController.sol";
 import "./IVersionRegistry.sol";
 import "./StorageCompatibilityValidator.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title UpgradeController
@@ -357,7 +358,25 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
     }
 
     function setCurrentImplementation(address targetContract, address impl) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address previous = _currentImplementation[targetContract];
         _currentImplementation[targetContract] = impl;
+
+        // PREWAVE-SC-071 (#747): the implementation pointer decides which code a
+        // target delegates to, so swapping it moves authority and previously
+        // emitted nothing.
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_IMPLEMENTATION,
+            previous,
+            msg.sender,
+            impl
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_IMPLEMENTATION,
+            previous,
+            impl,
+            msg.sender,
+            impl
+        );
     }
 
     function getAllProposalIds() external view returns (bytes32[] memory) {

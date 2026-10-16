@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "../v2/interfaces/IReputationRoots.sol";
 import "../v2/interfaces/IV2Module.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title ReputationWeightedVotingBounds
@@ -119,7 +120,26 @@ contract ReputationWeightedVotingBounds is AccessControl, Pausable, IV2Module {
 
     function setReputationRootsModule(address _module) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_module == address(0)) revert ZeroAddress();
+
+        address previous = address(reputationRootsModule);
         reputationRootsModule = IReputationRoots(_module);
+
+        // PREWAVE-SC-071 (#747): the roots module is the trust anchor every
+        // reputation-weighted weight is computed against, so swapping it moves
+        // authority and previously emitted nothing.
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_REPUTATION_ROOTS,
+            previous,
+            msg.sender,
+            _module
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_REPUTATION_ROOTS,
+            previous,
+            _module,
+            msg.sender,
+            _module
+        );
     }
 
     // ============ Core Weight Calculation ============

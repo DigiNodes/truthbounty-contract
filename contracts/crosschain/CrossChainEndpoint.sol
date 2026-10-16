@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "./ICrossChainEndpoint.sol";
 import "./ICrossChainReceiver.sol";
+import "../libraries/AuthorityAudit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract CrossChainEndpoint is ICrossChainEndpoint, Ownable {
@@ -39,12 +40,30 @@ contract CrossChainEndpoint is ICrossChainEndpoint, Ownable {
         _;
     }
 
+    /// @dev PREWAVE-SC-071 (#747): the chain allowlist is authority over
+    ///      `sendMessage`/`processMessage` but had no event, so the gate was
+    ///      only reconstructable by replaying state diffs. The chain id is
+    ///      carried in the `account` topic as `address(uint160(chainId))`.
     function setSupportedChain(uint256 chainId, bool supported) external onlyOwner {
+        bool wasSupported = supportedChains[chainId];
         supportedChains[chainId] = supported;
+        if (supported) {
+            AuthorityAudit.grantFlag(AuthorityAudit.ROLE_CHAIN, address(uint160(chainId)), msg.sender, wasSupported);
+        } else {
+            AuthorityAudit.revokeFlag(AuthorityAudit.ROLE_CHAIN, address(uint160(chainId)), msg.sender, wasSupported);
+        }
     }
 
+    /// @dev PREWAVE-SC-071 (#747): the relayer allowlist gates
+    ///      `processMessage` and previously emitted nothing.
     function setAuthorizedRelayer(address relayer, bool authorized) external onlyOwner {
+        bool wasAuthorized = authorizedRelayers[relayer];
         authorizedRelayers[relayer] = authorized;
+        if (authorized) {
+            AuthorityAudit.grantFlag(AuthorityAudit.ROLE_RELAYER, relayer, msg.sender, wasAuthorized);
+        } else {
+            AuthorityAudit.revokeFlag(AuthorityAudit.ROLE_RELAYER, relayer, msg.sender, wasAuthorized);
+        }
     }
 
     function sendMessage(

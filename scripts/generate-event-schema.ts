@@ -153,6 +153,8 @@ const EVENT_FAMILY_MAP: Record<string, string> = {
   RoleGrantedV1: "roles",
   RoleRevokedV1: "roles",
   RoleAdminChangedV1: "roles",
+  AuthorityGrantedV2: "roles",
+  AuthorityRevokedV2: "roles",
   EmergencyPauseActivatedV1: "emergency",
   EmergencyPauseRecoveredV1: "emergency",
   GovernanceProposalCreatedV1: "upgrades",

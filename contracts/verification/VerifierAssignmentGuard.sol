@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IVerifierAssignment.sol";
+import {AuthorityAudit} from "../libraries/AuthorityAudit.sol";
 
 /**
  * @title VerifierAssignmentGuard
@@ -54,6 +55,8 @@ contract VerifierAssignmentGuard is AccessControl, Pausable, ReentrancyGuard, IV
         _unpause();
     }
 
+    /// @dev PREWAVE-SC-071 (#747): registering a snapshot is the sole way a
+    ///      verifier becomes assignable, and it previously emitted nothing.
     function registerEligibilitySnapshot(
         uint256 snapshotId,
         uint256 expiresAt,
@@ -65,15 +68,41 @@ contract VerifierAssignmentGuard is AccessControl, Pausable, ReentrancyGuard, IV
         }
         if (verifiers.length != scores.length) revert InvalidCapacity();
 
+        bool snapshotExisted = _snapshots[snapshotId].exists;
         _snapshots[snapshotId] = EligibilitySnapshot({expiresAt: expiresAt, exists: true});
         for (uint256 i = 0; i < verifiers.length; ) {
+            // A snapshot id may be re-registered, overwriting entries in place.
+            // Snapshot-level existence alone is too coarse to decide whether a
+            // given verifier's authority actually changed, so effectiveness is
+            // decided per entry against the stored score.
+            bool entryUnchanged =
+                snapshotExisted && _snapshotScore[snapshotId][verifiers[i]] == scores[i];
+
             _snapshotScore[snapshotId][verifiers[i]] = scores[i];
+
+            // PREWAVE-SC-071 (#747): each entry here is the verifier's authority
+            // to be assigned in rounds gated on this snapshot, so one grant is
+            // emitted per verifier. A re-registration that leaves an entry
+            // byte-identical is a genuine no-op and stays silent, which keeps a
+            // log replay reconstructing the eligibility set exactly.
+            if (!entryUnchanged) {
+                AuthorityAudit.grantFlag(
+                    AuthorityAudit.ROLE_ELIGIBILITY_SNAPSHOT,
+                    verifiers[i],
+                    msg.sender,
+                    false
+                );
+            }
+
             unchecked {
                 ++i;
             }
         }
     }
 
+    /// @dev PREWAVE-SC-071 (#747): an open round is the authority under which
+    ///      verifiers are assigned, and previously emitted nothing. The round id
+    ///      is carried in the `account` topic as `address(uint160(roundId))`.
     function openAssignmentRound(
         uint256 roundId,
         uint256 claimId,
@@ -91,10 +120,36 @@ contract VerifierAssignmentGuard is AccessControl, Pausable, ReentrancyGuard, IV
             closed: false,
             count: 0
         });
+
+        // PREWAVE-SC-071 (#747): opening the round is what confers assignment
+        // authority over its verifier slots.
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_ASSIGNMENT_ROUND,
+            address(0),
+            address(uint160(roundId)),
+            msg.sender,
+            address(uint160(roundId))
+        );
     }
 
+    /// @dev PREWAVE-SC-071 (#747): closing the round withdraws the assignment
+    ///      authority it conferred and previously emitted nothing. Note that this
+    ///      function is reachable for a round id that was never opened, so the
+    ///      pre-state is captured and the revoke only logs a real revocation.
     function closeAssignmentRound(uint256 roundId) external onlyRole(ASSIGNER_ROLE) whenNotPaused {
+        bool roundExisted = _rounds[roundId].claimId != 0;
+        bool wasOpen = roundExisted && !_rounds[roundId].closed;
+
         _rounds[roundId].closed = true;
+
+        // PREWAVE-SC-071 (#747): closing the round revokes the assignment
+        // authority conferred by `openAssignmentRound`.
+        AuthorityAudit.revokeFlag(
+            AuthorityAudit.ROLE_ASSIGNMENT_ROUND,
+            address(uint160(roundId)),
+            msg.sender,
+            wasOpen
+        );
     }
 
     function assignVerifier(

@@ -10,6 +10,7 @@ import "./interfaces/IParameterVersionRegistry.sol";
 import "./performance/ProtocolExecutionBounds.sol";
 import "./v2/libraries/AntiGriefing.sol";
 import {V2SafeCast} from "./v2/libraries/V2SafeCast.sol";
+import {AuthorityAudit} from "./libraries/AuthorityAudit.sol";
 
 /**
  * @title ClaimRegistry
@@ -164,6 +165,8 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
     /**
      * @notice Update the ParameterVersionRegistry address.
      * @param newRegistry The new ParameterVersionRegistry address.
+     * @dev PREWAVE-SC-071 (#747): this swaps the economic-parameter source of
+     *      truth and previously emitted nothing.
      */
     function setParameterVersionRegistry(
         address newRegistry
@@ -172,8 +175,23 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert("ClaimRegistry: zero address");
         }
 
+        address previous = address(parameterVersionRegistry);
         parameterVersionRegistry =
             IParameterVersionRegistry(newRegistry);
+
+        AuthorityAudit.revokeIfReplaced(
+            AuthorityAudit.ROLE_PARAMETER_REGISTRY,
+            previous,
+            msg.sender,
+            newRegistry
+        );
+        AuthorityAudit.grantIfAssigned(
+            AuthorityAudit.ROLE_PARAMETER_REGISTRY,
+            previous,
+            newRegistry,
+            msg.sender,
+            newRegistry
+        );
     }
 
     // =========================================================================
@@ -306,6 +324,8 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             revert ZeroAddress();
         }
 
+        bool wasSupported = _supportedAssets[asset];
+
         if (supported) {
             IParameterVersionRegistry.EconomicParameters memory params =
                 parameterVersionRegistry.getCurrentParameters();
@@ -328,6 +348,24 @@ contract ClaimRegistry is AccessControl, IClaimRegistry, ReentrancyGuard {
             _supportedAssets[asset] = false;
             _assetMinBounty[asset] = 0;
             _assetMaxBounty[asset] = 0;
+        }
+
+        // PREWAVE-SC-071 (#747): the asset allowlist gates `createClaim` and was
+        // previously only reconstructable from state diffs.
+        if (supported) {
+            AuthorityAudit.grantFlag(
+                AuthorityAudit.ROLE_SUPPORTED_ASSET,
+                asset,
+                msg.sender,
+                wasSupported
+            );
+        } else {
+            AuthorityAudit.revokeFlag(
+                AuthorityAudit.ROLE_SUPPORTED_ASSET,
+                asset,
+                msg.sender,
+                wasSupported
+            );
         }
     }
 
