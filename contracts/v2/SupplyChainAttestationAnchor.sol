@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
@@ -19,6 +20,13 @@ import { V2SafeCast } from "./libraries/V2SafeCast.sol";
 ///         `SupplyChainAttestationPublished` event; no off-chain actor gains any
 ///         settlement or treasury authority from this contract.
 contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestations {
+    /// @notice Canonical SBOM/attestation schema identifier for release provenance.
+    string public constant SBOM_FORMAT = "CycloneDX-1.5+in-toto/SLSA-v1";
+
+    /// @notice Predicate type URI for the release SBOM attestation.
+    string public constant SBOM_PREDICATE_TYPE =
+        "https://truthbounty.protocol/attestation/release-sbom/v1";
+
     /// @notice Schema version for the attestation format.
     uint16 public constant ATTESTATION_SCHEMA_VERSION = 1;
 
@@ -62,6 +70,13 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     /// @dev Each material is encoded as: uri|digest
     string[] private _materialData;
 
+    /// @notice Immutable digest of the canonical SBOM document.
+    /// @dev Binds the on-chain anchor to the exact CycloneDX SBOM bytes.
+    bytes32 private _sbomDigest;
+
+    /// @notice Immutable digest of the in-toto/SLSA provenance envelope.
+    bytes32 private _provenanceDigest;
+
     bytes32 private immutable _checksum;
 
     /// @param attestation_ The validated attestation record to publish.
@@ -88,6 +103,12 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         if (attestation_.checksum == bytes32(0)) {
             revert V2Errors.InvalidChecksum();
         }
+        if (attestation_.sbomDigest == bytes32(0)) {
+            revert V2Errors.InvalidChecksum();
+        }
+        if (attestation_.provenanceDigest == bytes32(0)) {
+            revert V2Errors.InvalidChecksum();
+        }
 
         _protocol = attestation_.protocol;
         _releaseVersion = attestation_.releaseVersion;
@@ -103,6 +124,8 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
         _subjectData = packSubjects(attestation_.subjects);
         _materialData = packMaterials(attestation_.materials);
         _checksum = attestation_.checksum;
+        _sbomDigest = attestation_.sbomDigest;
+        _provenanceDigest = attestation_.provenanceDigest;
 
         emit SupplyChainAttestationPublished(attestation_);
     }
@@ -120,13 +143,25 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
             workflowIdentity: _workflowIdentity,
             subjects: unpackSubjects(_subjectData),
             materials: unpackMaterials(_materialData),
-            checksum: _checksum
+            checksum: _checksum,
+            sbomDigest: _sbomDigest,
+            provenanceDigest: _provenanceDigest
         });
     }
 
     /// @notice Immutable protocol version marker shared by canonical V2 modules.
     function protocolVersion() external pure override returns (uint16 major, uint16 minor) {
         return (2, 0);
+    }
+
+    /// @notice Returns the canonical SBOM format identifier.
+    function sbomFormat() external pure returns (string memory) {
+        return SBOM_FORMAT;
+    }
+
+    /// @notice Returns the predicate type URI for the release SBOM attestation.
+    function sbomPredicateType() external pure returns (string memory) {
+        return SBOM_PREDICATE_TYPE;
     }
 
     /// @notice ERC-165: advertises ISupplyChainAttestations, IV2Module, and ERC-165.

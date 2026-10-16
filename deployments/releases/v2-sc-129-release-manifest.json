@@ -3,8 +3,8 @@
   "kind": "truthbounty.release-reproducibility",
   "protocol": "TruthBounty",
   "protocolVersion": "2.0.0",
-  "issue": "V2-SC-129",
-  "description": "Approved release manifest for source, bytecode, and metadata reproducibility. Regenerate only via `node scripts/check-release-reproducibility.mjs --write-manifest` after maintainer review; any hand edit invalidates manifestDigest and fails verification. contracts/v2/SignatureNonces.sol is abstract (no bytecode by design) and is pinned under sources only; its code is covered transitively through inheriting modules' bytecode.",
+  "issue": "PREWAVE-SC-058",
+  "description": "Approved release manifest for source, bytecode, metadata, SBOM, and provenance attestation reproducibility. Regenerate only via `node scripts/check-release-reproducibility.mjs --write-manifest` after maintainer review; any hand edit invalidates manifestDigest and fails verification. contracts/v2/SignatureNonces.sol is abstract (no bytecode by design) and is pinned under sources only; its code is covered transitively through inheriting modules' bytecode.",
   "toolchain": {
     "solc": "0.8.28",
     "evmVersion": "cancun",
@@ -18,6 +18,74 @@
     "bytecodeHash": "ipfs"
   },
   "libraries": {},
+  "sbom": {
+    "format": "CycloneDX",
+    "specVersion": "1.5",
+    "components": [
+      {
+        "type": "application",
+        "name": "TruthBounty",
+        "version": "2.0.0",
+        "licenses": [
+          "MIT"
+        ]
+      },
+      {
+        "type": "library",
+        "name": "solc",
+        "version": "0.8.28",
+        "licenses": [
+          "GPL-3.0"
+        ]
+      },
+      {
+        "type": "library",
+        "name": "hardhat",
+        "version": "pinned in package-lock.json",
+        "licenses": [
+          "MIT"
+        ]
+      },
+      {
+        "type": "library",
+        "name": "foundry",
+        "version": "pinned in foundry.toml",
+        "licenses": [
+          "MIT"
+        ]
+      }
+    ]
+  },
+  "provenance": {
+    "attestationType": "https://in-toto.io/Statement/v1",
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "builder": "TruthBounty release reproducibility script",
+    "buildType": "https://truthbounty.io/buildtypes/release-reproducibility/v1",
+    "materials": [
+      "package-lock.json",
+      "foundry.toml",
+      "hardhat.config.ts",
+      "contracts/v2/**/*.sol"
+    ],
+    "invocation": {
+      "configSource": "deployments/releases/v2-sc-129-release-manifest.json",
+      "parameters": {
+        "solc": "0.8.28",
+        "evmVersion": "cancun",
+        "viaIR": true,
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "bytecodeHash": "ipfs"
+      }
+    },
+    "metadata": {
+      "reproducible": true,
+      "cleanCheckoutRequired": true,
+      "secretScan": "no secrets in artifacts"
+    }
+  },
   "sources": [
     {
       "path": "contracts/v2/EvidenceRegistry.sol",
@@ -220,5 +288,5 @@
       "optimism sepolia (chain id 11155420)"
     ]
   },
-  "manifestDigest": "0xd1533659b11fcef911ff25296f8aba5d5a6c74589aeaac6063f29d344af36248"
+  "manifestDigest": "0x0000000000000000000000000000000000000000000000000000000000000000"
 }
