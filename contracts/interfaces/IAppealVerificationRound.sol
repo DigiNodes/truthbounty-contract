@@ -247,6 +247,33 @@ interface IAppealVerificationRound is IVerificationSource {
     /// @notice Thrown when the voter cap is outside [1, MAX_VOTERS_PER_ROUND].
     error InvalidMaxVotersPerRound(uint256 maxVotersPerRound);
 
+    /// @notice Thrown when the computed bond would overflow or exceed the hard cap.
+    error AppealBondOverflow(uint256 roundIndex, uint256 computedBond, uint256 maxAppealBond);
+
+    /// @notice Thrown when the appeal round deadline has not yet passed.
+    error AppealRoundNotExpired(uint256 claimId, uint256 timestamp, uint256 deadline);
+
+    /// @notice Thrown when a vote is submitted after the round deadline.
+    error AppealRoundExpired(uint256 claimId, uint256 timestamp, uint256 deadline);
+
+    /// @notice Thrown when a vote is submitted for a round that is not open.
+    error AppealRoundNotOpen(uint256 claimId);
+
+    /// @notice Thrown when a verifier attempts to vote twice in the same round.
+    error AlreadyVoted(uint256 claimId, address verifier);
+
+    /// @notice Thrown when the stake amount is below the round minimum.
+    error InsufficientStake(uint256 provided, uint256 minimum);
+
+    /// @notice Thrown when the round has no votes and cannot be resolved.
+    error NoVotesCast(uint256 claimId);
+
+    /// @notice Thrown when a tie occurs and cannot be resolved deterministically.
+    error AppealTie(uint256 claimId, uint256 trueWeight, uint256 falseWeight);
+
+    /// @notice Thrown when the terminal fallback cannot conserve funds.
+    error TerminalFallbackFailed(uint256 claimId, uint256 expected, uint256 actual);
+
     // =========================================================================
     // Functions
     // =========================================================================
@@ -259,6 +286,28 @@ interface IAppealVerificationRound is IVerificationSource {
      * @custom:emits AppealRoundOpened
      */
     function openAppealRound(uint256 claimId) external;
+
+    /**
+     * @notice Computes the exact required bond for a given round index.
+     * @dev Uses exact integer arithmetic with overflow protection and hard cap.
+     * @param roundIndex 1-based round index within the ladder.
+     * @return requiredBond The exact bond required for the round.
+     */
+    function computeRequiredBond(uint256 roundIndex) external view returns (uint256 requiredBond);
+
+    /**
+     * @notice Returns the current appeal round index for a claim (0 if none).
+     * @param claimId Claim ID.
+     * @return roundIndex The current 1-based round index, or 0 if no round opened.
+     */
+    function currentAppealRound(uint256 claimId) external view returns (uint256 roundIndex);
+
+    /**
+     * @notice Returns whether a claim's appeal path is terminal.
+     * @param claimId Claim ID.
+     * @return terminal True if the path is irreversibly finalized.
+     */
+    function isAppealPathTerminal(uint256 claimId) external view returns (bool terminal);
 
     /**
      * @notice Opens the next appeal round bound to an authorized appellant, parent dispute, and bond source.

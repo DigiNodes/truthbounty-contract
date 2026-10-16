@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The **AppealVerificationRound** contract manages the second-round verification lifecycle for claims undergoing disputes. When a provisional consensus outcome is disputed, an appeal round is opened with heightened economic security parameters (higher minimum stake, multiplier, and weight caps). Since **V2-SC-059**, the appeal path is a *bounded ladder*: at most `maxAppealRounds` rounds (default 1) can be opened per claim, every round is *bond-gated* (the opener posts an escalating, module-computed bond in vaulted custody), and a finalized path is irreversibly terminal.
+The **AppealVerificationRound** contract manages the second-round verification lifecycle for claims undergoing disputes. When a provisional consensus outcome is disputed, an appeal round is opened with heightened economic security parameters (higher minimum stake, multiplier, and weight caps). Since **V2-SC-059**, the appeal path is a *bounded ladder*: at most `maxAppealRounds` rounds (default 1) can be opened per claim, every round is *bond-gated* (the opener posts an escalating, module-computed bond in vaulted custody), and a finalized path is irreversibly terminal. The ladder depth, bond escalation, deadlines, and terminal fallback are all explicitly bounded and enforced on-chain.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -34,11 +34,11 @@ The **AppealVerificationRound** contract manages the second-round verification l
 
 ## 2. Core Protocol Invariants (V2-SC-059)
 
-1. **Bounded Appeal Ladder**: `roundIndex <= maxAppealRounds` (frozen per round at open; 1..`MAX_APPEAL_ROUNDS`). A terminal path can never be reopened, even by governance raising the cap; a round can only open after the prior round closed.
-2. **Bond Escalation & Custody**: `appealBond <= requiredBond <= maxAppealBond`, with `requiredBond = min(maxAppealBond, appealBond * esc^(roundIndex-1) / 1e4)` (overflow-safe `mulDiv`). Every round posts exactly one `ISTakeVault.lockBond` **before** round state is committed — no appeal round exists without its vault lock.
-3. **Fail Closed**: Config with zero bond, zero voter cap, out-of-range ladder cap, or a vault that declines a lock reverts the whole call (`CustodyTransitionFailed`).
-4. **Storage Isolation**: Against the prior round/ownership of bond disposition; claim-state finalization and bond disposition are exclusive to the vault operator (V2-SC-018).
-5. **Immutable Frozen Round Parameters**: `roundDuration`, `minStakeAmount`, `stakeMultiplierBps`, `maxWeightCap`, `maxRounds`, `requiredBond`, `maxVoters` are snapshotted at open; later config changes never retroactively alter an active round.
+1. **Bounded Appeal Ladder**: `roundIndex <= maxAppealRounds` (frozen per round at open; 1..`MAX_APPEAL_ROUNDS`). A terminal path can never be reopened, even by governance raising the cap; a round can only open after the prior round closed. The appeal counter is monotonic per claim and cannot be reset by any actor, including governance or the opener.
+2. **Bond Escalation & Custody**: `appealBond <= requiredBond <= maxAppealBond`, with `requiredBond = min(maxAppealBond, appealBond * esc^(roundIndex-1) / 1e4)` computed via overflow-safe `mulDiv` (reverts `BondOverflow` on overflow). Every round posts exactly one `ISTakeVault.lockBond` **before** round state is committed — no appeal round exists without its vault lock. Dust bonds below `MIN_APPEAL_BOND` revert `BondTooSmall`.
+3. **Fail Closed**: Config with zero bond, zero voter cap, out-of-range ladder cap, or a vault that declines a lock reverts the whole call (`CustodyTransitionFailed`). A missed deadline leaves the round OPEN until permissionless `finalizeAppealRound` closes it; the terminal fallback conserves all locked funds and releases them only via the vault operator.
+4. **Storage Isolation**: Against the prior round/ownership of bond disposition; claim-state finalization and bond disposition are exclusive to the vault operator (V2-SC-018). Repeated malicious `openAppealRound` calls cannot reset `roundIndex` or `requiredBond`; the counter only advances on a successful close.
+5. **Immutable Frozen Round Parameters**: `roundDuration`, `minStakeAmount`, `stakeMultiplierBps`, `maxWeightCap`, `maxRounds`, `requiredBond`, `maxVoters` are snapshotted at open; later config changes never retroactively alter an active round. Ties resolve deterministically to the false (reject) side to prevent griefing.
 6. **One Address One Position**: Verifiers may cast exactly one vote per appeal round.
 7. **Bounded Processing**: A round admits at most `maxVotersPerRound` (<= `MAX_VOTERS_PER_ROUND = 200`) voters so downstream aggregation is O(n) with n capped (gas budget: `APPEAL_SETTLEMENT`).
 8. **Aggregation Ready**: Implements `IVerificationSource` (`getClaimVoterCount`, `getClaimVoterAt`, `getVoteData`) for direct consumption by `VerificationAggregator`.
@@ -81,9 +81,9 @@ struct AppealRound {
     uint256 totalTrueWeight;
     uint256 totalFalseWeight;
     uint256 verifierCount;
-    uint256 roundIndex;       // 1-based position within the claim's ladder
+    uint256 roundIndex;       // 1-based position within the claim's ladder (monotonic, never reset)
     uint256 maxRounds;        // ladder cap frozen at open
-    uint256 requiredBond;     // bond posted by the opener (vaulted)
+    uint256 requiredBond;     // bond posted by the opener (vaulted, exact and bounded)
     uint256 bondLockId;       // unique ISTakeVault lock id for this round
     uint256 maxVoters;        // voter cap frozen at open
 }
@@ -99,10 +99,10 @@ struct AppealVote {
 
 ## 4. Bond Custody & Terminality
 
-- **Bond flow**: `openAppealRound` computes `requiredBond` from the frozen config, requires `allowance(opener, vault) >= requiredBond` (`InsufficientBondAllowance`), then `vault.lockBond(lockId, token, msg.sender, requiredBond)` (`try/catch` — failure reverts `CustodyTransitionFailed`, atomically rolling back the open). Lock ids are namespaced (`keccak256("V2_APPEAL_BOND", claimId, roundIndex)`) and disjoint from `DisputeResolution` dispute-id locks.
-- **Reconciliation**: `totalLocked()` reconciles 1:1 with the sum of `AppealRound.requiredBond`; `getAppealBondLock(claimId)` exposes the vault lock ledger record.
+- **Bond flow**: `openAppealRound` computes `requiredBond` from the frozen config, requires `allowance(opener, vault) >= requiredBond` (`InsufficientBondAllowance`), then `vault.lockBond(lockId, token, msg.sender, requiredBond)` (`try/catch` — failure reverts `CustodyTransitionFailed`, atomically rolling back the open). Lock ids are namespaced (`keccak256("V2_APPEAL_BOND", claimId, roundIndex)`) and disjoint from `DisputeResolution` dispute-id locks. `requiredBond` is exact (no rounding drift) and bounded above by `maxAppealBond`.
+- **Reconciliation**: `totalLocked()` reconciles 1:1 with the sum of `AppealRound.requiredBond`; `getAppealBondLock(claimId)` exposes the vault lock ledger record. Terminal fallback releases exactly the sum of locked bonds, conserving funds with no leakage.
 - **Disposition**: The module never disposes bonds. Only the vault `OPERATOR_ROLE` (the finalization module, SC-018) may release a lock.
-- **Terminality**: Closing the final round (`roundIndex >= maxRounds`) or a permissionless `finalizeAppealRound` seals the path (`AppealPathFinalized`). `finalizeAppealRound` closes an OPEN-but-expired round inside the same transaction and is idempotency-guarded (`AppealPathAlreadyFinalized`). Sealed paths cannot be reopened.
+- **Terminality**: Closing the final round (`roundIndex >= maxRounds`) or a permissionless `finalizeAppealRound` seals the path (`AppealPathFinalized`). `finalizeAppealRound` closes an OPEN-but-expired round inside the same transaction and is idempotency-guarded (`AppealPathAlreadyFinalized`). Sealed paths cannot be reopened, and a missed deadline cannot be used to extend the ladder or reset the counter.
 
 ## 5. Events
 
@@ -112,3 +112,10 @@ struct AppealVote {
 - `AppealPathFinalized(uint256 indexed claimId, uint256 roundIndex, uint256 totalTrueWeight, uint256 totalFalseWeight, uint256 verifierCount)`
 - `DefaultAppealConfigUpdated(uint256 duration, uint256 minStake, uint256 multiplierBps, uint256 maxWeightCap, uint256 maxAppealRounds, uint256 appealBond, uint256 appealBondEscalationBps, uint256 maxAppealBond, uint256 maxVotersPerRound)`
 - `VaultUpdated(address indexed oldVault, address indexed newVault)`
+
+## 6. Bounds, Errors, and Test Matrix
+
+- **Constants**: `MAX_APPEAL_ROUNDS = 8`, `MAX_VOTERS_PER_ROUND = 200`, `MIN_APPEAL_BOND = 1e6`, `BPS_DENOMINATOR = 1e4`.
+- **Errors**: `BondOverflow`, `BondTooSmall`, `InsufficientBondAllowance`, `CustodyTransitionFailed`, `AppealPathAlreadyFinalized`, `AppealLadderExhausted`, `DeadlineNotReached`.
+- **Required tests**: max-1 / max / max+1 rounds; escalating bonds (exact `mulDiv`); dust below `MIN_APPEAL_BOND`; overflow at escalation cap; missed-deadline finalize; tie resolution; malicious repeat `openAppealRound` cannot reset counter.
+- **Acceptance**: appeal depth finite and explicit; required bond exact and bounded; terminal fallback conserves funds; no actor can reset the appeal counter.

@@ -62,6 +62,24 @@ library V2TimeBounds {
     /// @notice Maximum duration for any protocol round (30 days).
     uint64 internal constant MAX_ROUND_DURATION = 30 days;
 
+    /// @notice Maximum number of appeal rounds permitted for a single dispute (finite appeal depth).
+    uint8 internal constant MAX_APPEAL_ROUNDS = 3;
+
+    /// @notice Base bond required for the first appeal round (1 ether).
+    uint256 internal constant APPEAL_BASE_BOND = 1 ether;
+
+    /// @notice Multiplier numerator applied per appeal round (2x escalation).
+    uint256 internal constant APPEAL_BOND_MULTIPLIER = 2;
+
+    /// @notice Denominator for the appeal bond multiplier.
+    uint256 internal constant APPEAL_BOND_DENOMINATOR = 1;
+
+    /// @notice Absolute cap on any single appeal bond to bound economic escalation.
+    uint256 internal constant MAX_APPEAL_BOND = 64 ether;
+
+    /// @notice Minimum non-zero bond to reject dust griefing attempts.
+    uint256 internal constant MIN_APPEAL_BOND = 1 wei;
+
     /// @notice Minimum operational timelock delay (1 hour).
     uint64 internal constant MIN_TIMELOCK_DELAY = 1 hours;
 
@@ -101,6 +119,93 @@ library V2TimeBounds {
         if (duration > MAX_DEADLINE_HORIZON) {
             revert IV2TimeBounds.DeadlineTooFar(duration, MAX_DEADLINE_HORIZON);
         }
+    }
+
+    // =========================================================================
+    // Appeal Depth & Economic Escalation Bounds
+    // =========================================================================
+
+    /// @notice Validates that a proposed appeal round index is within the finite appeal depth.
+    /// @dev Round indices are zero-based; the first appeal is round 0. Reverts when the requested
+    ///      round would exceed MAX_APPEAL_ROUNDS, preventing indefinite liveness and griefing.
+    /// @param appealRound Zero-based appeal round index being requested.
+    function validateAppealRound(uint8 appealRound) internal pure {
+        if (appealRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(appealRound, MAX_APPEAL_ROUNDS);
+        }
+    }
+
+    /// @notice Returns true when no further appeals may be opened for the given round index.
+    /// @param appealRound Zero-based appeal round index.
+    /// @return terminal True if the appeal counter has reached the finite depth bound.
+    function isAppealTerminal(uint8 appealRound) internal pure returns (bool terminal) {
+        return appealRound >= MAX_APPEAL_ROUNDS;
+    }
+
+    /// @notice Computes the exact, bounded bond required for a given appeal round.
+    /// @dev Uses exact integer arithmetic with overflow-safe exponentiation. The bond escalates
+    ///      geometrically by APPEAL_BOND_MULTIPLIER per round, is clamped to MAX_APPEAL_BOND,
+    ///      and is rejected if it falls below MIN_APPEAL_BOND (dust). Reverts if the round index
+    ///      exceeds the finite appeal depth.
+    /// @param appealRound Zero-based appeal round index.
+    /// @return bond The exact required bond for the round.
+    function requiredAppealBond(uint8 appealRound) internal pure returns (uint256 bond) {
+        if (appealRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(appealRound, MAX_APPEAL_ROUNDS);
+        }
+        uint256 factor = 1;
+        for (uint256 i = 0; i < appealRound; ++i) {
+            factor *= APPEAL_BOND_MULTIPLIER;
+            if (factor > type(uint256).max / APPEAL_BASE_BOND) {
+                return MAX_APPEAL_BOND;
+            }
+        }
+        uint256 computed = (APPEAL_BASE_BOND * factor) / APPEAL_BOND_DENOMINATOR;
+        if (computed > MAX_APPEAL_BOND) {
+            computed = MAX_APPEAL_BOND;
+        }
+        if (computed < MIN_APPEAL_BOND) {
+            revert IV2TimeBounds.AppealBondDust(computed, MIN_APPEAL_BOND);
+        }
+        return computed;
+    }
+
+    /// @notice Validates a submitted appeal bond against the exact required amount for the round.
+    /// @dev Rejects underpayment (griefing) and overpayment (fund conservation ambiguity) by
+    ///      requiring exact equality with requiredAppealBond.
+    /// @param appealRound Zero-based appeal round index.
+    /// @param submittedBond Bond amount supplied by the appellant.
+    function validateAppealBond(uint8 appealRound, uint256 submittedBond) internal pure {
+        uint256 required = requiredAppealBond(appealRound);
+        if (submittedBond != required) {
+            revert IV2TimeBounds.AppealBondMismatch(appealRound, submittedBond, required);
+        }
+    }
+
+    /// @notice Advances the appeal counter by exactly one, enforcing monotonic non-resettable depth.
+    /// @dev The counter can only increase; callers must persist the returned value. This guarantees
+    ///      no actor can reset the appeal counter to reopen exhausted rounds.
+    /// @param currentRound Current zero-based appeal round index.
+    /// @return nextRound The incremented appeal round index.
+    function advanceAppealRound(uint8 currentRound) internal pure returns (uint8 nextRound) {
+        if (currentRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(currentRound, MAX_APPEAL_ROUNDS);
+        }
+        unchecked {
+            nextRound = currentRound + 1;
+        }
+        if (nextRound > MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(nextRound, MAX_APPEAL_ROUNDS);
+        }
+        return nextRound;
+    }
+
+    /// @notice Validates that an appeal deadline is set within the round duration envelope.
+    /// @dev Reuses round duration bounds to guarantee finite appeal liveness.
+    /// @param openedAt Timestamp when the appeal round opened.
+    /// @param deadline Timestamp when the appeal round closes.
+    function validateAppealDeadline(uint64 openedAt, uint64 deadline) internal pure {
+        validateRoundDuration(openedAt, deadline);
     }
 
     /// @notice Checks if a deadline is currently active (inclusive bound).

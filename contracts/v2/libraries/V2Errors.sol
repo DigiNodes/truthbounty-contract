@@ -304,11 +304,32 @@ library V2Errors {
     /// @notice Appeal bond multiplier invalid (zero).
     error InvalidAppealMultiplier(uint24 multiplierBps);
 
+    /// @notice Appeal depth exceeds the configured maximum number of rounds.
+    /// @param provided Requested appeal round.
+    /// @param max Maximum appeal rounds permitted.
+    error AppealDepthExceeded(uint256 provided, uint256 max);
+
     /// @notice Reputation bound pair invalid.
     error InvalidReputationBounds(uint16 minBps, uint16 maxBps);
 
     /// @notice Pause / unpause cooldown is zero.
     error InvalidPauseCooldown(uint48 cooldown);
+
+    /// @notice Appeal bond escalation overflowed the bounded maximum.
+    /// @param round Appeal round whose bond overflowed.
+    /// @param bond Computed bond that exceeded the cap.
+    /// @param cap Maximum bond permitted.
+    error AppealBondOverflow(uint256 round, uint256 bond, uint256 cap);
+
+    /// @notice Appeal bond is below the anti-dust floor.
+    /// @param provided Bond supplied.
+    /// @param minimum Minimum bond required.
+    error AppealBondDust(uint256 provided, uint256 minimum);
+
+    /// @notice Appeal deadline has elapsed; the round can no longer be opened.
+    /// @param deadline Unix timestamp at which the appeal window closed.
+    /// @param timestamp Current block timestamp.
+    error AppealDeadlineMissed(uint64 deadline, uint64 timestamp);
 
     /// @notice Rounding policy enum out of range.
     error InvalidRoundingPolicy(uint8 roundingPolicy);
@@ -318,6 +339,11 @@ library V2Errors {
 
     /// @notice Parameter set version not published.
     error ParameterSetNotFound(bytes32 versionId);
+
+    /// @notice Appeal counter cannot be reset once a round has been opened.
+    /// @param claimId Claim whose appeal counter reset was rejected.
+    /// @param current Current appeal round.
+    error AppealCounterResetForbidden(uint256 claimId, uint256 current);
 
     /// @notice Asset adapter already registered.
     error AssetAdapterAlreadySet(address asset);
