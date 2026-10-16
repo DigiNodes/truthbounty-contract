@@ -2,6 +2,36 @@
   "schemaVersion": 1,
   "generator": "scripts/validateStorageLayouts.ts (V2-SC-046, @openzeppelin/upgrades-core)",
   "solcVersion": "0.8.28",
+  "namespaceInventory": {
+    "description": "ERC-7201/custom storage namespace inventory for upgrade collision detection. Each entry maps a namespace identifier to its owner contract, resolved slot, and source. Duplicate namespace identifiers or duplicate resolved slots across distinct owners fail CI.",
+    "namespaces": [
+      {
+        "id": "TruthBountyToken",
+        "owner": "TruthBountyToken",
+        "file": "contracts/TruthBounty.sol",
+        "kind": "linear",
+        "resolvedSlot": "0",
+        "source": "inherited-linear-storage"
+      },
+      {
+        "id": "TruthBounty",
+        "owner": "TruthBounty",
+        "file": "contracts/TruthBounty.sol",
+        "kind": "linear",
+        "resolvedSlot": "0",
+        "source": "inherited-linear-storage"
+      }
+    ],
+    "ownership": {
+      "TruthBountyToken": "TruthBountyToken (contracts/TruthBounty.sol)",
+      "TruthBounty": "TruthBounty (contracts/TruthBounty.sol)"
+    },
+    "rules": [
+      "Namespace identifiers must be unique across implementations, inherited modules, and libraries.",
+      "Resolved slots must be unique across distinct namespace owners.",
+      "Upgrades must not repurpose an existing namespace; new namespaces must be additive."
+    ]
+  },
   "contracts": {
     "TruthBountyToken": {
       "file": "contracts/TruthBounty.sol",
