@@ -66,6 +66,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     error NotPaused(bytes32 scope);
     error UnauthorizedToPause(address account);
     error UnauthorizedToUnpause(address account);
+    error ZeroAddress();
+    error ScopeNotAllowed(bytes32 scope);
+
+    // ─── Events ───────────────────────────────────────────────────────
+
+    event ScopeAllowedSet(bytes32 indexed scope, bool allowed, address indexed operator);
 
     // ─── State ────────────────────────────────────────────────────────
 
@@ -78,6 +84,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     /// @notice Mapping from scope to total number of times it has been paused
     mapping(bytes32 => uint256) public pauseCount;
 
+    /// @notice Mapping from scope to whether it is a recognized/allowed scope
+    mapping(bytes32 => bool) public allowedScope;
+
+    /// @notice Mapping from scope to whether it has been explicitly allowed (to distinguish from default)
+    mapping(bytes32 => bool) public scopeConfigured;
+
     // ─── Constructor ──────────────────────────────────────────────────
 
     /**
@@ -89,6 +101,16 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (admin == address(0) || emergencyCouncil == address(0) || governance == address(0)) {
             revert V2Errors.ZeroAddress();
         }
+
+        // Register well-known scopes as allowed by default
+        _setScopeAllowed(SCOPE_ALL, true);
+        _setScopeAllowed(SCOPE_CLAIMS, true);
+        _setScopeAllowed(SCOPE_EVIDENCE, true);
+        _setScopeAllowed(SCOPE_STAKING, true);
+        _setScopeAllowed(SCOPE_VERIFICATION, true);
+        _setScopeAllowed(SCOPE_SETTLEMENT, true);
+        _setScopeAllowed(SCOPE_TREASURY, true);
+        _setScopeAllowed(SCOPE_DISPUTES, true);
 
         // Subordinate all role administration under GOVERNANCE_ROLE
         // to prevent DEFAULT_ADMIN_ROLE from escalating privileges or granting unpause powers
@@ -103,6 +125,27 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _setRoleAdmin(DEFAULT_ADMIN_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(GOVERNANCE_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(EMERGENCY_ROLE, GOVERNANCE_ROLE);
+    }
+
+    // ─── Scope Administration ─────────────────────────────────────────
+
+    /**
+     * @notice Set whether a scope is allowed to be paused.
+     * @dev Only GOVERNANCE_ROLE can configure allowed scopes. Emits ScopeAllowedSet.
+     * @param scope Identifier of the scope.
+     * @param allowed Whether the scope is allowed.
+     */
+    function setScopeAllowed(bytes32 scope, bool allowed) external {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert UnauthorizedToPause(msg.sender);
+        }
+        _setScopeAllowed(scope, allowed);
+    }
+
+    function _setScopeAllowed(bytes32 scope, bool allowed) internal {
+        allowedScope[scope] = allowed;
+        scopeConfigured[scope] = true;
+        emit ScopeAllowedSet(scope, allowed, msg.sender);
     }
 
     // ─── IV2Module ────────────────────────────────────────────────────
@@ -137,6 +180,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     function pause(bytes32 scope) external override {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToPause(msg.sender);
+        }
+        if (!allowedScope[scope]) {
+            revert ScopeNotAllowed(scope);
         }
         if (_pausedScopes[scope]) revert AlreadyPaused(scope);
 
