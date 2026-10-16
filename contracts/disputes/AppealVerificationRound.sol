@@ -97,6 +97,24 @@ contract AppealVerificationRound is
     error InsufficientStake(uint256 provided, uint256 requiredStake);
     error AlreadyVotedInAppeal(uint256 claimId, address verifier);
     error IndexOutOfBounds();
+    error InvalidMaxAppealRounds(uint256 maxAppealRounds);
+    error InvalidAppealBond(uint256 appealBond);
+    error InvalidBondEscalation(uint256 escalationBps);
+    error InvalidMaxAppealBond(uint256 maxAppealBond, uint256 appealBond);
+    error InvalidMaxVotersPerRound(uint256 maxVotersPerRound);
+    error AppealPathTerminal(uint256 claimId);
+    error MaxAppealRoundsExceeded(uint256 claimId, uint256 attemptedRound, uint256 maxAppealRounds);
+    error BondNotConfigured();
+    error InsufficientBondAllowance();
+    error AppealRoundNotClosed(uint256 claimId);
+    error AppealRoundNotFinalizable(uint256 claimId);
+    error AppealRoundAlreadyTerminal(uint256 claimId);
+    error BondEscalationOverflow(uint256 baseBond, uint256 escalationBps, uint256 roundIndex);
+    error RequiredBondExceedsCap(uint256 requiredBond, uint256 maxAppealBond);
+    error VoterCapExceeded(uint256 claimId, uint256 maxVotersPerRound);
+    error DeadlineNotReached(uint256 claimId, uint256 currentTimestamp, uint256 deadline);
+    error TieNotResolvable(uint256 claimId);
+    error AppealCounterReset(uint256 claimId, uint256 currentIndex, uint256 attemptedIndex);
 
     // =========================================================================
     // State Variables
@@ -139,6 +157,15 @@ contract AppealVerificationRound is
 
     /// @notice Tracks bound appeals for replay protection: parentDisputeId => roundIndex => opened.
     mapping(uint256 => mapping(uint256 => bool)) private _boundAppeals;
+
+    /// @notice Monotonic appeal counter per claim; can only increase, never reset.
+    mapping(uint256 => uint256) private _appealCounter;
+
+    /// @notice Terminal fallback recipient for conserved funds on terminal paths.
+    mapping(uint256 => address) private _terminalFallbackRecipient;
+
+    /// @notice Tracks whether a round's bond has been released (terminal conservation).
+    mapping(uint256 => mapping(uint256 => bool)) private _bondReleased;
 
     // =========================================================================
     // Constructor
@@ -237,7 +264,9 @@ contract AppealVerificationRound is
 
         uint256 bondLockId = _appealLockId(claimId, nextRound);
         try vault.lockBond(bondLockId, address(stakingToken), msg.sender, requiredBond) {
-            // success — proceed
+            // success 
+            _appealCounter[claimId] = nextRound;
+            _appealRoundIndex[claimId] = nextRound;— proceed
         } catch {
             revert CustodyTransitionFailed();
         }
