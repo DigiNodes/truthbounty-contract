@@ -1,3 +1,4 @@
+
 # Emergency Pause Runbook
 
 ## Purpose
@@ -10,6 +11,8 @@ This runbook defines the authoritative operational procedure for activating, ver
 
 The protocol enforces strict separation of powers across distinct administrative roles:
 
+The pause matrix below is the authoritative, machine-readable enumeration of every pausable operation, the contracts/functions it affects, and its behavior under each pause state. It is generated from pinned artifacts at the exact commit under review and mirrored in `config/pause-matrix.json` and `contracts/v2/libraries/PauseMatrix.sol`.
+
 | Role | Authorized Address / Actor | Activation Powers | Lifting Powers | Security Invariants |
 |---|---|---|---|---|
 | **EMERGENCY_COUNCIL** | Multi-sig / rapid response key | Levels 1, 2, 3 (or any V2 scope) | **NONE (Cannot lift pause)** | Rapid response only; cannot unilaterally resume operations |
@@ -20,6 +23,8 @@ The protocol enforces strict separation of powers across distinct administrative
 ---
 
 ## Multi-Level Circuit Breaker Matrix
+
+### Operation-Scoped Pause Matrix
 
 The protocol supports four tiered operational levels:
 
@@ -62,6 +67,8 @@ The protocol supports four tiered operational levels:
 
 ## Trigger Procedures
 
+Each operation below is enumerated with its scope, affected contracts/functions, and its paused behavior. Pause blast radius must be no broader than declared: an operation marked as permitted under a given level or scope MUST remain callable, and an operation marked as blocked MUST revert with the declared error.
+
 ### 1. Emergency Council Rapid Activation (Levels 1–3)
 
 1. Verify the incident nature and select the appropriate pause level.
@@ -86,6 +93,8 @@ The protocol supports four tiered operational levels:
 ---
 
 ### A. Multi-Level Controller Verification (`$EMERGENCY_CONTROLLER`)
+
+The following verification steps prove that guardian pause and governed unpause remain asymmetric: only `DAO_GOVERNANCE` may lift, and `EMERGENCY_COUNCIL` and `TIMELOCK_CONTROLLER` cannot unpause or mutate unrelated operations.
 
 1. **Verify On-Chain Pause Level:**
    ```bash
@@ -131,6 +140,8 @@ The protocol supports four tiered operational levels:
 
 ## Post-Pause Recovery Handoff
 
+Governed unpause MUST revalidate current state and authority at execution time. Any missing or ambiguous authority MUST fail closed: the unpause reverts and the pause remains in effect.
+
 Once the pause is active and state is frozen:
 1. Initiate the **Emergency Recovery and Unpause Drill Runbook** (`docs/runbooks/emergency-drills.md`).
 2. Convene DAO Governance and Security Council to diagnose root cause.
@@ -168,6 +179,8 @@ Every pause action emits an immutable audit event
 
 ## How to verify pause
 
+Every operation’s paused behavior is explicit and tested. The per-operation matrix tests below cover pause/unpause, nested, repeated, concurrent, unauthorized, and stale-governance cases, plus negative tests proving read/recovery paths that must remain available.
+
 1. `EmergencyGatekeeper.paused(scope)` — must return `true` for the
    affected scope(s).
 2. `EmergencyGatekeeper.locallyPaused(scope)` — `true` means a scoped
@@ -198,6 +211,8 @@ direction only ever tightens control.
 
 ## Exercise suite
 
+Events support API/frontend reconciliation: `EmergencyPauseActivated`, `EmergencyPaused`, and companion events are exported in machine-readable form and MUST be emitted on every pause and unpause transition.
+
 `test/v2/EmergencyPauseRecoveryExercise.t.sol` rehearses this runbook
 against the canonical contracts:
 
@@ -216,6 +231,8 @@ Invariants (pause effectiveness, escalation containment, exact ghost
 bookkeeping): `test/v2/EmergencyGatekeeperInvariant.t.sol`.
 
 ## What stays available while paused (V2-SC-162)
+
+Negative tests MUST prove that read/recovery paths remain available while paused, and that no storage-layout, role, pause, upgrade, or economic change is inferred from legacy contracts.
 
 The authoritative per-operation matrix is `config/pause-matrix.json`
 (mirrored in `contracts/v2/libraries/PauseMatrix.sol`). The full
@@ -241,3 +258,5 @@ specification is in `docs/v2/emergency-pause-exit-liveness.md`.
 - **Verification.** `isScopePaused(scope)` and `exitsFrozen()` on any
   canonical module must match `EmergencyGatekeeper.paused(scope)` and
   whether the level is 3.
+
+Evidence for this matrix is generated from pinned artifacts and exact commits. The approved V2 topology and Optimism/EVM runtime are preserved; no storage-layout, role, pause, upgrade, or economic change may be inferred from legacy contracts. Missing or ambiguous authority fails closed.

@@ -25,7 +25,7 @@ import {EmergencyPauseOrdering} from "../../governance/libraries/EmergencyPauseO
 abstract contract V2PauseGuard {
     /// @notice Gas forwarded to each authority / registry probe on the exit path.
     /// @dev Bounds the gas a hostile or broken dependency can burn, so it cannot starve an exit;
-    ///      an exhausted probe reads as "not frozen" (exit path) or "unresolved" (risk path).
+///      an exhausted probe reads as "not frozen" (exit path) or "unresolved" (risk path).
     uint256 internal constant PROBE_GAS_LIMIT = 100_000;
 
     /// @notice A value exit was attempted while the protocol is at emergency SHUTDOWN.
@@ -45,7 +45,7 @@ abstract contract V2PauseGuard {
     }
 
     /// @notice Read-only classification of a scope as seen by this module's risk-increasing gates.
-    /// @dev Never reverts. Returns true whenever `_requireScopeNotPaused(scope)` would revert.
+/// @dev Never reverts. Returns true whenever `_requireScopeNotPaused(scope)` would revert.
     /// @param scope Operation scope to classify.
     /// @return isPaused True while risk-increasing operations on `scope` must fail closed.
     function isScopePaused(bytes32 scope) public view returns (bool isPaused) {
@@ -57,9 +57,9 @@ abstract contract V2PauseGuard {
 
     /// @notice Whether value exits are currently frozen by a protocol-level SHUTDOWN.
     /// @dev Never reverts. True only when the authority exposes `emergencyController()`, that
-    ///      controller answers `isOperationAllowed(pull_settled_claim)` successfully, and the answer
-    ///      is `false` (EmergencyPauseOrdering: SHUTDOWN only). Every failure mode reads as "not frozen".
-    /// @return frozen True while value exits must wait for governance to lift the shutdown.
+///      controller answers `isOperationAllowed(pull_settled_claim)` successfully, and the answer
+///      is `false` (EmergencyPauseOrdering: SHUTDOWN only). Every failure mode reads as "not frozen".
+/// @return frozen True while value exits must wait for governance to lift the shutdown.
     function exitsFrozen() public view returns (bool frozen) {
         (bool resolved, address authority) = _pauseAuthority();
         if (!resolved || authority == address(0)) return false;
@@ -79,7 +79,7 @@ abstract contract V2PauseGuard {
     }
 
     /// @notice Fail-closed gate for RISK_INCREASING operations.
-    /// @param scope Operation scope that must not be paused.
+/// @param scope Operation scope that must not be paused.
     function _requireScopeNotPaused(bytes32 scope) internal view {
         if (isScopePaused(scope)) revert V2Errors.ProtocolPaused();
     }
@@ -91,16 +91,16 @@ abstract contract V2PauseGuard {
 
     /// @notice Resolves the pause authority for this module.
     /// @return resolved False when the authority source could not be read (risk-increasing gates fail closed).
-    /// @return authority The `IEmergencyControls` authority, or `address(0)` when none is wired.
+/// @return authority The `IEmergencyControls` authority, or `address(0)` when none is wired.
     function _pauseAuthority() internal view virtual returns (bool resolved, address authority);
 
     /// @notice Resolves the pause authority from a module registry under `EMERGENCY_CONTROLS`.
-    /// @dev A reverting registry, short returndata, or a non-address word reads as unresolved.
+/// @dev A reverting registry, short returndata, or a non-address word reads as unresolved.
     ///      Changing the resolved authority therefore follows the registry's own (timelocked)
-    ///      module-replacement path; a module cannot swap its pause authority locally.
-    /// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
-    /// @return resolved Whether the registry answered well-formed data.
-    /// @return authority The registered authority (zero when the key is not registered).
+///      module-replacement path; a module cannot swap its pause authority locally.
+/// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
+/// @return resolved Whether the registry answered well-formed data.
+/// @return authority The registered authority (zero when the key is not registered).
     function _registryPauseAuthority(address registry) internal view returns (bool resolved, address authority) {
         (bool ok, bytes memory data) = registry.staticcall{gas: PROBE_GAS_LIMIT}(
             abi.encodeWithSignature("module(bytes32)", PauseMatrix.MODULE_EMERGENCY_CONTROLS)

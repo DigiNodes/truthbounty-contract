@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -85,6 +86,14 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
     /// @dev `maxPauseLevel(bytes32) == 0` means the scope has no configured tolerance
     ///      and fails closed for any non-normal protocol escalation.
     mapping(bytes32 => uint8) private _maxPauseLevel;
+    /// @notice Canonical operation identifiers that have been registered as pausable.
+    /// @dev Used to prove the pause blast radius is no broader than declared: only
+    ///      registered operations may be paused, and each operation maps to an
+    ///      explicit set of affected contracts/functions.
+    mapping(bytes32 => bool) private _registeredOperations;
+    /// @notice Declared affected surface for each registered operation.
+    /// @dev Hash of the canonical (contract, function) enumeration for the operation.
+    mapping(bytes32 => bytes32) private _operationSurface;
 
     // ─── Events ───────────────────────────────────────────────────────
 
@@ -112,6 +121,18 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
     /// @param maxLevel The tolerated maximum protocol pause level.
     event ScopeMaxPauseLevelSet(bytes32 indexed scope, uint8 maxLevel);
 
+    /// @notice Emitted when a pausable operation is registered with its declared surface.
+    /// @param operation The canonical operation identifier.
+    /// @param surfaceHash Hash of the declared (contract, function) enumeration.
+    event OperationRegistered(bytes32 indexed operation, bytes32 surfaceHash);
+
+    /// @notice Emitted for every gatekeeper decision to support API/frontend reconciliation.
+    /// @param operation The canonical operation identifier.
+    /// @param scope The scope evaluated.
+    /// @param allowed Whether the operation was permitted to proceed.
+    /// @param reason Canonical reason code for the decision.
+    event OperationGateDecision(bytes32 indexed operation, bytes32 indexed scope, bool allowed, bytes32 reason);
+
     // ─── Errors ───────────────────────────────────────────────────────
 
     /// @notice The caller is not authorized for the attempted action.
@@ -130,6 +151,12 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
     error InvalidEmergencyController(address controller);
     /// @notice The protocol-level controller is not configured or has failed.
     error EmergencyControllerUnavailable();
+    /// @notice The operation is not registered as pausable.
+    error OperationNotRegistered(bytes32 operation);
+    /// @notice The operation is already registered.
+    error OperationAlreadyRegistered(bytes32 operation);
+    /// @notice The declared surface hash does not match the canonical enumeration.
+    error OperationSurfaceMismatch(bytes32 operation, bytes32 expected, bytes32 actual);
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -252,6 +279,54 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
         return _pausedScopes[scope];
     }
 
+    /// @notice Registers a pausable operation with its declared affected surface.
+    /// @dev `ADMIN_ROLE` only. The `surfaceHash` must equal the canonical hash of
+    ///      the enumerated (contract, function) pairs so the blast radius can be
+    ///      independently verified. Fails closed on zero operation or mismatch.
+    /// @param operation The canonical operation identifier.
+    /// @param surfaceHash Hash of the declared (contract, function) enumeration.
+    function registerOperation(bytes32 operation, bytes32 surfaceHash) external onlyRole(ADMIN_ROLE) {
+        if (operation == bytes32(0)) revert EmptyScope();
+        if (_registeredOperations[operation]) revert OperationAlreadyRegistered(operation);
+        if (surfaceHash == bytes32(0)) revert InvalidConfiguration();
+
+        _registeredOperations[operation] = true;
+        _operationSurface[operation] = surfaceHash;
+        emit OperationRegistered(operation, surfaceHash);
+    }
+
+    /// @notice Returns whether an operation is registered as pausable.
+    /// @param operation The operation to query.
+    /// @return True if the operation is registered.
+    function isOperationRegistered(bytes32 operation) external view returns (bool) {
+        return _registeredOperations[operation];
+    }
+
+    /// @notice Returns the declared affected surface hash for an operation.
+    /// @param operation The operation to query.
+    /// @return The declared surface hash (0 when unregistered).
+    function operationSurface(bytes32 operation) external view returns (bytes32) {
+        return _operationSurface[operation];
+    }
+
+    /// @notice Reverts when the operation may not execute on the scope.
+    /// @dev Fail-closed gate for operation-scoped mutations. Unregistered
+    ///      operations are rejected; paused scopes are rejected; every decision
+    ///      is emitted for reconciliation.
+    /// @param operation The canonical operation identifier.
+    /// @param scope The scope whose gate should be checked.
+    function requireOperationNotPaused(bytes32 operation, bytes32 scope) external {
+        if (!_registeredOperations[operation]) {
+            emit OperationGateDecision(operation, scope, false, keccak256("OPERATION_NOT_REGISTERED"));
+            revert OperationNotRegistered(operation);
+        }
+        if (paused(scope)) {
+            emit OperationGateDecision(operation, scope, false, keccak256("SCOPE_PAUSED"));
+            revert V2Errors.ProtocolPaused();
+        }
+        emit OperationGateDecision(operation, scope, true, keccak256("ALLOWED"));
+    }
+
     // ─── Dependency wiring (timelocked) ───────────────────────────────
 
     /// @notice Wires, replaces, or removes the protocol-level emergency controller.
@@ -296,6 +371,12 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
         if (!hasRole(PAUSE_INITIATOR, msg.sender) && !hasRole(PAUSE_RESOLVER, msg.sender)) {
             revert NotAuthorized();
         }
+    }
+
+    /// @dev Reverts when the caller is not the resolver; used to keep unpause
+    ///      strictly asymmetric from pause authority.
+    function _requireResolverAuthority() internal view {
+        if (!hasRole(PAUSE_RESOLVER, msg.sender)) revert NotAuthorized();
     }
 
     /// @dev Reverts when the protocol-level controller is escalated beyond the

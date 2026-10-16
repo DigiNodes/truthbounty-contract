@@ -78,6 +78,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     /// @notice Mapping from scope to total number of times it has been paused
     mapping(bytes32 => uint256) public pauseCount;
 
+    /// @notice Mapping from scope to the operation identifier it governs
+    mapping(bytes32 => bytes32) public scopeOperation;
+
+    /// @notice Mapping from operation identifier to its declared scope
+    mapping(bytes32 => bytes32) public operationScope;
+
     // ─── Constructor ──────────────────────────────────────────────────
 
     /**
@@ -103,6 +109,18 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _setRoleAdmin(DEFAULT_ADMIN_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(GOVERNANCE_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(EMERGENCY_ROLE, GOVERNANCE_ROLE);
+
+        // Declare the canonical operation-to-scope matrix.
+        _declareOperation(keccak256("OP_CLAIM_CREATE"), SCOPE_CLAIMS);
+        _declareOperation(keccak256("OP_CLAIM_REGISTER"), SCOPE_CLAIMS);
+        _declareOperation(keccak256("OP_EVIDENCE_SUBMIT"), SCOPE_EVIDENCE);
+        _declareOperation(keccak256("OP_STAKE_DEPOSIT"), SCOPE_STAKING);
+        _declareOperation(keccak256("OP_STAKE_WITHDRAW"), SCOPE_STAKING);
+        _declareOperation(keccak256("OP_VERIFICATION_ATTEST"), SCOPE_VERIFICATION);
+        _declareOperation(keccak256("OP_SETTLEMENT_FINALIZE"), SCOPE_SETTLEMENT);
+        _declareOperation(keccak256("OP_TREASURY_WITHDRAW"), SCOPE_TREASURY);
+        _declareOperation(keccak256("OP_DISPUTE_OPEN"), SCOPE_DISPUTES);
+        _declareOperation(keccak256("OP_DISPUTE_RESOLVE"), SCOPE_DISPUTES);
     }
 
     // ─── IV2Module ────────────────────────────────────────────────────
@@ -138,6 +156,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToPause(msg.sender);
         }
+        if (scope != SCOPE_ALL && scopeOperation[scope] == bytes32(0)) {
+            revert V2Errors.InvalidScope(scope);
+        }
         if (_pausedScopes[scope]) revert AlreadyPaused(scope);
 
         _pausedScopes[scope] = true;
@@ -156,6 +177,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     function unpause(bytes32 scope) external override {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToUnpause(msg.sender);
+        }
+        if (scope != SCOPE_ALL && scopeOperation[scope] == bytes32(0)) {
+            revert V2Errors.InvalidScope(scope);
         }
         if (!_pausedScopes[scope]) revert NotPaused(scope);
 
@@ -176,11 +200,50 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     }
 
     /**
+     * @notice Check whether a specific operation is currently paused.
+     * @dev Resolves the operation to its declared scope and applies global override.
+     * @param operation Identifier of the operation.
+     * @return True if the operation's scope or the global scope is paused.
+     */
+    function isOperationPaused(bytes32 operation) external view returns (bool) {
+        bytes32 scope = operationScope[operation];
+        if (scope == bytes32(0)) revert V2Errors.InvalidScope(operation);
+        return _pausedScopes[SCOPE_ALL] || _pausedScopes[scope];
+    }
+
+    /**
+     * @notice Return the declared scope for a given operation.
+     * @param operation Identifier of the operation.
+     * @return The scope hash governing the operation.
+     */
+    function scopeForOperation(bytes32 operation) external view returns (bytes32) {
+        bytes32 scope = operationScope[operation];
+        if (scope == bytes32(0)) revert V2Errors.InvalidScope(operation);
+        return scope;
+    }
+
+    /**
      * @notice Check whether a scope is specifically paused (ignoring global state).
      * @param scope Identifier of the scope.
      * @return True if the specific scope itself is marked paused.
      */
     function isScopeSpecificallyPaused(bytes32 scope) external view returns (bool) {
         return _pausedScopes[scope];
+    }
+
+    // ─── Internal ─────────────────────────────────────────────────────
+
+    /**
+     * @dev Declare the scope binding for an operation. Reverts on duplicate or zero scope.
+     */
+    function _declareOperation(bytes32 operation, bytes32 scope) internal {
+        if (operation == bytes32(0) || scope == bytes32(0)) {
+            revert V2Errors.InvalidScope(scope);
+        }
+        if (operationScope[operation] != bytes32(0)) {
+            revert V2Errors.InvalidScope(operation);
+        }
+        operationScope[operation] = scope;
+        scopeOperation[scope] = operation;
     }
 }
