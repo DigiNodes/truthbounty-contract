@@ -197,6 +197,7 @@ The CD pipeline is triggered via `workflow_dispatch`:
 5. **Upload artifacts** — Manifest + registry saved as CI artifacts (90-day retention)
 6. **Tag release** — On mainnet, creates `vX.Y.Z` git tag
 7. **Etherscan verification** — Auto-verifies all deployed contracts
+8. **Source publication** — Publishes canonical source/settings to explorer and records evidence
 
 ## Release Procedure
 
@@ -242,6 +243,7 @@ If a deployment fails verification:
 - **Environment separation** — Mainnet deployments require manual `workflow_dispatch` trigger; CI never auto-deploys to mainnet
 - **Ownership verification** — The Verify script must pass before a deployment is considered complete
 - **Release artifacts** — Every manifest includes a `gitCommit` field for audit trail
+- **Source verification** — Explorer source publication is evidence only; it is never treated as proof of code correctness
 
 ## Gas Benchmarks
 
@@ -253,3 +255,36 @@ If a deployment fails verification:
 | `updateModuleAddress()` | ~35,000 |
 | `executeMigration()` | ~50,000 |
 | `verifyDeployment()` | ~25,000 |
+
+## Source Verification (PREWAVE-SC-031)
+
+Explorer source publication is automated from pinned build metadata. Every deployed
+address must map to canonical source and compiler settings. Verification uses no
+hand-edited arguments; all inputs are derived from the release manifest and the
+pinned build artifacts.
+
+### Canonical Build Inputs
+
+Source verification consumes only deterministic, pinned inputs:
+
+| Input | Source | Purpose |
+|-------|--------|---------|
+| `gitCommit` | Release manifest | Binds source to exact revision |
+| `protocolVersion` | Release manifest | Binds source to release |
+| `chainId` | Release manifest | Prevents cross-chain mismatch |
+| `contracts` | Release manifest | Enumerates every deployed address |
+| `foundry.toml` | Pinned build | Compiler version, optimizer, EVM version |
+| `build-info` | `forge build --build-info` | ABI, bytecode, metadata, settings |
+| `constructorArgs` | Manifest / broadcast | Proxy & implementation constructor inputs |
+
+### Verification Scope
+
+Each deployed address is verified for:
+
+1. **Proxy** — Proxy bytecode and constructor arguments (admin, implementation, init data).
+2. **Implementation** — Implementation bytecode and constructor arguments.
+3. **Libraries** — Linked library addresses and bytecode.
+4. **Constructor arguments** — ABI-encoded args derived from manifest, never hand-edited.
+
+### Verification Procedure
+
