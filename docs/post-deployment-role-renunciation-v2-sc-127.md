@@ -1,5 +1,7 @@
 # Post-Deployment Role Renunciation Checks (V2-SC-127)
 
+> **Status:** PREWAVE-SC-070 — Enumerable role membership consistency with `AccessControl` is now a required acceptance gate for this module.
+
 ## Overview
 
 V2-SC-127 closes the assurance gap between deployment and operational handoff. After
@@ -12,6 +14,7 @@ protocol roles. This module provides:
 4. **Foundry fuzz tests** — arbitrary addresses and target arrays
 5. **Foundry invariant tests** — stateful verification that roles cannot be re-acquired
 6. **Hardhat tests** — canonical V2 suite integration with `deployCanonicalV2`
+7. **Enumerable consistency tests** — prove `getRoleMemberCount`/`getRoleMember` stay synchronized with `hasRole` across grant/revoke/renounce/handoff/upgrade paths
 
 ## Trust Boundaries
 
@@ -71,6 +74,32 @@ The library checks **27 distinct roles** covering every known V2 role hash:
 | `MINTER_ROLE` | `keccak256("MINTER_ROLE")` | Token extensions |
 | `REGISTRY_ROLE` | `keccak256("REGISTRY_ROLE")` | VersionRegistry |
 
+## Enumerable Membership Consistency (PREWAVE-SC-070)
+
+Every contract in the role catalog that exposes `AccessControlEnumerable` MUST keep
+`getRoleMemberCount(role)` and `getRoleMember(role, i)` exactly equal to the set of
+addresses for which `hasRole(role, address) == true`. The following invariants are
+now enforced by tests:
+
+1. **Enumeration equals authorization membership.** For every role `r` and every
+   index `i < getRoleMemberCount(r)`, `hasRole(r, getRoleMember(r, i)) == true`.
+   Conversely, for every address `a` with `hasRole(r, a) == true`, `a` appears
+   exactly once in the enumeration.
+2. **No stale or duplicate members.** Duplicate `grantRole` calls do not increase
+   `getRoleMemberCount`. `revokeRole` on an absent member is a no-op that leaves
+   the enumeration unchanged. `renounceRole` removes the caller from the
+   enumeration atomically with the authorization bit.
+3. **Role counts survive upgrade.** After `ProtocolUpgradeManager`-driven upgrades
+   (including `EMERGENCY_UPGRADE_ROLE` paths), `getRoleMemberCount` for every
+   catalog role is preserved across the implementation swap.
+4. **Consumer role views are reliable.** Pagination helpers used by consumers
+   (`getRoleMembers`-style views, off-chain indexers, and the `VerifyRoleRenunciation`
+   script) MUST return a stable, gap-free snapshot when no writes are interleaved.
+
+The `PostDeploymentRoleCheck` library MUST use `getRoleMemberCount`/`getRoleMember`
+as the authoritative enumeration source when asserting deployer renunciation, and
+MUST cross-check each enumerated member against `hasRole` before reporting success.
+
 ## Handoff Sequence
 
 The correct post-deployment handoff must execute these steps in order:
@@ -111,6 +140,11 @@ forge test --match-contract RoleRenunciationFuzz -vvv
 # Invariant tests
 forge test --match-contract DeployerRoleRenunciationInvariantTest -vvv
 
+# Enumerable consistency tests (PREWAVE-SC-070)
+forge test --match-contract EnumerableRoleMembershipTest -vvv
+forge test --match-contract EnumerableRoleMembershipFuzz -vvv
+forge test --match-contract EnumerableRoleMembershipInvariantTest -vvv
+
 # Live deployment verification
 forge script script/deploy/VerifyRoleRenunciation.s.sol \
   --rpc-url $RPC_URL \
@@ -129,6 +163,7 @@ npx hardhat test test/deployment/PostDeploymentRoleRenunciation.test.ts
 | Category | Foundry | Hardhat | Count |
 |----------|---------|---------|-------|
 | Positive (handoff passes) | ✅ | ✅ | 7 |
+| Enumerable consistency (PREWAVE-SC-070) | ✅ | ✅ | 8 |
 | Negative (pre-handoff detected) | ✅ | ✅ | 6 |
 | Boundary (partial, zero-addr, EOA) | ✅ | ✅ | 6 |
 | Authorization (re-acquisition blocked) | ✅ | ✅ | 7 |
@@ -137,7 +172,7 @@ npx hardhat test test/deployment/PostDeploymentRoleRenunciation.test.ts
 | Fuzz (arbitrary inputs) | ✅ | — | 6 |
 | Invariant (stateful) | ✅ | — | 3 |
 | Catalog integrity | ✅ | — | 4 |
-| **Total** | | | **46** |
+| **Total** | | | **54** |
 
 ## Migration Impact
 
@@ -155,6 +190,8 @@ npx hardhat test test/deployment/PostDeploymentRoleRenunciation.test.ts
 | Contract does not implement `IAccessControl` | `_safeHasRole` uses `staticcall` with error handling — returns `false` for non-conforming targets. |
 | Deployer is a multisig that retains signing power | This check verifies on-chain role state only. Off-chain key custody is out of scope. |
 | Timelock self-admin could be exploited | Invariant test verifies timelock retains `TIMELOCK_ADMIN_ROLE` after handoff. Governance proposals are the only path to role changes. |
+| Contract implements `AccessControl` but not `AccessControlEnumerable` | `_safeGetRoleMemberCount` uses `staticcall` and returns `0`; the check falls back to a per-address `hasRole` probe against the deployer and known bootstrap addresses. |
+| Enumerable view diverges from `hasRole` after upgrade | `EnumerableRoleMembershipInvariantTest` asserts `hasRole` ⇔ enumeration membership after every upgrade handler call. |
 
 ## File Map
 
@@ -165,6 +202,9 @@ npx hardhat test test/deployment/PostDeploymentRoleRenunciation.test.ts
 | [`PostDeploymentRoleRenunciation.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/deployment/PostDeploymentRoleRenunciation.t.sol) | Foundry unit tests (30+ cases) |
 | [`RoleRenunciationFuzz.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/fuzz/RoleRenunciationFuzz.t.sol) | Foundry fuzz tests |
 | [`DeployerRoleRenunciationInvariant.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/invariant/DeployerRoleRenunciationInvariant.t.sol) | Foundry invariant tests |
+| [`EnumerableRoleMembership.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/deployment/EnumerableRoleMembership.t.sol) | Foundry enumerable consistency tests (PREWAVE-SC-070) |
+| [`EnumerableRoleMembershipFuzz.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/fuzz/EnumerableRoleMembershipFuzz.t.sol) | Foundry enumerable fuzz tests (PREWAVE-SC-070) |
+| [`EnumerableRoleMembershipInvariant.t.sol`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/invariant/EnumerableRoleMembershipInvariant.t.sol) | Foundry enumerable invariant tests (PREWAVE-SC-070) |
 | [`PostDeploymentRoleRenunciation.test.ts`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/test/deployment/PostDeploymentRoleRenunciation.test.ts) | Hardhat integration tests |
 | [`post-deployment-role-renunciation-v2-sc-127.md`](file:///c:/Users/HomePC/.antigravity-ide/truthbounty-contract/docs/post-deployment-role-renunciation-v2-sc-127.md) | This document |
 
@@ -174,3 +214,5 @@ npx hardhat test test/deployment/PostDeploymentRoleRenunciation.test.ts
 - **V2-SC-121** — prerequisite (deployment script finalization hooks)
 - **V2-SC-026** — `GovernanceRoleTopology` library (consumed, not modified)
 - **V2-SC-027** — V2 governance contracts (consumed, not modified)
+- **PREWAVE-SC-070** — enumerable role membership consistency (this change)
+- **#681**, **#690** — upstream dependencies for enumerable role catalog coverage

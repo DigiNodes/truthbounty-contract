@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../governance/GovernanceOwnable.sol";
@@ -36,7 +37,7 @@ import "../governance/GovernanceOwnable.sol";
  * - Every state transition is timelocked (execution) and fully evented (auditable).
  * - A previously-active implementation is retained so a compromised upgrade is recoverable.
  */
-contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable {
+contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable, AccessControlEnumerable {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -191,6 +192,10 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
 
     event UpgradeTimelockUpdated(uint256 oldTimelock, uint256 newTimelock);
 
+    event RoleMembershipSynced(bytes32 indexed role, address indexed account, bool granted);
+
+    event RoleMembershipReconciled(bytes32 indexed role, uint256 memberCount);
+
     // ============ Errors ============
 
     error ModuleAlreadyRegistered(bytes32 moduleId);
@@ -212,6 +217,10 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     error InvalidTimelock();
     error NotAuthorizedToCancel();
     error NotAuthorizedToRollback();
+    error RoleMembershipMismatch(bytes32 role, address account);
+    error DuplicateRoleMember(bytes32 role, address account);
+    error AbsentRoleMember(bytes32 role, address account);
+    error RoleEnumerationOutOfBounds(uint256 index, uint256 length);
 
     // ============ Constructor ============
 
@@ -227,12 +236,18 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         _grantRole(GUARDIAN_ROLE, initialAdmin);
         _grantRole(PAUSER_ROLE, initialAdmin);
 
+        _grantRole(DEFAULT_ADMIN_ROLE, _governanceController);
+        _grantRole(ADMIN_ROLE, _governanceController);
+        _grantRole(UPGRADER_ROLE, _governanceController);
+
         _setRoleAdmin(PROPOSER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(VALIDATOR_ROLE, ADMIN_ROLE);
         _setRoleAdmin(UPGRADER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(EXECUTOR_ROLE, ADMIN_ROLE);
         _setRoleAdmin(GUARDIAN_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+
+        _setRoleAdmin(DEFAULT_ADMIN_ROLE, DEFAULT_ADMIN_ROLE);
 
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
     }
@@ -601,6 +616,156 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
 
     function getModuleUpgradeCount(bytes32 moduleId) external view returns (uint256) {
         return _moduleHistory[moduleId].length;
+    }
+
+    // ============ Views: Role Enumeration ============
+
+    /**
+     * @notice Number of accounts currently holding `role`.
+     * @dev Backed by AccessControlEnumerable's `_roleMembers` set, which is the single
+     *      source of truth for both authorization (`hasRole`) and enumeration.
+     */
+    function getRoleMemberCount(bytes32 role) external view returns (uint256) {
+        return _roleMembers[role].length();
+    }
+
+    /**
+     * @notice Account at `index` in the `role` membership set.
+     * @dev Reverts with {RoleEnumerationOutOfBounds} instead of a bare string revert so
+     *      consumers get a deterministic, typed error.
+     */
+    function getRoleMemberAt(bytes32 role, uint256 index) external view returns (address) {
+        uint256 length = _roleMembers[role].length();
+        if (index >= length) revert RoleEnumerationOutOfBounds(index, length);
+        return _roleMembers[role].at(index);
+    }
+
+    /**
+     * @notice Full member list for `role` as a materialised array.
+     * @dev Convenience view for consumers that prefer a single call over pagination.
+     */
+    function getRoleMembers(bytes32 role) external view returns (address[] memory) {
+        uint256 length = _roleMembers[role].length();
+        address[] memory members = new address[](length);
+        for (uint256 i = 0; i < length; ++i) {
+            members[i] = _roleMembers[role].at(i);
+        }
+        return members;
+    }
+
+    /**
+     * @notice Paginated member list for `role`.
+     * @dev `cursor` is the starting index; `size` is the maximum number of entries to
+     *      return. The returned `nextCursor` is `cursor + returned` and equals `length`
+     *      when the enumeration is exhausted. Callers should stop when `nextCursor == length`.
+     */
+    function getRoleMembersPaginated(bytes32 role, uint256 cursor, uint256 size)
+        external
+        view
+        returns (address[] memory members, uint256 nextCursor)
+    {
+        uint256 length = _roleMembers[role].length();
+        if (cursor > length) revert RoleEnumerationOutOfBounds(cursor, length);
+
+        uint256 remaining = length - cursor;
+        uint256 count = size < remaining ? size : remaining;
+
+        members = new address[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            members[i] = _roleMembers[role].at(cursor + i);
+        }
+        nextCursor = cursor + count;
+    }
+
+    /**
+     * @notice Whether enumeration and authorization agree for `account` on `role`.
+     * @dev Enumerates the role set and compares against `hasRole`. Intended as an
+     *      invariant probe for tests and off-chain monitors.
+     */
+    function isRoleMembershipConsistent(bytes32 role, address account) external view returns (bool) {
+        uint256 length = _roleMembers[role].length();
+        bool enumerated = false;
+        for (uint256 i = 0; i < length; ++i) {
+            if (_roleMembers[role].at(i) == account) {
+                enumerated = true;
+                break;
+            }
+        }
+        return enumerated == hasRole(role, account);
+    }
+
+    /**
+     * @notice Assert that enumeration and authorization agree for `account` on `role`.
+     * @dev Reverts with {RoleMembershipMismatch} if the invariant is violated.
+     */
+    function requireRoleMembershipConsistent(bytes32 role, address account) public view {
+        if (!this.isRoleMembershipConsistent(role, account)) {
+            revert RoleMembershipMismatch(role, account);
+        }
+    }
+
+    // ============ Admin: Role Membership ============
+
+    /**
+     * @notice Grant `role` to `account`, rejecting duplicate grants.
+     * @dev AccessControlEnumerable's `_grantRole` is idempotent, so a duplicate grant would
+     *      silently succeed. We reject it explicitly to keep membership deterministic and
+     *      to surface caller bugs.
+     */
+    function grantRole(bytes32 role, address account)
+        public
+        override
+        onlyRole(getRoleAdmin(role))
+    {
+        if (hasRole(role, account)) revert DuplicateRoleMember(role, account);
+        _grantRole(role, account);
+        emit RoleMembershipSynced(role, account, true);
+    }
+
+    /**
+     * @notice Revoke `role` from `account`, rejecting revocation of absent members.
+     * @dev Symmetric with {grantRole}: an absent member is a caller bug, not a no-op.
+     */
+    function revokeRole(bytes32 role, address account)
+        public
+        override
+        onlyRole(getRoleAdmin(role))
+    {
+        if (!hasRole(role, account)) revert AbsentRoleMember(role, account);
+        _revokeRole(role, account);
+        emit RoleMembershipSynced(role, account, false);
+    }
+
+    /**
+     * @notice Renounce `role` for the caller, rejecting renunciation of an absent role.
+     * @dev Overridden so renunciation is also reflected in the enumeration set and the
+     *      consistency invariant holds after the call.
+     */
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        if (callerConfirmation != _msgSender()) {
+            revert AccessControlBadConfirmation();
+        }
+        if (!hasRole(role, callerConfirmation)) revert AbsentRoleMember(role, callerConfirmation);
+        _revokeRole(role, callerConfirmation);
+        emit RoleMembershipSynced(role, callerConfirmation, false);
+    }
+
+    /**
+     * @notice Reconcile the enumeration set for `role` against `hasRole` for all members.
+     * @dev Defensive admin path: iterates the current enumeration and removes any entry
+     *      that `hasRole` reports as absent. Emits {RoleMembershipReconciled} with the
+     *      resulting member count. Restricted to the role's admin.
+     */
+    function reconcileRoleMembership(bytes32 role) external onlyRole(getRoleAdmin(role)) {
+        uint256 length = _roleMembers[role].length();
+        for (uint256 i = length; i > 0; --i) {
+            address account = _roleMembers[role].at(i - 1);
+            if (!hasRole(role, account)) {
+                _revokeRole(role, account);
+                emit RoleMembershipSynced(role, account, false);
+            }
+        }
+        emit RoleMembershipReconciled(role, _roleMembers[role].length());
     }
 
     // ============ Internal Helpers ============
