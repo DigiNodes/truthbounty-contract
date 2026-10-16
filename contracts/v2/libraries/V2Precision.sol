@@ -43,6 +43,14 @@ import { V2Errors } from "./V2Errors.sol";
 /// Integer division truncates. Allocation helpers therefore return the
 /// remainder alongside the parts, so dust is always accounted for rather than
 /// silently dropped — see {allocateByBps}.
+///
+/// ## Token decimals (PREWAVE-SC-053)
+///
+/// Arithmetic here is decimal-agnostic: every helper operates on raw integer
+/// amounts and never assumes 18 decimals. Callers that must scale between
+/// token decimals and the protocol's WAD scale use {scaleToWad} /
+/// {scaleFromWad}, which fail closed on unsupported decimal counts so that
+/// formatting and math assumptions cannot overflow.
 library V2Precision {
     // =========================================================================
     // Denominators
@@ -58,6 +66,15 @@ library V2Precision {
 
     /// @notice Fixed-point scale for 18-decimal (WAD) values.
     uint256 internal constant WAD = 1e18;
+
+    /// @notice Maximum token decimals supported by {scaleToWad} / {scaleFromWad}.
+    /// @dev 18 is the protocol's native WAD scale; anything above it would
+    ///      require multiplying by a factor that overflows the WAD assumption
+    ///      and is rejected before any funds are accepted.
+    uint8 internal constant MAX_SUPPORTED_DECIMALS = 18;
+
+    /// @notice Minimum token decimals supported by {scaleToWad} / {scaleFromWad}.
+    uint8 internal constant MIN_SUPPORTED_DECIMALS = 0;
 
     // =========================================================================
     // Core fixed-point
@@ -96,6 +113,46 @@ library V2Precision {
     function wadDivUp(uint256 a, uint256 b) internal pure returns (uint256) {
         if (b == 0) revert V2Errors.ZeroDenominator();
         return Math.mulDiv(a, WAD, b, Math.Rounding.Ceil);
+    }
+
+    // =========================================================================
+    // Token decimals — fails closed on extremes
+    // =========================================================================
+
+    /// @notice Reverts unless `decimals` is within the supported range.
+    /// @dev Unsupported assets must fail before funds are accepted, so this is
+    ///      the gate every token-scaling path calls first.
+    function requireSupportedDecimals(uint8 decimals) internal pure {
+        if (decimals < MIN_SUPPORTED_DECIMALS || decimals > MAX_SUPPORTED_DECIMALS) {
+            revert V2Errors.UnsupportedDecimals(decimals);
+        }
+    }
+
+    /// @notice Scales a raw token amount up to the protocol's 18-decimal WAD.
+    /// @dev Reverts on unsupported decimals so a token with extreme decimals
+    ///      cannot silently overflow formatting or math assumptions.
+    function scaleToWad(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+        requireSupportedDecimals(decimals);
+        if (decimals == MAX_SUPPORTED_DECIMALS) return amount;
+        return amount * (10 ** (MAX_SUPPORTED_DECIMALS - decimals));
+    }
+
+    /// @notice Scales a WAD amount down to a token's native decimals, truncating.
+    /// @dev Truncation is toward the protocol: dust is never created out of
+    ///      thin air when converting back to a lower-decimal token.
+    function scaleFromWadDown(uint256 wadAmount, uint8 decimals) internal pure returns (uint256) {
+        requireSupportedDecimals(decimals);
+        if (decimals == MAX_SUPPORTED_DECIMALS) return wadAmount;
+        return wadAmount / (10 ** (MAX_SUPPORTED_DECIMALS - decimals));
+    }
+
+    /// @notice Scales a WAD amount down to a token's native decimals, rounding up.
+    /// @dev Up is used when charging or when a required amount must be cleared.
+    function scaleFromWadUp(uint256 wadAmount, uint8 decimals) internal pure returns (uint256) {
+        requireSupportedDecimals(decimals);
+        if (decimals == MAX_SUPPORTED_DECIMALS) return wadAmount;
+        uint256 factor = 10 ** (MAX_SUPPORTED_DECIMALS - decimals);
+        return Math.mulDiv(wadAmount, 1, factor, Math.Rounding.Ceil);
     }
 
     // =========================================================================
@@ -166,6 +223,24 @@ library V2Precision {
     ///      noise rather than an error. Settlement paths use {requireValidBps}.
     function clampBps(uint256 bps) internal pure returns (uint256) {
         return bps > BPS_DENOMINATOR ? BPS_DENOMINATOR : bps;
+    }
+
+    /// @notice Observed balance delta for a token transfer, failing closed on
+    ///         fee-on-transfer, rebasing, and false-return tokens.
+    /// @dev Accounting uses observed deltas where specified: the caller passes
+    ///      the balance before and after, and this helper reverts if the
+    ///      received amount is less than `expected` (fee-on-transfer / rebasing
+    ///      draining value) or if the balance went backwards (hostile asset).
+    ///      A zero-delta on a non-zero expected amount is rejected so a
+    ///      false-return token cannot be treated as a successful transfer.
+    function requireObservedDelta(uint256 balanceBefore, uint256 balanceAfter, uint256 expected)
+        internal
+        pure
+        returns (uint256 observed)
+    {
+        if (balanceAfter < balanceBefore) revert V2Errors.HostileTokenBalanceDelta(balanceBefore, balanceAfter);
+        observed = balanceAfter - balanceBefore;
+        if (observed < expected) revert V2Errors.TransferMismatch(expected, observed);
     }
 
     // =========================================================================

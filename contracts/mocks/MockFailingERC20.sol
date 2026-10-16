@@ -15,4 +15,12 @@ contract MockFailingERC20 is ERC20 {
         // Always return false to simulate failure without reverting
         return false;
     }
+
+    /**
+     * @dev Simulates a false-returning transferFrom for allowance-race and
+     * transfer-mismatch tests. Returns false without reverting.
+     */
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        return false;
+    }
 }
