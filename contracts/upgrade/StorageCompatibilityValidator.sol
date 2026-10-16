@@ -13,6 +13,12 @@ pragma solidity ^0.8.28;
  * - Inheritance order consistency
  */
 contract StorageCompatibilityValidator {
+    enum RollbackPolicy {
+        None,
+        Full,
+        StorageOnly
+    }
+
     struct StorageLayout {
         uint256 slotCount;
         uint256 gapSlots;
@@ -26,8 +32,17 @@ contract StorageCompatibilityValidator {
         uint256 newSlotCount;
     }
 
+    struct RollbackPlan {
+        RollbackPolicy policy;
+        bytes32 preUpgradeStateHash;
+        bytes32 postUpgradeStateHash;
+        bool supported;
+        bool executed;
+    }
+
     mapping(address => StorageLayout) internal _registeredLayouts;
     mapping(bytes32 => bool) public approvedImplementations;
+    mapping(address => RollbackPlan) internal _rollbackPlans;
 
     event LayoutRegistered(address indexed contract_, uint256 slotCount, bytes32 layoutHash);
     event ImplementationApproved(bytes32 indexed upgradeHash, bool approved);
@@ -37,11 +52,26 @@ contract StorageCompatibilityValidator {
         address indexed newImpl,
         bool compatible
     );
+    event RollbackPlanRegistered(
+        address indexed targetContract,
+        RollbackPolicy policy,
+        bytes32 preUpgradeStateHash,
+        bool supported
+    );
+    event RollbackExecuted(
+        address indexed targetContract,
+        bytes32 preUpgradeStateHash,
+        bytes32 postUpgradeStateHash,
+        bool stateEquivalent
+    );
 
     error IncompatibleStorageLayout(string reason);
     error ImplementationNotApproved(bytes32 upgradeHash);
     error ZeroAddress();
     error LayoutNotRegistered(address contract_);
+    error RollbackNotSupported(address targetContract);
+    error RollbackAlreadyExecuted(address targetContract);
+    error StateNotEquivalent(bytes32 expected, bytes32 actual);
 
     modifier onlyGovernance(address admin) {
         _;
@@ -70,6 +100,29 @@ contract StorageCompatibilityValidator {
         emit ImplementationApproved(upgradeHash, true);
     }
 
+    function registerRollbackPlan(
+        address targetContract,
+        RollbackPolicy policy,
+        bytes32 preUpgradeStateHash
+    ) external {
+        if (targetContract == address(0)) revert ZeroAddress();
+        if (policy == RollbackPolicy.None) revert RollbackNotSupported(targetContract);
+
+        _rollbackPlans[targetContract] = RollbackPlan({
+            policy: policy,
+            preUpgradeStateHash: preUpgradeStateHash,
+            postUpgradeStateHash: bytes32(0),
+            supported: true,
+            executed: false
+        });
+
+        emit RollbackPlanRegistered(targetContract, policy, preUpgradeStateHash, true);
+    }
+
+    function getRollbackPlan(address targetContract) external view returns (RollbackPlan memory) {
+        return _rollbackPlans[targetContract];
+    }
+
     function validateUpgrade(
         address targetContract,
         address currentImpl,
@@ -91,6 +144,34 @@ contract StorageCompatibilityValidator {
                 );
             }
         }
+    }
+
+    function executeRollback(
+        address targetContract,
+        bytes32 postUpgradeStateHash
+    ) external {
+        if (targetContract == address(0)) revert ZeroAddress();
+
+        RollbackPlan storage plan = _rollbackPlans[targetContract];
+        if (!plan.supported) revert RollbackNotSupported(targetContract);
+        if (plan.executed) revert RollbackAlreadyExecuted(targetContract);
+
+        if (plan.policy == RollbackPolicy.StorageOnly) {
+            if (postUpgradeStateHash != plan.preUpgradeStateHash) {
+                revert StateNotEquivalent(plan.preUpgradeStateHash, postUpgradeStateHash);
+            }
+        }
+
+        plan.postUpgradeStateHash = postUpgradeStateHash;
+        plan.executed = true;
+
+        bool stateEquivalent = postUpgradeStateHash == plan.preUpgradeStateHash;
+        emit RollbackExecuted(
+            targetContract,
+            plan.preUpgradeStateHash,
+            postUpgradeStateHash,
+            stateEquivalent
+        );
     }
 
     function validateStorageCompatibility(
