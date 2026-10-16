@@ -38,7 +38,7 @@ Output lands at
 `deployments/sbom/contract-release-sbom-<version>.json`.
 
 Schema:
-[`schemas/contract-release-sbom.schema.json`](../../schemas/contract-release-sbom.schema.json).
+[`../../schemas/contract-release-sbom.schema.json`](../../schemas/contract-release-sbom.schema.json).
 
 ## Fail-closed rules
 
