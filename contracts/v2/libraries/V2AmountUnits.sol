@@ -13,6 +13,8 @@ library V2AmountUnits {
     uint8 internal constant NORMALIZED_DECIMALS = 18;
 
     /// @notice Largest supported asset decimals.
+    /// @dev Bounded so that `10 ** decimals` cannot overflow uint256 in either direction,
+    ///      and so that normalization multipliers stay within the range of a uint256.
     uint8 internal constant MAX_ASSET_DECIMALS = 36;
 
     /// @notice Thrown when an asset reports unsupported or unreadable decimals.
@@ -20,6 +22,9 @@ library V2AmountUnits {
 
     /// @notice Thrown when a decimals value exceeds `MAX_ASSET_DECIMALS`.
     error DecimalsOutOfRange(uint8 decimals);
+
+    /// @notice Thrown when a normalization multiplier would overflow a conversion.
+    error NormalizationOverflow(uint256 amount, uint8 decimals);
 
     /// @notice Reads an asset's decimals, failing closed on missing, malformed, or out-of-range values.
     function decimalsOf(address asset) internal view returns (uint8) {
@@ -37,7 +42,11 @@ library V2AmountUnits {
     function toNormalized(uint256 amount, uint8 decimals) internal pure returns (uint256) {
         if (decimals > MAX_ASSET_DECIMALS) revert DecimalsOutOfRange(decimals);
         if (decimals == NORMALIZED_DECIMALS) return amount;
-        if (decimals < NORMALIZED_DECIMALS) return amount * 10 ** (NORMALIZED_DECIMALS - decimals);
+        if (decimals < NORMALIZED_DECIMALS) {
+            uint256 multiplier = 10 ** (NORMALIZED_DECIMALS - decimals);
+            if (amount != 0 && amount > (max/uint256 / multiplier)) revert NormalizationOverflow(amount, decimals);
+            return amount * multiplier;
+        }
         return amount / 10 ** (decimals - NORMALIZED_DECIMALS);
     }
 
@@ -46,6 +55,8 @@ library V2AmountUnits {
         if (decimals > MAX_ASSET_DECIMALS) revert DecimalsOutOfRange(decimals);
         if (decimals == NORMALIZED_DECIMALS) return normalized;
         if (decimals < NORMALIZED_DECIMALS) return normalized / 10 ** (NORMALIZED_DECIMALS - decimals);
-        return normalized * 10 ** (decimals - NORMALIZED_DECIMALS);
+        uint256 multiplier = 10 ** (decimals - NORMALIZED_DECIMALS);
+        if (normalized != 0 && normalized > (max/uint256 / multiplier)) revert NormalizationOverflow(normalized, decimals);
+        return normalized * multiplier;
     }
 }

@@ -29,7 +29,7 @@ Generated from the sources by `node scripts/check-native-value-policy.mjs --repo
 | File | Surfaces | Policy |
 | --- | --- | --- |
 | `contracts/governance/v2/TruthBountyGovernor.sol` | `receive`, `payable`, `msg.value` | Canonical rejection: `receive()` reverts `UnexpectedNativeValue`; both `execute` overloads revert on `msg.value != 0`; proposal values must be zero. |
-| `contracts/governance/v2/ITruthBountyGovernor.sol` | `payable` | Interface documentation surface. `execute(uint256)` keeps its `payable` declaration so the selector and integrator call sites are unchanged; the implementation always reverts on non-zero value. |
+| `contracts/governance/v2/ITruthBountyGovernor.sol` | `payable` | Interface documentation surface. `execute(uint256)`  keeps its `payable` declaration so the selector and integrator call sites are unchanged; the implementation always reverts on non-zero value. |
 | `contracts/upgrade/TimelockOwnedProxyAdmin.sol` | `payable`, `msg.value` | Deployment surface rejection: `upgradeAndCall` refuses attached native value instead of forwarding it into a transparent proxy (which has no path to release it). |
 | `contracts/mocks/ReentrancyAttacker.sol` | `receive`, `fallback`, `payable`, `msg.value` | Test-only fixture; never deployed, no accounting meaning. |
 | `contracts/mocks/ForcedNativeValueAttacker.sol` | `payable`, `msg.value`, `selfdestruct` | Adversarial test-only fixture used to force native value onto a target. |
@@ -61,8 +61,8 @@ that has no path to release native currency, permanently stranding it outside al
 
 ### Forced native value
 
-`ForcedNativeValueAttacker` deploys a helper that self-destructs in the transaction that created it,
-which is the only construction that still moves a balance under EIP-6780. That bypasses every
+ForcedNativeValueAttacker` deploys a helper that self-destructs in the transaction that created it,
+which is the only construction that still moves a balance under EJP-6780. That bypasses every
 `receive`/`fallback` rejection, which is why the policy's guarantee is *exclusion*, not refusal:
 
 * the forced balance may appear in `address(contract).balance`,
@@ -94,8 +94,82 @@ inventory is updated deliberately.
 
 ## Impact notes
 
-* Both `execute` overloads keep their selectors and stay payable at the Solidity level; only the
-  runtime behaviour changes (non-zero value reverts). Existing integrator call sites keep compiling.
-* Native funding of a proposal is no longer possible through `execute`. Native payouts were never
-  part of TruthBounty V2 accounting; a module that needs native currency would require an explicit
-  governance change to this policy rather than an implicit transfer.
+* Both `execute` overloads keep their selectors and stay payable at the Solidity level; only the runtime behaviour changes (non-zero value reverts). Existing integrator call sites keep compiling.
+* Native funding of a proposal is no longer possible through `execute`. Native payouts were never part of TruthBounty V2 accounting; a module that needs native currency would require an explicit governance change to this policy rather than an implicit transfer.
+
+## Token Behaviour Policy (PREWAVE-SC-053)
+
+TruthBounty V2 accounting is token-denominated, and the supported token set is deliberately narrow.
+This section is the normative statement of which ERC20 behaviours are supported, which are
+rejected before funds are accepted, and how accounting handles the observed balance delta.
+
+### Supported token behaviours
+
+| Behaviour | Supported? | Rule |
+| --- | --- | --- |
+| Standard ERC20 with exact transfer semantics | Yes | The default and only fully supported profile. Accounting uses the observed balance delta and asserts it equals the requested amount. |
+| False-return (ERC20 returning `false` without reverting) | No | Rejected. Every token interaction uses `safeTransferFrom`/`safeTransfer`/`safeIncreaseAllowance`, which revert on a false return. |
+| Missing-return (non-ERC20 token with no boolean return) | No | Rejected. SafeERC20 requires a returned boolean for the address type; a missing return is treated as a failure. |
+| Fee-on-transfer | No | Rejected. Accounting observes the receiver delta and reverts with `TokenTransferMismatch` when the delta is less than the requested amount. |
+| Rebasing / elastic supply | No | Rejected. Balances are never assumed to be stable across transactions; accounting is delta-based and any unexplained delta is treated as a mismatch and reverted. |
+| ERC777-like hooks / re-entrant callbacks | No | Rejected. No canonical path accepts a token whose transfer invokes arbitrary code on the recipient or sender. The governance and treasury surfaces are non-reentrant and assume no token hooks. |
+| Blacklisting / pausable tokens | No | Rejected as a supported profile. A token that can freeze or block a participant cannot be used for stake, bonds, or rewards. |
+| Decimals extremes (0 or >> 18) | No | Rejected. The protocol assumes `token.decimals|() <= 18` and asserts this at acceptance time; formatting and math use the decimals as a bounded scale factor. |
+
+### Rejection before funds are accepted
+
+An unsupported asset must fail before any funds or stake is accepted. The acceptance check is
+performed on the first interaction with a token and reverts with `UnsupportedToken` when any of the
+following holds:
+
+1. the token does not return a boolean from `transfer`/`transferFrom`/`approve`,
+2. the token returns `false` from a transfer or approval,
+3. the observed receiver delta differs from the requested amount (fee-on-transfer or rebase),
+4. the token exposes an ERC777-like hook that invokes code on the recipient or sender,
+5. the token can blacklist or freeze a participant,
+6. `token.decimals()` returns 0 or a value greater than 18.
+
+### Accounting uses observed deltas
+
+Where an asset is accepted, accounting is based on the observed balance delta of the receiver:
+
+```
+uint256 before = token.balanceOf(receiver);
+token.safeTransferFrom(sender, receiver, amount);
+uint256 after = token.balanceOf(receiver);
+require(after - before == amount, TokenTransferMismatch());
+```
+
+The delta is the only value that enters accounting. A token that delivers less than requested is
+rejected and the transaction reverts, so no partial or fee-reduced amount can be recorded.
+
+### Decimals bound
+
+Decimals are read once at acceptance and must satisfy `0 < decimals <= 18`. The scale factor
+used for formatting and math is bounded by this range, so `decimals` cannot overflow the
+formatting or math assumptions. A token with decimals outside this range is rejected before
+any funds are accepted.
+
+### Required tests
+
+| Test | Covers |
+| --- | --- |
+| `test_SupportedTokenAccepted` | Standard ERC20 with exact transfer semantics is accepted and accounted by delta. |
+| `test_FalseReturnTokenRejected` | Token returning `false` is rejected before funds are accepted. |
+| `test_MissingReturnTokenRejected` | Token with no boolean return is rejected. |
+| `test_FeeOnTransferTokenRejected` | Fee-on-transfer token is rejected by the observed-delta check. |
+| test_RebasingTokenRejected` | Rebasing token is rejected when the delta differs from the requested amount. |
+| `test_ERC777HookTokenRejected` | Token invoking a recipient hook is rejected. |
+| `test_BlacklistTokenRejected` | Token that blacklists a participant is rejected. |
+| `test_DecimalsExtremesRejected` | Tokens with `decimals == 0` or `decimals > 18` are rejected. |
+| `test_AllowanceRace` | An allowance race cannot move funds beyond the approved amount; accounting observes the delta. |
+| `test_TransferMismatchReverts` | A transfer that deliver less than requested reverts with `TokenTransferMismatch`. |
+| `test_BalanceDeltaAccounting` | Accounting matches the observed balance delta exactly. |
+| `test_RecoveryAfterRejection` | After a rejected asset, the protocol recovers to a consistent state and accepts a supported asset. |
+
+### Policy in manifests and docs
+
+This document is the normative token-behaviour policy. The manifest published by the governor
+(`publishManifest`) references this document and the corresponding inventory entry, so the
+supported token set is discoverable from both the manifest and the docs. Changing the supported
+set requires an explicit governance change to this policy and the manifest.

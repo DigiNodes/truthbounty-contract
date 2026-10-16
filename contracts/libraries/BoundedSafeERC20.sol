@@ -17,6 +17,11 @@ library BoundedSafeERC20 {
     /// @dev Selector matches OpenZeppelin AddressEmptyCode(address).
     error AddressEmptyCode(address target);
 
+    /// @notice The observed token balance delta did not match the requested amount.
+    /// @dev Raised by `safeTransferFromExact` and `safeTransferExact` when a token is not
+    ///      exact-transfer (e.g. fee-on-transfer, rebasing, or a false-reporting token).
+    error TokenTransferMismatch(address token, uint256 expected, uint256 observed);
+
     /// @notice Calls `transfer` and validates only the bounded optional return word.
     function safeTransfer(IERC20 token, address to, uint256 value) internal {
         _callOptionalReturn(token, abi.encodeCall(IERC20.transfer, (to, value)));
@@ -25,6 +30,29 @@ library BoundedSafeERC20 {
     /// @notice Calls `transferFrom` and validates only the bounded optional return word.
     function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
         _callOptionalReturn(token, abi.encodeCall(IERC20.transferFrom, (from, to, value)));
+    }
+
+    /// @notice Calls `transferFrom` and requires the observed recipient balance delta to equal `value`.
+    /// @dev Rejects fee-on-transfer, rebasing, false-reporting, and any token whose observed
+    ///      delta differs from the requested amount. The balance is re-read after the
+    ///      transfer so a reentrant hook cannot fake the delta.
+    function safeTransferFromExact(IERC20 token, address from, address to, uint256 value) internal {
+        uint256 beforeBalance = _balanceOf(token);
+        _callOptionalReturn(token, abi.encodeCall(IERC20.transferFrom, (from, to, value)));
+        uint256 afterBalance = _balanceOf(token);
+        if (afterBalance < beforeBalance || afterBalance - beforeBalance != value) {
+            revert TokenTransferMismatch(address(token), value, afterBalance > beforeBalance ? afterBalance - beforeBalance : 0);
+        }
+    }
+
+    /// @notice Calls `transfer` and requires the observed recipient balance delta to equal `value`.
+    function safeTransferExact(IERC20 token, address to, uint256 value) internal {
+        uint256 beforeBalance = _balanceOf(token);
+        _callOptionalReturn(token, abi.encodeCall(IERC20.transfer, (to, value)));
+        uint256 afterBalance = _balanceOf(token);
+        if (afterBalance < beforeBalance || afterBalance - beforeBalance != value) {
+            revert TokenTransferMismatch(address(token), value, afterBalance > beforeBalance ? afterBalance - beforeBalance : 0);
+        }
     }
 
     /// @notice Increases an allowance while bounding token return-data copying.
@@ -51,6 +79,16 @@ library BoundedSafeERC20 {
         if (value > currentAllowance) revert SafeERC20FailedOperation(address(token));
         uint256 newAllowance = currentAllowance - value;
         _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, newAllowance)));
+    }
+
+    /// @notice Reads the current token balance of this contract with a bounded static call.
+    function _balanceOf(IERC20 token) private view returns (uint256) {
+        (bool success, uint256 balance, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            address(token),
+            abi.encodeCall(IERC20.balanceOf, (address(this)))
+        );
+        if (!success || returnSize != 32) revert SafeERC20FailedOperation(address(token));
+        return balance;
     }
 
     function _callOptionalReturn(IERC20 token, bytes memory callData) private {
