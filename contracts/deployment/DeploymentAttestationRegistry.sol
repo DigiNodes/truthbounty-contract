@@ -14,6 +14,8 @@ pragma solidity ^0.8.24;
  */
 contract DeploymentAttestationRegistry {
     uint256 public constant MAX_MODULES = 32;
+    uint256 public constant MAX_RELEASE_ID_LENGTH = 64;
+    bytes32 public constant DEPLOYMENT_DOMAIN = keccak256("truthbounty.deployment.v2");
 
     struct Attestation {
         bytes32 releaseId;
@@ -28,11 +30,15 @@ contract DeploymentAttestationRegistry {
     /// @notice Address authorized to publish deployment attestations.
     address public immutable governanceAuthority;
 
+    /// @notice Address of the deployer that must be revoked after role transfer.
+    address public immutable deployer;
+
     /// @notice Number of attestations successfully recorded.
     uint256 public attestationCount;
 
     mapping(bytes32 => Attestation) private _attestations;
     mapping(bytes32 => bool) public hasAttestation;
+    mapping(address => bool) public revokedDeployers;
 
     error ZeroGovernanceAuthority();
     error Unauthorized(address caller);
@@ -51,6 +57,10 @@ contract DeploymentAttestationRegistry {
         uint256 index,
         uint256 length
     );
+    error ZeroDeployer();
+    error DeployerAlreadyRevoked(address deployer);
+    error DeployerStillAuthorized(address deployer);
+    error InvalidReleaseIdLength(uint256 supplied, uint256 maximum);
 
     event DeploymentAttested(
         bytes32 indexed releaseId,
@@ -63,12 +73,19 @@ contract DeploymentAttestationRegistry {
         uint64 recordedAt
     );
 
-    constructor(address governanceAuthority_) {
+    event DeployerRevoked(address indexed deployer, address indexed governanceAuthority, uint64 revokedAt);
+
+    constructor(address governanceAuthority_, address deployer_) {
         if (governanceAuthority_ == address(0)) {
             revert ZeroGovernanceAuthority();
         }
 
+        if (deployer_ == address(0)) {
+            revert ZeroDeployer();
+        }
+
         governanceAuthority = governanceAuthority_;
+        deployer = deployer_;
     }
 
     /**
@@ -93,12 +110,20 @@ contract DeploymentAttestationRegistry {
             revert Unauthorized(msg.sender);
         }
 
+        if (revokedDeployers[msg.sender]) {
+            revert Unauthorized(msg.sender);
+        }
+
         if (releaseId == bytes32(0)) {
             revert InvalidReleaseId();
         }
 
         if (artifactDigest == bytes32(0)) {
             revert InvalidArtifactDigest();
+        }
+
+        if (_releaseIdLength(releaseId) > MAX_RELEASE_ID_LENGTH) {
+            revert InvalidReleaseIdLength(_releaseIdLength(releaseId), MAX_RELEASE_ID_LENGTH);
         }
 
         if (chainId != block.chainid) {
@@ -230,11 +255,62 @@ contract DeploymentAttestationRegistry {
     }
 
     /**
+     * @notice Returns the deployer address recorded at construction.
+     */
+    function getDeployer() external view returns (address) {
+        return deployer;
+    }
+
+    /**
+     * @notice Revokes deployer authority so it retains no privileged access.
+     *
+     * @dev Only the governance authority may revoke. Once revoked, the
+     *      deployer can never publish attestations again.
+     */
+    function revokeDeployer(address deployer_) external {
+        if (msg.sender != governanceAuthority) {
+            revert Unauthorized(msg.sender);
+        }
+
+        if (deployer_ == address(0)) {
+            revert ZeroDeployer();
+        }
+
+        if (revokedDeployers[deployer_]) {
+            revert DeployerAlreadyRevoked(deployer_);
+        }
+
+        revokedDeployers[deployer_] = true;
+
+        emit DeployerRevoked(deployer_, msg.sender, uint64(block.timestamp));
+    }
+
+    /**
+     * @notice Returns whether a deployer has been revoked.
+     */
+    function isDeployerRevoked(address deployer_) external view returns (bool) {
+        return revokedDeployers[deployer_];
+    }
+
+    /**
      * @dev Reverts when the requested release does not exist.
      */
     function _requireAttestation(bytes32 releaseId) internal view {
         if (!hasAttestation[releaseId]) {
             revert InvalidReleaseId();
         }
+    }
+
+    /**
+     * @dev Returns the byte length of a release ID by trimming trailing zeros.
+     */
+    function _releaseIdLength(bytes32 releaseId) internal pure returns (uint256) {
+        uint256 length = 32;
+
+        while (length > 0 && releaseId[length - 1] == 0) {
+            --length;
+        }
+
+        return length;
     }
 }

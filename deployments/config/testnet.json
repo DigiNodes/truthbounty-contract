@@ -2,6 +2,10 @@
   "environment": "testnet",
   "chainId": 11155420,
   "rpcUrl": "${OPTIMISM_SEPOLIA_RPC_URL}",
+  "deploymentBlock": "${DEPLOYMENT_BLOCK}",
+  "artifactCommit": "${ARTIFACT_COMMIT}",
+  "manifestChecksum": "${MANIFEST_CHECKSUM}",
+  "releasePackage": "${RELEASE_PACKAGE}",
   "admin": "${ADMIN_ADDRESS}",
   "guardian": "${GUARDIAN_ADDRESS}",
   "governanceController": "${GOVERNANCE_CONTROLLER}",
@@ -16,6 +20,17 @@
     "votingPeriod": 259200,
     "proposalThreshold": "100000000000000000000000",
     "quorumNumerator": 4
+  },
+  "deployer": {
+    "address": "${DEPLOYER_ADDRESS}",
+    "renounced": true,
+    "residualRoles": []
+  },
+  "paused": true,
+  "verification": {
+    "explorer": "https://sepolia-optimism.etherscan.io",
+    "verified": true,
+    "checksumAlgorithm": "sha256"
   },
   "verificationWindowDuration": 604800,
   "minStakeAmount": "100000000000000000000",

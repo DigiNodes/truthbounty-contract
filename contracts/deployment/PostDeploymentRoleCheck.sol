@@ -56,7 +56,7 @@ library PostDeploymentRoleCheck {
     // Treasury & settlement
     bytes32 internal constant TREASURY_ROLE = keccak256("TREASURY_ROLE");
     bytes32 internal constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
-    bytes32 internal constant SETTLEMENT_ROLE = keccak256("RESOLVER_ROLE"); // alias
+    bytes32 internal constant SETTLEMENT_ROLE = keccak256("SETTLEMENT_ROLE");
 
     // Evidence & verification
     bytes32 internal constant EVIDENCE_ADMIN_ROLE = keccak256("EVIDENCE_ADMIN_ROLE");
@@ -74,7 +74,7 @@ library PostDeploymentRoleCheck {
     bytes32 internal constant REGISTRY_ROLE = keccak256("REGISTRY_ROLE");
 
     /// @dev Total distinct roles checked (used for static array sizing).
-    uint256 internal constant ROLE_CATALOG_SIZE = 27;
+    uint256 internal constant ROLE_CATALOG_SIZE = 28;
 
     // ────────────────────────────────────────────────────────────────────
     //  Types
@@ -110,8 +110,8 @@ library PostDeploymentRoleCheck {
     /**
      * @notice Build the full role catalog as a memory array.
      * @dev Returned array contains all distinct role hashes the protocol defines.
-     *      Duplicate aliases (e.g. SETTLEMENT_ROLE == RESOLVER_ROLE) are intentionally
-     *      de-duplicated by the compiler since they share the same keccak value.
+     *      Every entry is a distinct keccak256 hash; the catalog MUST NOT contain
+     *      aliases, otherwise the reported `rolesChecked` count is misleading.
      */
     function roleCatalog() internal pure returns (bytes32[] memory roles) {
         roles = new bytes32[](ROLE_CATALOG_SIZE);
@@ -136,6 +136,7 @@ library PostDeploymentRoleCheck {
         roles[i++] = CRITICAL_SLASHER_ROLE;
         roles[i++] = TREASURY_ROLE;
         roles[i++] = TREASURY_MANAGER_ROLE;
+        roles[i++] = SETTLEMENT_ROLE;
         roles[i++] = EVIDENCE_ADMIN_ROLE;
         roles[i++] = EVALUATOR_ROLE;
         roles[i++] = CONFIG_ADMIN_ROLE;
@@ -150,12 +151,14 @@ library PostDeploymentRoleCheck {
      * @param deployer The address to check for retained roles.
      * @param targets  Array of AccessControl-compatible contract addresses.
      * @return violations Array of (target, role) pairs where the deployer still holds the role.
+     * @dev Fails closed: reverts if `deployer` is the zero address or any target is the
+     *      zero address, since ambiguous authority must not be silently treated as clean.
      */
     function checkAllRoles(
         address deployer,
         address[] memory targets
     ) internal view returns (RoleViolation[] memory violations) {
-        if (deployer == address(0)) return violations;
+        require(deployer != address(0), "PostDeploymentRoleCheck: zero deployer");
 
         bytes32[] memory roles = roleCatalog();
         uint256 maxViolations = targets.length * roles.length;
@@ -163,7 +166,7 @@ library PostDeploymentRoleCheck {
         uint256 count;
 
         for (uint256 t; t < targets.length; ++t) {
-            if (targets[t] == address(0)) continue;
+            require(targets[t] != address(0), "PostDeploymentRoleCheck: zero target");
             for (uint256 r; r < roles.length; ++r) {
                 if (_safeHasRole(targets[t], roles[r], deployer)) {
                     buffer[count++] = RoleViolation({target: targets[t], role: roles[r]});
@@ -180,8 +183,9 @@ library PostDeploymentRoleCheck {
 
     /**
      * @notice Check a single role on a single target with error handling.
-     * @dev If the target does not implement `hasRole` (no code, or different ABI),
-     *      the static call will fail and this returns false instead of reverting.
+     * @dev Fails closed: reverts if the target has no code, if the static call fails,
+     *      or if the return data is not a well-formed boolean. Ambiguous authority is
+     *      never reported as "role not held".
      */
     function safeCheckRole(
         address target,
@@ -195,6 +199,8 @@ library PostDeploymentRoleCheck {
      * @notice Check all roles and emit events for each violation. Reverts if any violations found.
      * @param deployer The deployer/script address to check.
      * @param targets  Array of AccessControl-compatible contract addresses.
+     * @dev Fails closed via `checkAllRoles` on zero deployer/targets; reverts on any
+     *      retained role so the deployment rehearsal cannot proceed with live authority.
      */
     function assertNoRolesRetained(
         address deployer,
@@ -226,14 +232,16 @@ library PostDeploymentRoleCheck {
         bytes32 role,
         address account
     ) private view returns (bool) {
-        // Guard: target must have code
-        if (target.code.length == 0) return false;
+        // Fail closed: a target without code is ambiguous authority, not a clean pass.
+        require(target.code.length > 0, "PostDeploymentRoleCheck: target has no code");
 
         (bool ok, uint256 value, uint256 returnSize) = BoundedStaticCall.staticcallWord(
             target,
             abi.encodeCall(IAccessControl.hasRole, (role, account))
         );
-        if (!ok || returnSize < 32 || value > 1) return false;
+        require(ok, "PostDeploymentRoleCheck: hasRole call failed");
+        require(returnSize >= 32, "PostDeploymentRoleCheck: short return data");
+        require(value <= 1, "PostDeploymentRoleCheck: malformed bool");
         return value == 1;
     }
 }
