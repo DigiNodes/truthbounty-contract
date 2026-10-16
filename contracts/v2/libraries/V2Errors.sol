@@ -415,6 +415,40 @@ library V2Errors {
     /// @dev Raised instead of allowing the mutation. An unwired module is frozen, never open.
     error EmergencyControlsNotConfigured();
 
+    /// @notice Guardian attempted to unpause a scope; guardians may only pause.
+    /// @dev Enforces the V2 invariant that unpause is a governed, timelocked action.
+    /// @param caller The guardian address that attempted the unpause.
+    error GuardianCannotUnpause(address caller);
+
+    /// @notice The incident reference supplied for governed unpause is stale or unknown.
+    /// @param incidentId The incident reference that failed validation.
+    /// @param recordedAt Timestamp at which the incident was recorded.
+    error StaleIncidentReference(bytes32 incidentId, uint256 recordedAt);
+
+    /// @notice The repaired release hash does not match the approved release manifest.
+    /// @param provided The release hash supplied by the caller.
+    /// @param expected The canonical approved release hash.
+    error WrongRepairedRelease(bytes32 provided, bytes32 expected);
+
+    /// @notice Dependency health evidence for the scope is missing or failed.
+    /// @param scope The operation scope whose dependencies are unhealthy.
+    /// @param evidenceHash Commitment to the supplied dependency-health evidence.
+    error DependencyHealthUnproven(bytes32 scope, bytes32 evidenceHash);
+
+    /// @notice The scope is only partially paused; governed unpause requires a full pause.
+    /// @param scope The operation scope that is not fully paused.
+    /// @param pausedSubscopes Bitmap of currently paused subscopes.
+    error PartialPauseState(bytes32 scope, uint256 pausedSubscopes);
+
+    /// @notice The scope has already been unpaused; repeated unpause is rejected.
+    /// @param scope The operation scope that is not currently paused.
+    error AlreadyUnpaused(bytes32 scope);
+
+    /// @notice The governed unpause timelock has not elapsed yet.
+    /// @param scope The operation scope awaiting timelock expiry.
+    /// @param readyAt Earliest Unix timestamp at which unpause may execute.
+    error UnpauseTimelockNotReady(bytes32 scope, uint256 readyAt);
+
     // =========================================================================
     // Generic Validation (typed — avoid string reasons)
     // Module Registry Errors
