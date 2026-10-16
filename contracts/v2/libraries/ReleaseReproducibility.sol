@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.28;
 
 /// @title ReleaseReproducibility
 /// @notice V2-SC-129 — pure, stateless helpers that pin the approved release
@@ -64,6 +64,18 @@ library ReleaseReproducibility {
     /// @notice Recomputed release digest did not match the approved manifest digest.
     error DigestMismatch(bytes32 expectedDigest, uint256 actualDigest);
 
+    /// @notice A proxy constructor argument hash was empty.
+    error EmptyConstructorArgsHash(address target);
+
+    /// @notice A flattened source was supplied where a canonical source was required.
+    error FlattenedSourceRejected(string source);
+
+    /// @notice The address has already been verified against the release manifest.
+    error AlreadyVerified(address target);
+
+    /// @notice The address is not bound to the release manifest.
+    error UnboundAddress(address target);
+
     /// @notice Pack `(major, minor, patch)` into a single comparable version code.
     /// @dev Rejects components that would overflow the packing scheme fail-closed.
     function packSolcVersion(uint256 major, uint256 minor, uint256 patch) internal pure returns (uint256) {
@@ -122,6 +134,44 @@ library ReleaseReproducibility {
     /// @notice Require a pinned bytecode hash to be nonzero (fail-closed on empty pins).
     function requireBytecodeHash(string memory artifact, bytes32 bytecodeHash) internal pure {
         if (bytecodeHash == bytes32(0)) revert EmptyBytecodeHash(artifact);
+    }
+
+    /// @notice Require a pinned constructor-argument hash to be nonzero.
+    /// @dev Constructor args are hashed from canonical build inputs; no
+    ///      hand-edited arguments are ever accepted.
+    function requireConstructorArgsHash(address target, bytes32 argsHash) internal pure {
+        if (argsHash == bytes32(0)) revert EmptyConstructorArgsHash(target);
+    }
+
+    /// @notice Reject flattened sources fail-closed.
+    /// @dev Canonical verification requires per-source inputs; a flattened blob
+    ///      cannot be mapped back to canonical build metadata.
+    function rejectFlattenedSource(string memory source, bool isFlattened) internal pure {
+        if (isFlattened) revert FlattenedSourceRejected(source);
+    }
+
+    /// @notice Reject re-verification of an address already bound in the manifest.
+    function assertNotAlreadyVerified(address target, bool alreadyVerified) internal pure {
+        if (alreadyVerified) revert AlreadyVerified(target);
+    }
+
+    /// @notice Require an address to be bound to the release manifest.
+    function requireBoundAddress(address target, bool bound) internal pure {
+        if (!bound) revert UnboundAddress(target);
+    }
+
+    /// @notice Compute the deterministic per-address verification digest binding
+    ///         the deployed address to canonical source, settings, libraries, and
+    ///         constructor arguments.
+    /// @dev `abi.encode` keeps field boundaries unambiguous. Pure and replayable.
+    function addressVerificationDigest(
+        address target,
+        bytes32 sourceHash,
+        bytes32 settingsHash,
+        bytes32[] memory libraryHashes,
+        bytes32 constructorArgsHash
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(target, sourceHash, settingsHash, libraryHashes, constructorArgsHash));
     }
 
     /// @notice Compute the deterministic release digest over toolchain pins,
