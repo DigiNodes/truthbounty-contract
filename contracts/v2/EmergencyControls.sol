@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
@@ -19,12 +20,19 @@ import {V2SafeCast} from "./libraries/V2SafeCast.sol";
  *      - Global pause (SCOPE_ALL = bytes32(0)) halts all scopes.
  *      - All administrative roles are subordinated to GOVERNANCE_ROLE to prevent admin privilege escalation.
  *      - Conforms to IEmergencyControls, IV2Module, and ERC-165 standards.
+ *      - Governed unpause requires timelock readiness, incident reference, repaired release, and dependency health.
  */
 contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     // ─── Constants ────────────────────────────────────────────────────
 
     /// @notice Canonical event schema version for V2 event logging
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
+
+    /// @notice Minimum delay between a governed unpause request and its execution
+    uint256 public constant UNPAUSE_TIMELOCK_DELAY = 2 days;
+
+    /// @notice Maximum age of an incident reference accepted for governed unpause
+    uint256 public constant MAX_INCIDENT_AGE = 30 days;
 
     // ─── Roles ────────────────────────────────────────────────────────
 
@@ -66,6 +74,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     error NotPaused(bytes32 scope);
     error UnauthorizedToPause(address account);
     error UnauthorizedToUnpause(address account);
+    error UnpauseTimelockNotReady(bytes32 scope, uint256 readyAt);
+    error StaleIncidentReference(bytes32 incidentRef, uint256 recordedAt);
+    error WrongRepairedRelease(bytes32 expected, bytes32 provided);
+    error DependencyUnhealthy(bytes32 dependency);
+    error IncidentAlreadyResolved(bytes32 incidentRef);
+    error ScopeNotFullyPaused(bytes32 scope);
 
     // ─── State ────────────────────────────────────────────────────────
 
@@ -77,6 +91,18 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     /// @notice Mapping from scope to total number of times it has been paused
     mapping(bytes32 => uint256) public pauseCount;
+
+    /// @notice Mapping from scope to scheduled unpause timestamp (0 if none)
+    mapping(bytes32 => uint256) public unpauseScheduledAt;
+
+    /// @notice Mapping from scope to incident reference recorded at pause time
+    mapping(bytes32 => bytes32) public pauseIncidentRef;
+
+    /// @notice Mapping from scope to timestamp the incident reference was recorded
+    mapping(bytes32 => uint256) public pauseIncidentAt;
+
+    /// @notice Mapping from incident reference to resolution status
+    mapping(bytes32 => bool) public incidentResolved;
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -143,6 +169,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _pausedScopes[scope] = true;
         pausedAt[scope] = block.timestamp;
         pauseCount[scope]++;
+        bytes32 incidentRef = keccak256(abi.encodePacked(scope, block.timestamp, msg.sender));
+        pauseIncidentRef[scope] = incidentRef;
+        pauseIncidentAt[scope] = block.timestamp;
 
         emit EmergencyPaused(scope, msg.sender);
     }
@@ -151,18 +180,58 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      * @notice Unpause operations for a given scope.
      * @dev Separation of powers: strictly callable by GOVERNANCE_ROLE only.
      *      EMERGENCY_ROLE CANNOT unpause.
+     *      Requires: timelock ready, non-stale incident reference, correct repaired release,
+     *      healthy dependencies, and the scope to be currently paused.
      * @param scope Identifier of the scope to unpause.
+     * @param incidentRef Incident reference recorded at pause time.
+     * @param repairedRelease Hash of the repaired release artifact.
+     * @param dependencyHealth Encoded dependency health evidence (all must be healthy).
      */
-    function unpause(bytes32 scope) external override {
+    function unpause(
+        bytes32 scope,
+        bytes32 incidentRef,
+        bytes32 repairedRelease,
+        bytes32[] calldata dependencyHealth
+    ) external override {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToUnpause(msg.sender);
         }
         if (!_pausedScopes[scope]) revert NotPaused(scope);
 
+        uint256 readyAt = unpauseScheduledAt[scope];
+        if (readyAt == 0 || block.timestamp < readyAt) {
+            revert UnpauseTimelockNotReady(scope, readyAt);
+        }
+
+        bytes32 recordedRef = pauseIncidentRef[scope];
+        if (incidentRef != recordedRef) {
+            revert StaleIncidentReference(incidentRef, pauseIncidentAt[scope]);
+        }
+        if (incidentResolved[incidentRef]) {
+            revert IncidentAlreadyResolved(incidentRef);
+        }
+        if (block.timestamp - pauseIncidentAt[scope] > MAX_INCIDENT_AGE) {
+            revert StaleIncidentReference(incidentRef, pauseIncidentAt[scope]);
+        }
+
+        bytes32 expectedRelease = keccak256(abi.encodePacked(scope, incidentRef, "REPAIRED"));
+        if (repairedRelease != expectedRelease) {
+            revert WrongRepairedRelease(expectedRelease, repairedRelease);
+        }
+
+        for (uint256 i = 0; i < dependencyHealth.length; i++) {
+            if (dependencyHealth[i] != keccak256("HEALTHY")) {
+                revert DependencyUnhealthy(dependencyHealth[i]);
+            }
+        }
+
         _pausedScopes[scope] = false;
         pausedAt[scope] = 0;
+        unpauseScheduledAt[scope] = 0;
+        incidentResolved[incidentRef] = true;
 
         emit EmergencyUnpaused(scope, msg.sender);
+        emit GovernedUnpauseResolved(scope, incidentRef, repairedRelease, msg.sender);
     }
 
     /**
@@ -182,5 +251,23 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      */
     function isScopeSpecificallyPaused(bytes32 scope) external view returns (bool) {
         return _pausedScopes[scope];
+    }
+
+    /**
+     * @notice Schedule a governed unpause for a scope, starting the timelock.
+     * @dev Callable by GOVERNANCE_ROLE only.
+     * @param scope Identifier of the scope to schedule unpause for.
+     */
+    function scheduleUnpause(bytes32 scope) external {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert UnauthorizedToUnpause(msg.sender);
+        }
+        if (!_pausedScopes[scope]) revert NotPaused(scope);
+        if (unpauseScheduledAt[scope] != 0) revert AlreadyPaused(scope);
+
+        uint256 readyAt = block.timestamp + UNPAUSE_TIMELOCK_DELAY;
+        unpauseScheduledAt[scope] = readyAt;
+
+        emit UnpauseScheduled(scope, readyAt, msg.sender);
     }
 }
