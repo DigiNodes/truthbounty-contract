@@ -9,7 +9,7 @@ pragma solidity ^0.8.28;
  *      `_authorizeUpgrade` hooks without importing the full implementation.
  */
 interface IProtocolUpgradeManager {
-    // ============ Types ============
+    // ============= Types =============
 
     struct Version {
         uint64 major;
@@ -56,7 +56,7 @@ interface IProtocolUpgradeManager {
         string description;
     }
 
-    // ============ Registration ============
+    // ============= Registration =============
 
     function registerModule(
         bytes32 moduleId,
@@ -65,7 +65,7 @@ interface IProtocolUpgradeManager {
         bytes32 storageLayoutHash
     ) external;
 
-    // ============ Upgrade Lifecycle ============
+    // ============= Upgrade Lifecycle =============
 
     function proposeUpgrade(
         bytes32 moduleId,
@@ -86,11 +86,11 @@ interface IProtocolUpgradeManager {
 
     function cancelUpgrade(uint256 proposalId) external;
 
-    // ============ Recovery ============
+    // ============= Recovery =============
 
     function rollbackUpgrade(bytes32 moduleId, string calldata reason) external;
 
-    // ============ Admin ============
+    // ============= Admin =============
 
     function setUpgradeTimelock(uint256 newTimelock) external;
 
@@ -98,7 +98,7 @@ interface IProtocolUpgradeManager {
 
     function unpause() external;
 
-    // ============ Views ============
+    // ============= Views =============
 
     function isUpgradeAuthorized(bytes32 moduleId, address newImplementation)
         external
@@ -131,7 +131,7 @@ interface IProtocolUpgradeManager {
 
     function upgradeTimelock() external view returns (uint256);
 
-    // ============ Events ============
+    // ============= Events =============
 
     event ModuleRegistered(
         bytes32 indexed moduleId,
