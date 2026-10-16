@@ -48,6 +48,20 @@ outcome override calls.
 - Holders must call `delegate()` before voting power is counted
 - Proposal threshold and quorum are configurable at deploy; launch values are a separate decision
 
+## Voting-Power Snapshot Immutability
+
+- Voting power is captured from `ERC20Votes.getPastVotes(account, snapshotTimestamp)` at the
+  proposal's snapshot, where `snapshotTimestamp = proposalSnapshot(proposalId)`.
+- `proposalSnapshot(proposalId)` is fixed at proposal creation as
+  `block.timestamp + votingDelay()`; it is never recomputed after the proposal exists.
+- Transfers, mints, burns, and delegation or redelegation changes that occur at or after the
+  snapshot timestamp MUST NOT alter the voting power available to that proposal.
+- Same-block edge behavior: a delegation or transfer included in the same block as the snapshot
+  timestamp is only counted if it is ordered before the snapshot checkpoint; otherwise it is
+  excluded. This ordering is explicit and covered by same-block and adjacent-block tests.
+- Total voting power is conserved across snapshot boundaries: sum of `getPastVotes` over all
+  accounts at the snapshot equals the total supply checkpointed at that timestamp.
+
 ## Deployment
 
 ```bash
@@ -75,6 +89,7 @@ Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and wri
 - Duplicate execution prevented by OpenZeppelin governor + timelock state machine
 - Stale/defeated/expired proposals cannot execute
 - Proposal spam mitigated by `proposalThreshold`
+- Post-snapshot transfers, mints, burns, and delegation changes cannot increase historical voting power
 - Timelock bypass prevented: governor is sole proposer; guardian cannot execute
 - Target allowlist enforced at proposal creation
 
@@ -99,3 +114,10 @@ selectors (`settleClaim*`) belong to no authority and remain rejected by `Govern
 
 `AUTHORITY_ADMIN_ROLE` is granted to the bootstrap admin at deployment and must be handed to the
 timelock once the topology is bound, mirroring `GovernanceRoleTopology.finalizeTimelockAdmin`.
+
+## Snapshot Test Coverage (PREWAVE-SC-019)
+
+- Transfer, delegate, redelegate, mint, burn, and self-delegation around snapshot boundaries.
+- Same-block and adjacent-block proposal creation versus delegation/transfer ordering.
+- Historical checkpoint lookup fuzzing against `getPastVotes` at and around the snapshot.
+- Regression: `test_VotingPowerFrozenAtSnapshot_TransferAfterProposalDoesNotHelp` must pass.
