@@ -15,6 +15,10 @@ library GovernanceAuthorityMatrix {
     uint256 internal constant ROLE_COUNT = 7;
     uint256 internal constant CAPABILITY_COUNT = 11;
 
+    uint256 internal constant MIN_TIMELOCK_DELAY = 1 days;
+    uint256 internal constant MAX_TIMELOCK_DELAY = 30 days;
+    uint256 internal constant TIMELOCK_GRACE_PERIOD = 14 days;
+
     /**
      * @dev Returns true when `role` is canonically allowed to exercise `capability`.
      *      Bounded, branch-only evaluation with no external calls or loops over unbounded input.
@@ -129,6 +133,46 @@ library GovernanceAuthorityMatrix {
     function enforce(IAuthority.AuthorityRole role, IAuthority.Capability capability) internal pure {
         if (!isAllowed(role, capability)) {
             revert IAuthority.CapabilityNotGranted(role, capability);
+        }
+    }
+
+    /**
+     * @dev Reverts unless `newDelay` is within the canonical [MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY] band.
+     *      Prevents both immediate (zero/negligible) delays and unbounded lockups.
+     */
+    function enforceTimelockDelayBounds(uint256 newDelay) internal pure {
+        if (newDelay < MIN_TIMELOCK_DELAY || newDelay > MAX_TIMELOCK_DELAY) {
+            revert IAuthority.TimelockDelayOutOfBounds(newDelay, MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY);
+        }
+    }
+
+    /**
+     * @dev Reverts unless a delay change is scheduled through the timelock itself (self-call),
+     *      so the delay cannot be mutated by an external authority or bypassed via a direct write.
+     */
+    function enforceTimelockSelfCall(address caller, address timelock) internal pure {
+        if (caller != timelock) {
+            revert IAuthority.TimelockSelfCallRequired(caller, timelock);
+        }
+    }
+
+    /**
+     * @dev Reverts unless the operation is still within its grace window after `eta`.
+     *      Expired operations must not execute.
+     */
+    function enforceNotExpired(uint256 eta, uint256 timestamp) internal pure {
+        if (timestamp > eta + TIMELOCK_GRACE_PERIOD) {
+            revert IAuthority.OperationExpired(eta, timestamp);
+        }
+    }
+
+    /**
+     * @dev Reverts unless `predecessor` has been executed, enforcing predecessor semantics
+     *      so dependent operations cannot be replayed out of order.
+     */
+    function enforcePredecessorExecuted(bytes32 predecessor, bool executed) internal pure {
+        if (predecessor != bytes32(0) && !executed) {
+            revert IAuthority.PredecessorNotExecuted(predecessor);
         }
     }
 }
