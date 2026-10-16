@@ -4,7 +4,11 @@ Every module-to-module caller edge in the canonical V2 surface, and why user, gu
 
 Enforced by `contracts/v2/StakeVault.sol` and `contracts/v2/FinalRewardAllocator.sol`. Proved by `test/v2/invariant/CrossModuleAuthorizationInvariant.t.sol`.
 
-## Three independent axes
+### Enumeration is authorization
+
+Access in V2 is defined by AccessControl membership, not by a separate bookkeeping list. Every role view a consumer reads (`getRoleMember`, `getRoleMemberCount`, `hasRole`, `getRoleMembers`) must report the same membership that authorization enforces. The invariant harness drives grant/revoke/renounce/handoff/upgrade paths and requires that enumeration and authorization remain byte-identical after any sequence.
+
+### Three independent axes
 
 Authority in V2 comes from three sources that must never imply one another.
 
@@ -41,13 +45,25 @@ Rows are callers; columns are the guarded surfaces. `Y` means permitted.
 
 Governance's blank in the tier-1 column is deliberate: holding `ADMIN_ROLE` does not make you a mutator. Governance may appoint *itself* via `setLockMutator`, which is an explicit, auditable act rather than an implicit consequence of the role — and even then tier 2 stays closed.
 
+### Role membership consistency
+
+Role membership is enumerated from the same storage that authorization reads. The harness pins the following behaviours:
+
+- **Duplicate grant.** Granting a role to an existing member is a no-op for enumeration: the member appears exactly once and the count is unchanged.
+- **Revoke absent.** Revoking a role from a non-member is a no-op for enumeration: no phantom member is added and the count is unchanged.
+- **Renounce.** Renouncing a role removes the caller from enumeration in the same transaction that removes authorization. No stale member remains.
+- **Admin change.** Changing the role's admin role does not alter membership or counts. A member remains a member and the admin role is the only one that can grant or revoke it.
+- **Upgrade.** Role membership and counts survive an implementation upgrade byte-identically; the authorization gate reads the same storage after the upgrade as before.
+- Pagination.* **`getRoleMembers` pages are complete and non-overlapping: the union of all pages equals the full membership set and the count matches the number of distinct members.
+- **Fuzz.** Arbitrary sequences of grant/revoke/renounce/handoff/upgrade never produce a member that authorization denies or a denied caller that enumeration reports.
+
 ## Revocation
 
 - **Rotation revokes immediately.** Re-pointing a module id to a new address removes the previous holder's authority in the same block. There is no grandfathering, so a rotated-out settlement module cannot finish work in flight.
-- **Removal revokes immediately.** `removeModule` drops tier-1 authority for that id.
-- **Explicit mutators are registry-independent by design.** A `lockMutators` entry is a governance override, so it survives registry changes and is revoked the same way it was granted. `setLockMutator` emits no event; the public mapping and the governance transaction trace are the audit record.
+- |**Removal revokes immediately.** `removeModule` drops tier-1 authority for that id.
+- |**Explicit mutators are registry-independent by design.** A `lockMutators` entry is a governance override, so it survives registry changes and is revoked the same way it was granted. `setLockMutator` does not emit an event; the public mapping and the governance transaction trace are the audit record.
 
-## Deployment isolation
+### Deployment isolation
 
 Module identity is per-registry, not global. A settlement module registered in one deployment's registry has no authority over a vault wired to a different registry, in either direction. Two deployments sharing an asset therefore cannot settle each other's claims.
 
@@ -65,7 +81,7 @@ This is recorded as a hardening item, not a live exploit: `IModuleRegistry` requ
 
 ## Escalation paths that are closed
 
-- A module cannot grant itself a role (`grantRole` requires `DEFAULT_ADMIN_ROLE`).
+- A module cannot grant itself a role (`grantRole` requires `DEFAULT_ADMIN_ROLE` or the role's admin).
 - An appointed lock mutator cannot promote itself to `ADMIN_ROLE`.
 - A module cannot appoint another mutator or reconfigure supported assets.
 - No caller can withdraw another account's claimable balance.
@@ -83,9 +99,24 @@ This is recorded as a hardening item, not a live exploit: `IModuleRegistry` requ
 | `invariant_unauthorizedCallersCannotFundTheAllocator` | no treasury funding was accepted |
 | `invariant_custodyUnchangedAndReconciled` | custody is unchanged and still reconciles |
 | `invariant_noRoleWasEscalated` | no attacker holds a role or a mutator entry |
+| `invariant_enumerationMatchesAuthorization` | for every role, `getRoleMemberCount` equals the number of distinct members reported by `getRoleMembers` and `getRoleMember`, and `getRoleMembers` agrees with `hasRole` for every address |
 
 The handler holds no authority of its own: the vault is deployed with a separate governance address specifically so the handler cannot legitimately appoint itself and invalidate its own invariants.
 
+### Required tests
+
+The consistency claim is proved by an explicit test matrix in `test/v2/invariant/CrossModuleAuthorizationInvariant.t.sol`:
+
+| Test | Claim |
+| --- | --- |
+| `test_duplicateGrantDoesNotDuplicateMember` | granting an existing member leaves count and membership unchanged |
+| `test_revokeAbsentDoesNotAddMember` | revoking a non-member leaves count and membership unchanged |
+| `test_renounceRemovesMemberAndAuthorityAtomically` | renounce drops both enumeration and authorization in one transaction |
+| `test_adminChangePreservesMembership` | `grantRole` in a new admin role leaves members and counts intact |
+| `test_upgradePreservesRoleCounts` | role counts survive an implementation upgrade byte-identically |
+| `test_paginationCoversAllMembersExactlyOnce` | paged `getRoleMembers` union equals the full set with no overlap or gap |
+| `test_fuzzEnumerationEqualsAuthorization` | fuzzed grant/revoke/renounce/handoff/upgrade sequences never desync enumeration from authorization |
+
 ## Source of truth
 
-The module registry is authoritative for module identity, and `AccessControl` for roles. No API, indexer, frontend, guardian, deployer, or test harness holds settlement or treasury authority at any point in this model.
+The module registry is authoritative for module identity, and `AccessControl` for roles. Role enumeration is derived from the same storage that authorization enforces, so the two cannot diverge. No API, indexer, frontend, guardian, deployer, or test harness holds settlement or treasury authority at any point in this model.
