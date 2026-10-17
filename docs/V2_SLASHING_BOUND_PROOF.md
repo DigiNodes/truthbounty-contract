@@ -12,7 +12,7 @@ All custody accounting is keyed by a five-part tuple, hashed by `StakeVault._loc
 cell = (asset, account, claimId, round, category)
 ```
 
-The bound is a per-cell statement. "The principal locked for an actor and a round" is exactly `_locks[cell]` and its history — not a per-account total, and not a per-claim total. Getting this wrong in either direction produces a bound that is either unprovable or trivially true.
+The bound is a per-cell statement. "The principal locked for an actor and a round" is exactly `_locks[cell]` and its history -- not a per-account total, and not a per-claim total. Getting this wrong in either direction produces a bound that is either unprovable or trivially true.
 
 ## The claim
 
@@ -39,13 +39,13 @@ Appeals and retries move principal between rounds without touching custody total
 
 Both call `_moveLock`, which decrements the source cell and increments the destination. The destination round therefore holds slashable principal that was **never deposited into it directly**.
 
-A bound written only against direct deposits would report a false violation the first time an appealed stake is slashed at the destination round. A bound that ignored the *source* side would let the same principal be slashed twice — once at each round. Tracking both sides is what makes the statement both true and non-vacuous. `test_handlerReachesLockSlashAppealAndSettlement` exercises exactly this path and asserts `lockedIn(round 1) == 0` while principal is slashed there.
+A bound written only against direct deposits would report a false violation the first time an appealed stake is slashed at the destination round. A bound that ignored the *source* side would let the same principal be slashed twice -- once at each round. Tracking both sides is what makes the statement both true and non-vacuous. `test_handlerReachesLockSlashAppealAndSettlement` exercises exactly this path and asserts `lockedIn(round 1) == 0` while principal is slashed there.
 
 ## Every surface that can reduce a lock
 
 | Entry point | Authorization | Effect on the cell |
 | --- | --- | --- |
-| `slashStake` | tier 1 (mutator) | slash, round 0 only |
+| `slashStake` | tier 1 (mutator) | slash, round 0 just |
 | `allocateLocked` | tier 1 (mutator) | slash, any round |
 | `releaseStake` | tier 1 (mutator) | unlock to claimable, round 0 |
 | `unlock` | tier 1 (mutator) | unlock to claimable |
@@ -98,7 +98,7 @@ Ghost counters are updated **only** on the success branch of each `try`, so a re
 Two properties of the harness matter as much as the invariants:
 
 - **The fuzz target is the handler, not the vault.** Targeting the vault has the fuzzer call it directly from random senders with random arguments; every authorized path then fails `_onlyAuthorizedMutator`, the handler never runs, and the invariants hold vacuously against an empty vault. `test/v2/StakeVaultInvariant.t.sol` had this defect and is corrected in this change.
-- **The cell space is small on purpose** — 3 accounts, 2 claims, 3 rounds. A slashing bound is only interesting when many operations land on the *same* cell. A wide key space means the fuzzer almost never collides and the run proves nothing, however many calls it makes.
+- **The cell space is small on purpose** -- 3 accounts, 2 claims, 3 rounds. A slashing bound is only interesting when many operations land on the *same* cell. A wide key space means the fuzzer almost never collides and the run proves nothing, however many calls it makes.
 
 `test_handlerReachesLockSlashAppealAndSettlement` is a deterministic coverage guard: it drives the handler directly and asserts that the lock, both slash surfaces, the appeal path, and settlement are all reachable. Without a guard of that kind, a handler that silently reverted on every call would leave every invariant above trivially satisfied.
 

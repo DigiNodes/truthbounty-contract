@@ -2,8 +2,7 @@
 
 The canonical V2 custody invariant is:
 
-`actualBalance(asset) = custody(asset) = claimable(asset) + locked(asset) + protocolAllocation(asset)`
-
+`actualBalance(asset) = custody(asset) = claimable(asset) + locked(asset) + protocolAllocation(asset)`$
 This equation is enforced by the canonical vault in `contracts/v2/StakeVault.sol` and is exposed through the `reconcile()` and `conservation()` views.
 
 ## Canonical accounting buckets
@@ -26,4 +25,4 @@ Any positive token delta not reflected in the bucket totals is invalid. The vaul
 
 ## Source of truth
 
-The canonical authority remains the vault’s ERC20 balance plus its typed lock and allocation accounting; no backend, indexer, guardian, or test harness is permitted to mutate protocol custody.
+The canonical authority remains the vault's ERC20 balance plus its typed lock and allocation accounting; no backend, indexer, guardian, or test harness is permitted to mutate protocol custody.
