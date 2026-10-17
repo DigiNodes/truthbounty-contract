@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
@@ -19,7 +21,7 @@ import "../governance/GovernanceOwnable.sol";
 * *       Any positive token delta not reflected in the bucket totals is invalid and
  *       must either revert or enter the governed recovery path (`administerUnexplainedDelta`).
  */
-contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable {
+contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
 
     // ============= ROLES =============
@@ -829,5 +831,18 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
      */
     function _afterGovernanceAction() internal override {
         _syncUnexplainedDelta();
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender) || !governanceEnabled) revert RecoveryAuthorityUnavailable();
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        if (paused()) revert RecoveryPaused();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        return asset == address(protocolToken) ? calculateTotalAssets() : 0;
     }
 }

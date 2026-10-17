@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
@@ -12,7 +14,7 @@ import "../interfaces/ITruthBountyEvents.sol";
 import "../IReputationOracle.sol";
 import "../treasury/ITreasuryAccounting.sol";
 
-contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
+contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
     // ============ Roles ============
 
@@ -519,6 +521,7 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         if (newToken == address(0)) revert RewardTokenNotConfigured();
 
         address oldToken = address(rewardToken);
+        if (oldToken != address(0)) _protectRecoveryAsset(oldToken);
         rewardToken = IERC20(newToken);
 
         emit RewardTokenUpdated(oldToken, newToken);
@@ -1097,5 +1100,20 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
             EVENT_SCHEMA_VERSION
 
         );
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender) || !governanceEnabled) revert RecoveryAuthorityUnavailable();
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        if (paused()) revert RecoveryPaused();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        // The balance-backed funding pool includes unallocated and deferred rewards.
+        // Historical reward assets remain protected after token configuration changes.
+        return asset == address(rewardToken) || _isProtectedRecoveryAsset(asset) ? IERC20(asset).balanceOf(address(this)) : 0;
     }
 }
