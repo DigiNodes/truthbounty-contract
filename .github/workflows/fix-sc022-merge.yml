@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   repair:
-    if: ${{ !contains(github.event.head_commit.message, '[sc022-repair]') }}
+    if: $'{ !contains(github.event.head_commit.message, '[sc022-repair]') ) }'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@08ebaca7b736c59a5d56b1523bc34b34b34b34b3 # v7.0.0
         with:
           ref: feature/sc-022-event-architecture
           fetch-depth: 0
@@ -22,7 +22,7 @@ jobs:
       - name: Apply deterministic repairs
         shell: bash
         run: |
-          python3 - <<'PY'
+          python3 <<'PY'
           from pathlib import Path
 
           treasury = Path('contracts/treasury/TreasuryAccounting.sol')
@@ -32,7 +32,7 @@ jobs:
                   SLASHED_TREASURY      // Tokens slashed from verifiers
               }'''
           new_enum = '''        ECOSYSTEM_FUND,       // Future ecosystem development fund
-                  SLASHED_TREASURY,     // Tokens slashed from verifiers
+                  SLASHED_TREASURY,
                   EXTERNAL              // Off-ledger source or destination marker
               }'''
 
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload compiler output
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@334c1523bc34b34b34b34b34b34b34b34b3 # v7.0.0
         with:
           name: sc022-compile-output
           path: compile-output.txt
