@@ -11,6 +11,7 @@ import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnap
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {MockGovernedModule} from "../../contracts/mocks/MockGovernedModule.sol";
 
 /**

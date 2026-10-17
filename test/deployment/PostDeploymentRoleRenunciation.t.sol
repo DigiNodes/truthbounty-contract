@@ -13,6 +13,7 @@ import {TruthBountyGovernanceToken} from "../../contracts/governance/v2/TruthBou
 import {TruthBountyGovernor} from "../../contracts/governance/v2/TruthBountyGovernor.sol";
 import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {GovernanceGuardian} from "../../contracts/governance/v2/GovernanceGuardian.sol";
+import {IGovernanceSnapshot} from "../../contracts/governance/v2/IGovernanceSnapshot.sol";
 import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGovernor.sol";
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
 

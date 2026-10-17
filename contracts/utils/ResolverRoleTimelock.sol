@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 abstract contract ResolverRoleTimelock is AccessControl {
     uint256 public constant MIN_RESOLVER_ROLE_CHANGE_DELAY = 2 days;
     uint256 public constant MAX_RESOLVER_ROLE_CHANGE_DELAY = 14 days; // Max 14 days for role changes
+    uint256 public constant RESOLVER_ROLE_CHANGE_DELAY = MIN_RESOLVER_ROLE_CHANGE_DELAY;
 
     struct PendingRoleChange {
         uint256 readyAt;

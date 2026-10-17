@@ -31,8 +31,16 @@ contract ParameterVersionRegistry is
     error InvalidFee();
     error InvalidBPS();
     error InvalidStakeAmount();
+    error InvalidStakeBounds();
+    error InvalidBountyBounds();
+    error InvalidWeightCap();
+    error InvalidParticipationThreshold();
+    error InvalidConfidenceThreshold();
     error InvalidReputationRange();
     error InvalidSlashBPS();
+    error InvalidRewardMultiplier();
+    error InvalidAppealMultiplier();
+    error NonZeroDurationRequired();
 
     // ============ Constants ============
     
@@ -472,5 +480,4 @@ contract ParameterVersionRegistry is
     error InvalidClaimId();
     error TimelockTooShort(uint256 provided, uint256 minimum);
     error TimelockTooLong(uint256 provided, uint256 maximum);
-    error InvalidRewardMultiplier();
 }

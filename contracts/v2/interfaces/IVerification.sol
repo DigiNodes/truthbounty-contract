@@ -24,9 +24,7 @@ interface IVerification is IV2Module {
     /// @return verificationId Newly assigned verification identifier.
     function submitVerification(uint256 claimId, bool supportsClaim, bytes calldata rationale) external returns (uint256 verificationId);
 
-    /// @notice Reads a verification record.
-    /// @param verificationId Verification to read.
-    /// @return verification Stored verification fields.
+    // Get verification details
     function getVerification(uint256 verificationId) external view returns (IV2Types.Verification memory verification);
 
     /// @notice Returns a bounded page of verification IDs for a claim.

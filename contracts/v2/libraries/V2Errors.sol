@@ -174,6 +174,13 @@ library V2Errors {
     /// @param round Settlement round.
     error SettlementAlreadyFinalized(uint256 claimId, uint256 round);
 
+    /// @notice Canonical asset conservation invariant is violated; on-chain balance and accounting buckets must match exactly.
+    /// @param asset Asset whose accounting failed reconciliation.
+    /// @param custody Accounted custody.
+    /// @param obligations Sum of recorded obligations.
+    /// @param balance On-chain balance.
+    error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
+
     /// @notice Invalid settlement outcome requested for this claim-round.
     /// @param claimId Settlement claim.
     /// @param round Settlement round.

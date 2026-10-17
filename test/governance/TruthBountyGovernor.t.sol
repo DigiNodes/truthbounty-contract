@@ -139,6 +139,28 @@ contract TruthBountyGovernorTest is Test {
         assertEq(module.value(), 42);
     }
 
+    function test_GuardianRotationRequiresSuccessfulTimelockedProposal() public {
+        registry.registerModule("GOVERNOR", address(governor));
+        address nextGuardian = makeAddr("nextGuardian");
+        address[] memory targets = new address[](1);
+        targets[0] = address(governor);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeCall(TruthBountyGovernor.setGuardian, (nextGuardian));
+
+        vm.prank(proposer);
+        uint256 proposalId = governor.propose(targets, values, calldatas, "rotate guardian");
+        _voteAndQueue(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
+        assertEq(governor.guardian(), guardian);
+
+        vm.warp(block.timestamp + TIMELOCK_DELAY);
+        governor.execute(proposalId);
+        assertEq(governor.guardian(), nextGuardian);
+    }
+
     function test_ProposalDefeatedWithoutQuorum() public {
         uint256 proposalId = _createProposal(7);
         vm.warp(block.timestamp + VOTING_DELAY + VOTING_PERIOD + 1);

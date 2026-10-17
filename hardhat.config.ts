@@ -17,8 +17,6 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
-      // Required so `scripts/validateStorageLayouts.ts` (V2-SC-046) can read
-      // each contract's storage layout from the build-info output.
       outputSelection: {
         "*": {
           "*": ["storageLayout"],
@@ -45,7 +43,7 @@ const config: HardhatUserConfig = {
       chainId: 11155420,
       gas: "auto",
       gasPrice: process.env.OPTIMISM_SEPOLIA_GAS_PRICE
-        ? parseInt(process.env.OPTIMISM_SEPOLIA_GAS_PRICE)
+        ? Number(process.env.OPTIMISM_SEPOLIA_GAS_PRICE)
         : undefined,
     },
     optimismMainnet: {
@@ -56,7 +54,7 @@ const config: HardhatUserConfig = {
       chainId: 10,
       gas: "auto",
       gasPrice: process.env.OPTIMISM_MAINNET_GAS_PRICE
-        ? parseInt(process.env.OPTIMISM_MAINNET_GAS_PRICE)
+        ? Number(process.env.OPTIMISM_MAINNET_GAS_PRICE)
         : undefined,
     },
   },

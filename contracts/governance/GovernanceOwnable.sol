@@ -78,8 +78,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     
     modifier onlyGovernanceOrAdmin() {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender) && 
-            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender) &&
-            msg.sender != emergencyAdmin) {
+            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
             revert UnauthorizedGovernance();
         }
         _;

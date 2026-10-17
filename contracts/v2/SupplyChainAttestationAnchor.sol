@@ -62,7 +62,7 @@ contract SupplyChainAttestationAnchor is ERC165, IV2Module, ISupplyChainAttestat
     /// @dev Each material is encoded as: uri|digest
     string[] private _materialData;
 
-    bytes32 private immutable _checksum;
+    bytes32 private _checksum;
 
     /// @param attestation_ The validated attestation record to publish.
     /// @param deployer_    Deployment provenance address; must not be zero.
