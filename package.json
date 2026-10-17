@@ -19,6 +19,7 @@
     "test:recovery": "forge test --match-test \"test_recovery_scenario_\" -vv",
     "test:testnet": "forge test --match-path \"test/testnet/\" -vv",
     "test:reconciliation": "forge test --match-test \"test_reconciliation_\" -vv",
+    "test:deployment:resume": "tsx --test test/scripts/resumable-deployment.test.ts && mocha --import=tsx test/deployment/DeploymentManifest.test.ts",
     "test:deployment": "forge test --match-test \"test_deploy_\" -vv",
     "test:coverage": "forge coverage --report lcov",
     "test:coverage:gate": "forge coverage --report lcov --report summary --skip script && npx ts-node scripts/coverage-quality-gate.ts",
