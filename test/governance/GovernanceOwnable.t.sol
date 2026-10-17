@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/governance/GovernanceOwnable.sol";
+import "../../contracts/governance/GovernanceOwnable.sol";
 
 contract GovernanceOwnableMock is GovernanceOwnable {
     uint256 public nextValue;

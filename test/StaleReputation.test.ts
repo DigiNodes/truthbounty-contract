@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Contract, Signer } from "ethers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 
 /**
  * @title StaleReputation Tests
@@ -19,6 +20,7 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
   const VERIFICATION_WINDOW = 7 * 24 * 60 * 60; // 7 days
   const MAX_REPUTATION_STALENESS = 1 * 60 * 60; // 1 hour
+  const REPUTATION_UPDATE_GRACE_PERIOD = 2 * 24 * 60 * 60; // 2 days
 
   beforeEach(async function () {
     [owner, submitter, verifier1, verifier2] = await ethers.getSigners();
@@ -87,7 +89,7 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       );
 
       // Mine a new block
-      await time.mine(1);
+      await time.increase(1);
 
       const [, , timestamp2] = await truthBounty.previewEffectiveStakeWithTimestamp(
         verifier1Addr,
@@ -113,6 +115,7 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await mockOracle.setReputationScore(verifier1Addr, reputationScore);
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
       const blockTimeBefore = await time.latest();
@@ -197,6 +200,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       // Set initial reputation
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
 
@@ -221,6 +227,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       // Set initial reputation
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
@@ -251,6 +260,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       // Set initial reputation
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
 
@@ -275,6 +287,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       // Set initial reputation
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
@@ -304,6 +319,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.5"));
 
       const blockTimeBefore = await time.latest();
@@ -323,6 +341,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
 
@@ -345,12 +366,15 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.5"));
 
       await expect(
         truthBounty.connect(verifier1).voteWithValidation(0, true, stakeAmount, 0, 0)
       ).to.emit(truthBounty, "ReputationSnapshotRecorded")
-        .withArgs(verifier1Addr, ethers.parseEther("2.5"));
+        .withArgs(verifier1Addr, ethers.parseEther("2.5"), anyValue);
     });
 
     it("Should calculate correct drift percentage", async function () {
@@ -359,6 +383,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       // Reputation = 1.0, expected = 1.1, drift = 10%
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("1.0"));
@@ -383,6 +410,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
 
       await truthBounty.connect(verifier1).stake(ethers.parseEther("5000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       // STEP 1: Preview with reputation 2.0
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
@@ -423,6 +453,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("5000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       // Set reputation
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
 
@@ -456,6 +489,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
 
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
+
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));
 
       // Regular vote should work without any validation
@@ -474,6 +510,9 @@ describe("Stale Reputation Fix - previewEffectiveStake", function () {
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
       await truthBounty.connect(submitter).createClaim("QmTestHash");
+
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(REPUTATION_UPDATE_GRACE_PERIOD + 1);
 
       // Both vote with different reputations
       await mockOracle.setReputationScore(verifier1Addr, ethers.parseEther("2.0"));

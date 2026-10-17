@@ -1,0 +1,208 @@
+Warning: This declaration has the same name as another declaration.
+   --> contracts/TruthBountyWeighted.sol:548:9:
+    |
+548 |         Vote storage vote = votes[claimId][msg.sender];
+    |         ^^^^^^^^^^^^^^^^^
+Note: The other declaration is here:
+   --> contracts/TruthBountyWeighted.sol:379:5:
+    |
+379 |     function vote(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: This declaration has the same name as another declaration.
+   --> contracts/TruthBountyWeighted.sol:631:9:
+    |
+631 |         Vote storage vote = votes[claimId][msg.sender];
+    |         ^^^^^^^^^^^^^^^^^
+Note: The other declaration is here:
+   --> contracts/TruthBountyWeighted.sol:379:5:
+    |
+379 |     function vote(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: This declaration has the same name as another declaration.
+   --> contracts/TruthBountyWeighted.sol:702:9:
+    |
+702 |         VerifierStake storage stake = verifierStakes[msg.sender];
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Note: The other declaration is here:
+   --> contracts/TruthBountyWeighted.sol:354:5:
+    |
+354 |     function stake(uint256 amount) external nonReentrant whenNotPaused {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: This declaration has the same name as another declaration.
+   --> contracts/TruthBountyWeighted.sol:975:13:
+    |
+975 |             Vote storage vote = votes[claimId][voters[i]];
+    |             ^^^^^^^^^^^^^^^^^
+Note: The other declaration is here:
+   --> contracts/TruthBountyWeighted.sol:379:5:
+    |
+379 |     function vote(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: This declaration has the same name as another declaration.
+    --> contracts/TruthBountyWeighted.sol:1006:13:
+     |
+1006 |             Vote storage vote = votes[claimId][voter];
+     |             ^^^^^^^^^^^^^^^^^
+Note: The other declaration is here:
+   --> contracts/TruthBountyWeighted.sol:379:5:
+    |
+379 |     function vote(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: This declaration shadows an existing declaration.
+    --> contracts/TruthBountyWeighted.sol:1001:25:
+     |
+1001 |     ) internal returns (uint256 totalSlashed) {
+     |                         ^^^^^^^^^^^^^^^^^^^^
+Note: The shadowed declaration is here:
+   --> contracts/TruthBountyWeighted.sol:211:5:
+    |
+211 |     uint256 public totalSlashed;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Unused try/catch parameter. Remove or comment out the variable name to silence this warning.
+   --> contracts/ExampleSettlement.sol:139:23:
+    |
+139 |         } catch Error(string memory errorReason) {
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Unused local variable.
+   --> contracts/bootstrap/BootstrapController.sol:271:9:
+    |
+271 |         address govAddr = modules[MODULE_GOVERNANCE].addr;
+    |         ^^^^^^^^^^^^^^^
+
+
+Warning: Unused function parameter. Remove or comment out the variable name to silence this warning.
+  --> contracts/mocks/MockFailingERC20.sol:14:23:
+   |
+14 |     function transfer(address to, uint256 amount) public override returns (bool) {
+   |                       ^^^^^^^^^^
+
+
+Warning: Unused function parameter. Remove or comment out the variable name to silence this warning.
+  --> contracts/mocks/MockFailingERC20.sol:14:35:
+   |
+14 |     function transfer(address to, uint256 amount) public override returns (bool) {
+   |                                   ^^^^^^^^^^^^^^
+
+
+Warning: Unused local variable.
+   --> contracts/mocks/ReentrancyAttacker.sol:301:14:
+    |
+301 |             (bool success, ) = attacker.call(
+    |              ^^^^^^^^^^^^
+
+
+Warning: Unused local variable.
+   --> contracts/simulation/EconomicSimulation.sol:213:13:
+    |
+213 |             uint256 incorrectVotes = settledToday - correctVotes;
+    |             ^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Unused local variable.
+   --> contracts/simulation/EconomicSimulation.sol:253:9:
+    |
+253 |         uint256 totalStakedEnd = stakers * gp.minStakeAmount;
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> contracts/simulation/EconomicSimulation.sol:323:9:
+    |
+323 |         uint256 activeVerifiers,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Unused function parameter. Remove or comment out the variable name to silence this warning.
+   --> contracts/treasury/TreasuryAccounting.sol:367:26:
+    |
+367 |     function recordSlash(address verifier, uint256 amount) external onlyRole(SLASHING_CONTRACT_ROLE) {
+    |                          ^^^^^^^^^^^^^^^^
+
+
+Warning: Unused function parameter. Remove or comment out the variable name to silence this warning.
+  --> contracts/upgrade/ProtocolUpgradeable.sol:67:32:
+   |
+67 |     function _authorizeUpgrade(address newImplementation)
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/MetaTxExample.sol:165:5:
+    |
+165 |     function _executeTransfer(address from, address to, uint256 amount) internal {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/governance/GovernanceOwnable.sol:248:5:
+    |
+248 |     function getGovernanceVersion() external view returns (uint256) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/VerifierSlashing.sol:543:5:
+    |
+543 |     function o() internal view returns (bool) {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+  --> contracts/mocks/MockFailingERC20.sol:14:5:
+   |
+14 |     function transfer(address to, uint256 amount) public override returns (bool) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/simulation/EconomicSimulation.sol:165:5:
+    |
+165 |     function previewSimulation(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/simulation/EconomicSimulation.sol:358:5:
+    |
+358 |     function _analyzeResults(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to pure
+   --> contracts/simulation/EconomicSimulation.sol:566:5:
+    |
+566 |     function validateGovernanceParams(
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Function state mutability can be restricted to view
+  --> contracts/upgrade/ProtocolUpgradeable.sol:67:5:
+   |
+67 |     function _authorizeUpgrade(address newImplementation)
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Warning: Contract code size is 25167 bytes and exceeds 24576 bytes (a limit introduced in Spurious Dragon). This contract may not be deployable on Mainnet. Consider enabling the optimizer (with a low "runs" value!), turning off revert strings, or using libraries.
+  --> contracts/TruthBountyWeighted.sol:26:1:
+   |
+26 | contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
+   | ^ (Relevant source part starts here and spans across multiple lines).
+
+
+Generating typings for: 127 artifacts in dir: typechain-types for target: ethers-v6
+Successfully generated 340 typings!
+Compiled 117 Solidity files successfully (evm target: cancun).

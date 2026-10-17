@@ -81,10 +81,14 @@ describe("Unified RBAC System", function () {
                 .to.be.revertedWithCustomError(decay, "AccessControlUnauthorizedAccount");
         });
 
-        it("Should allow ADMIN_ROLE to set decay rate", async function () {
+        it("Should allow ADMIN_ROLE to set decay config", async function () {
             const { decay, admin } = await loadFixture(deployRBACFixture);
-            await expect(decay.connect(admin).setDecayRatePerEpoch(200))
-                .to.emit(decay, "DecayParametersUpdated");
+            await expect(decay.connect(admin).setDecayConfig({
+                decayInterval: 7 * 86400,
+                decayPercentage: 200,
+                minimumReputation: 1,
+                enabled: true
+            })).to.emit(decay, "DecayConfigUpdated");
         });
     });
 
@@ -112,14 +116,18 @@ describe("Unified RBAC System", function () {
     describe("TruthBountyClaims RBAC", function () {
         it("Should allow TREASURY_ROLE to settle claims", async function () {
             const { claims, treasury, user } = await loadFixture(deployRBACFixture);
+            // V2-SC-062: settleClaim requires a unique settlementId
+            const sid = ethers.keccak256(ethers.toUtf8Bytes("rbac-treasury-1"));
             // Should pass RBAC even if it fails later (due to balance)
-            await expect(claims.connect(treasury).settleClaim(user.address, 100))
+            await expect(claims.connect(treasury).settleClaim(user.address, 100, sid))
                 .to.not.be.revertedWithCustomError(claims, "AccessControlUnauthorizedAccount");
         });
 
         it("Should deny non-treasury from settling claims", async function () {
             const { claims, user } = await loadFixture(deployRBACFixture);
-            await expect(claims.connect(user).settleClaim(user.address, 100))
+            // V2-SC-062: settleClaim requires a unique settlementId
+            const sid = ethers.keccak256(ethers.toUtf8Bytes("rbac-user-1"));
+            await expect(claims.connect(user).settleClaim(user.address, 100, sid))
                 .to.be.revertedWithCustomError(claims, "AccessControlUnauthorizedAccount");
         });
     });

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../contracts/MetaTxExample.sol";
+import "../../contracts/MetaTxExample.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**

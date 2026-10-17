@@ -6,45 +6,42 @@ import { expect } from "chai";
 import hre from "hardhat";
 
 describe("ReputationDecay", function () {
-    // Constants matching contract defaults
     const ONE_DAY = 24 * 60 * 60;
     const ONE_WEEK = 7 * ONE_DAY;
-    const FOUR_WEEKS = 4 * ONE_WEEK;
     const BASIS_POINTS = 10000;
 
     async function deployReputationDecayFixture() {
-        const [owner, user1, user2, otherAccount] = await hre.ethers.getSigners();
+        const [owner, user1, user2, otherAccount, oracle] = await hre.ethers.getSigners();
 
         const ReputationDecay = await hre.ethers.getContractFactory("ReputationDecay");
         const reputationDecay = await ReputationDecay.deploy(owner.address);
 
-        return { reputationDecay, owner, user1, user2, otherAccount };
+        const ORACLE_ROLE = await reputationDecay.ORACLE_ROLE();
+        await reputationDecay.grantRole(ORACLE_ROLE, oracle.address);
+
+        return { reputationDecay, owner, user1, user2, otherAccount, oracle, ORACLE_ROLE };
     }
 
     describe("Deployment", function () {
         it("Should set the correct admin", async function () {
             const { reputationDecay, owner } = await loadFixture(deployReputationDecayFixture);
-            const ADMIN_ROLE = await reputationDecay.ADMIN_ROLE();
-            expect(await reputationDecay.hasRole(ADMIN_ROLE, owner.address)).to.be.true;
+            expect(await reputationDecay.hasRole(await reputationDecay.DEFAULT_ADMIN_ROLE(), owner.address)).to.be.true;
         });
 
-        it("Should initialize with default decay parameters", async function () {
+        it("Should initialize with default decay config", async function () {
             const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
 
-            expect(await reputationDecay.decayRatePerEpoch()).to.equal(100); // 1%
-            expect(await reputationDecay.epochDuration()).to.equal(ONE_WEEK);
-            expect(await reputationDecay.inactivityThreshold()).to.equal(4);
-            expect(await reputationDecay.maxDecayPercent()).to.equal(5000); // 50%
+            const config = await reputationDecay.decayConfig();
+            expect(config.decayInterval).to.equal(ONE_WEEK);
+            expect(config.decayPercentage).to.equal(100);
+            expect(config.minimumReputation).to.equal(1);
+            expect(config.enabled).to.equal(true);
         });
 
-        it("Should return correct decay parameters via getter", async function () {
-            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
-
-            const [rate, duration, threshold, maxDecay] = await reputationDecay.getDecayParameters();
-            expect(rate).to.equal(100);
-            expect(duration).to.equal(ONE_WEEK);
-            expect(threshold).to.equal(4);
-            expect(maxDecay).to.equal(5000);
+        it("Should set up ORACLE_ROLE correctly", async function () {
+            const { reputationDecay, owner } = await loadFixture(deployReputationDecayFixture);
+            const ORACLE_ROLE = await reputationDecay.ORACLE_ROLE();
+            expect(await reputationDecay.hasRole(ORACLE_ROLE, owner.address)).to.be.true;
         });
     });
 
@@ -100,86 +97,94 @@ describe("ReputationDecay", function () {
             expect(await reputationDecay.lastActivityTimestamp(user1.address)).to.equal(timestamp);
         });
 
-        it("Should record activity and emit event", async function () {
-            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+        it("Should update inactivity tracking when recording activity", async function () {
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
 
-            await expect(reputationDecay.recordActivity(user1.address))
+            await reputationDecay.connect(oracle).recordActivity(user1.address);
+
+            const tracking = await reputationDecay.inactivityTracking(user1.address);
+            expect(tracking.lastActiveBlock).to.be.gt(0);
+            expect(tracking.lastVerificationTimestamp).to.equal(await time.latest());
+            expect(tracking.lastSuccessfulVerification).to.equal(await time.latest());
+        });
+
+        it("Should record activity and emit event", async function () {
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
+
+            await expect(reputationDecay.connect(oracle).recordActivity(user1.address))
                 .to.emit(reputationDecay, "ActivityRecorded");
+        });
+
+        it("Should batch record activity", async function () {
+            const { reputationDecay, user1, user2, oracle } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.connect(oracle).recordActivityBatch([user1.address, user2.address]);
+
+            expect(await reputationDecay.lastActivityTimestamp(user1.address)).to.be.gt(0);
+            expect(await reputationDecay.lastActivityTimestamp(user2.address)).to.be.gt(0);
         });
     });
 
     describe("Decay Calculation", function () {
-        it("Should return full reputation within grace period", async function () {
+        it("Should return full reputation before decay interval", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
-
-            // Move 3 weeks forward (still within 4-week grace period)
-            await time.increase(3 * ONE_WEEK);
 
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1000);
         });
 
-        it("Should return full reputation exactly at grace period boundary", async function () {
+        it("Should return full reputation at the moment decay interval starts", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Move exactly 4 weeks forward
-            await time.increase(FOUR_WEEKS);
+            await time.increase(ONE_WEEK - 1);
 
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1000);
         });
 
-        it("Should apply 1% decay after 5 epochs of inactivity", async function () {
+        it("Should apply 1% decay after one interval", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Move 5 weeks forward (1 week past grace period = 1% decay)
-            await time.increase(5 * ONE_WEEK);
+            await time.increase(ONE_WEEK);
 
-            // 1000 * 99% = 990
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(990);
         });
 
-        it("Should apply 5% decay after 9 epochs of inactivity", async function () {
+        it("Should apply 5% decay after five intervals", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Move 9 weeks forward (5 weeks past grace period = 5% decay)
-            await time.increase(9 * ONE_WEEK);
+            await time.increase(5 * ONE_WEEK);
 
-            // 1000 * 95% = 950
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(950);
         });
 
-        it("Should cap decay at maximum (50%)", async function () {
+        it("Should cap decay at minimum reputation", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Move 100 weeks forward (way past max decay)
-            await time.increase(100 * ONE_WEEK);
+            await time.increase(200 * ONE_WEEK);
 
-            // Should be capped at 50% decay = 500
-            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(500);
+            const effective = await reputationDecay.getEffectiveReputation(user1.address);
+            expect(effective).to.equal(1);
         });
 
         it("Should reset decay when activity is recorded", async function () {
-            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Move 6 weeks forward (2% decay)
-            await time.increase(6 * ONE_WEEK);
+            await time.increase(2 * ONE_WEEK);
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(980);
 
-            // Record activity to reset timer
-            await reputationDecay.recordActivity(user1.address);
+            await reputationDecay.connect(oracle).recordActivity(user1.address);
 
-            // Decay should be reset
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1000);
         });
 
@@ -189,29 +194,151 @@ describe("ReputationDecay", function () {
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(0);
         });
 
-        it("Should correctly report decay amount", async function () {
+        it("Should respect minimum reputation floor", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
-            await reputationDecay.setReputation(user1.address, 1000);
+            await reputationDecay.setReputation(user1.address, 10);
 
-            // Move 5 weeks forward (1% decay)
-            await time.increase(5 * ONE_WEEK);
+            await time.increase(100 * ONE_WEEK);
 
-            expect(await reputationDecay.getDecayAmount(user1.address)).to.equal(10);
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1);
         });
 
-        it("Should correctly report if user is decaying", async function () {
+        it("Should return full reputation when decay is disabled", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Initially not decaying
-            expect(await reputationDecay.isUserDecaying(user1.address)).to.equal(false);
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_WEEK,
+                decayPercentage: 100,
+                minimumReputation: 1,
+                enabled: false
+            });
 
-            // Move past grace period
+            await time.increase(10 * ONE_WEEK);
+
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1000);
+        });
+    });
+
+    describe("applyDecay", function () {
+        it("Should apply decay and emit ReputationDecayed event", async function () {
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
             await time.increase(5 * ONE_WEEK);
 
-            expect(await reputationDecay.isUserDecaying(user1.address)).to.equal(true);
+            await expect(reputationDecay.connect(oracle).applyDecay(user1.address))
+                .to.emit(reputationDecay, "ReputationDecayed")
+                .withArgs(user1.address, 1000, 950);
+        });
+
+        it("Should update base reputation after applyDecay", async function () {
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            await time.increase(5 * ONE_WEEK);
+
+            await reputationDecay.connect(oracle).applyDecay(user1.address);
+
+            expect(await reputationDecay.baseReputation(user1.address)).to.equal(950);
+        });
+
+        it("Should not emit event if no decay is needed", async function () {
+            const { reputationDecay, user1, oracle } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+
+            await expect(reputationDecay.connect(oracle).applyDecay(user1.address))
+                .to.not.emit(reputationDecay, "ReputationDecayed");
+        });
+    });
+
+    describe("View Functions", function () {
+        it("calculateDecay should return correct amount", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            await time.increase(5 * ONE_WEEK);
+
+            expect(await reputationDecay.calculateDecay(user1.address)).to.equal(50);
+        });
+
+        it("calculateDecay should return 0 when no decay", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+
+            expect(await reputationDecay.calculateDecay(user1.address)).to.equal(0);
+        });
+
+        it("isDecayRequired should return true when decay interval has passed", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            await time.increase(ONE_WEEK);
+
+            expect(await reputationDecay.isDecayRequired(user1.address)).to.equal(true);
+        });
+
+        it("isDecayRequired should return false when decay is not due", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+
+            expect(await reputationDecay.isDecayRequired(user1.address)).to.equal(false);
+        });
+
+        it("nextDecayTimestamp should return correct timestamp", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            const timestamp = await time.latest();
+
+            expect(await reputationDecay.nextDecayTimestamp(user1.address)).to.equal(timestamp + ONE_WEEK);
+        });
+
+        it("nextDecayTimestamp should return max uint for unknown user", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            const max = hre.ethers.MaxUint256;
+            expect(await reputationDecay.nextDecayTimestamp(user1.address)).to.equal(max);
+        });
+    });
+
+    describe("IReputationOracle Interface", function () {
+        it("getReputationScore should return effective reputation", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            await time.increase(5 * ONE_WEEK);
+
+            expect(await reputationDecay.getReputationScore(user1.address)).to.equal(950);
+        });
+
+        it("isActive should return decay enabled state", async function () {
+            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
+
+            expect(await reputationDecay.isActive()).to.equal(true);
+
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_WEEK,
+                decayPercentage: 100,
+                minimumReputation: 1,
+                enabled: false
+            });
+
+            expect(await reputationDecay.isActive()).to.equal(false);
+        });
+
+        it("getLastReputationUpdate should return lastActivityTimestamp", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setReputation(user1.address, 1000);
+            const timestamp = await time.latest();
+
+            expect(await reputationDecay.getLastReputationUpdate(user1.address)).to.equal(timestamp);
         });
     });
 
@@ -219,102 +346,120 @@ describe("ReputationDecay", function () {
         it("Should track decay independently for different users", async function () {
             const { reputationDecay, user1, user2 } = await loadFixture(deployReputationDecayFixture);
 
-            // Set reputation for user1
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // Wait 3 weeks
             await time.increase(3 * ONE_WEEK);
 
-            // Set reputation for user2
             await reputationDecay.setReputation(user2.address, 1000);
 
-            // Wait 2 more weeks (user1: 5 weeks total, user2: 2 weeks)
             await time.increase(2 * ONE_WEEK);
 
-            // user1 should have 1% decay, user2 should have none
-            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(990);
-            expect(await reputationDecay.getEffectiveReputation(user2.address)).to.equal(1000);
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(950);
+            expect(await reputationDecay.getEffectiveReputation(user2.address)).to.equal(980);
         });
     });
 
-    describe("Admin Functions", function () {
-        it("Should allow owner to update decay rate", async function () {
+    describe("Governance & Admin Functions", function () {
+        it("Should allow admin to update decay config", async function () {
             const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
 
-            await reputationDecay.setDecayRatePerEpoch(200); // 2%
-            expect(await reputationDecay.decayRatePerEpoch()).to.equal(200);
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_DAY,
+                decayPercentage: 200,
+                minimumReputation: 5,
+                enabled: true
+            });
+
+            const config = await reputationDecay.decayConfig();
+            expect(config.decayInterval).to.equal(ONE_DAY);
+            expect(config.decayPercentage).to.equal(200);
+            expect(config.minimumReputation).to.equal(5);
+            expect(config.enabled).to.equal(true);
         });
 
-        it("Should reject decay rate above 100%", async function () {
+        it("Should reject decay percentage above 100%", async function () {
             const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
 
-            await expect(reputationDecay.setDecayRatePerEpoch(10001))
-                .to.be.revertedWithCustomError(reputationDecay, "InvalidDecayRate");
+            await expect(reputationDecay.setDecayConfig({
+                decayInterval: ONE_WEEK,
+                decayPercentage: BASIS_POINTS + 1,
+                minimumReputation: 1,
+                enabled: true
+            })).to.be.revertedWithCustomError(reputationDecay, "InvalidDecayPercentage");
         });
 
-        it("Should allow owner to update epoch duration", async function () {
+        it("Should reject zero decay interval", async function () {
             const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
 
-            await reputationDecay.setEpochDuration(ONE_DAY); // 1 day
-            expect(await reputationDecay.epochDuration()).to.equal(ONE_DAY);
+            await expect(reputationDecay.setDecayConfig({
+                decayInterval: 0,
+                decayPercentage: 100,
+                minimumReputation: 1,
+                enabled: true
+            })).to.be.revertedWithCustomError(reputationDecay, "InvalidDecayInterval");
         });
 
-        it("Should reject zero epoch duration", async function () {
+        it("Should emit DecayConfigUpdated on config update", async function () {
             const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
 
-            await expect(reputationDecay.setEpochDuration(0))
-                .to.be.revertedWithCustomError(reputationDecay, "InvalidEpochDuration");
+            await expect(reputationDecay.setDecayConfig({
+                decayInterval: ONE_DAY,
+                decayPercentage: 200,
+                minimumReputation: 5,
+                enabled: false
+            }))
+                .to.emit(reputationDecay, "DecayConfigUpdated")
+                .withArgs(ONE_DAY, 200, 5, false);
         });
 
-        it("Should allow owner to update inactivity threshold", async function () {
-            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
+        it("Should allow disabling decay via config", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
-            await reputationDecay.setInactivityThreshold(2);
-            expect(await reputationDecay.inactivityThreshold()).to.equal(2);
-        });
+            await reputationDecay.setReputation(user1.address, 1000);
 
-        it("Should allow owner to update max decay percent", async function () {
-            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_WEEK,
+                decayPercentage: 100,
+                minimumReputation: 1,
+                enabled: false
+            });
 
-            await reputationDecay.setMaxDecayPercent(7500); // 75%
-            expect(await reputationDecay.maxDecayPercent()).to.equal(7500);
-        });
+            await time.increase(10 * ONE_WEEK);
 
-        it("Should reject max decay above 100%", async function () {
-            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
-
-            await expect(reputationDecay.setMaxDecayPercent(10001))
-                .to.be.revertedWithCustomError(reputationDecay, "InvalidMaxDecayPercent");
-        });
-
-        it("Should emit DecayParametersUpdated on parameter changes", async function () {
-            const { reputationDecay } = await loadFixture(deployReputationDecayFixture);
-
-            await expect(reputationDecay.setDecayRatePerEpoch(200))
-                .to.emit(reputationDecay, "DecayParametersUpdated")
-                .withArgs(200, ONE_WEEK, 4, 5000);
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(1000);
         });
     });
 
     describe("Access Control", function () {
-        it("Should reject non-owner from setting reputation", async function () {
+        it("Should reject non-oracle from setting reputation", async function () {
             const { reputationDecay, user1, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
             await expect(reputationDecay.connect(otherAccount).setReputation(user1.address, 1000))
                 .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
 
-        it("Should reject non-owner from recording activity", async function () {
+        it("Should reject non-oracle from recording activity", async function () {
             const { reputationDecay, user1, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
             await expect(reputationDecay.connect(otherAccount).recordActivity(user1.address))
                 .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
 
-        it("Should reject non-owner from updating parameters", async function () {
+        it("Should reject non-admin from updating config", async function () {
             const { reputationDecay, otherAccount } = await loadFixture(deployReputationDecayFixture);
 
-            await expect(reputationDecay.connect(otherAccount).setDecayRatePerEpoch(200))
+            await expect(reputationDecay.connect(otherAccount).setDecayConfig({
+                decayInterval: ONE_DAY,
+                decayPercentage: 200,
+                minimumReputation: 5,
+                enabled: true
+            })).to.be.revertedWithCustomError(reputationDecay, "UnauthorizedGovernance");
+        });
+
+        it("Should reject non-oracle from applying decay", async function () {
+            const { reputationDecay, user1, otherAccount } = await loadFixture(deployReputationDecayFixture);
+
+            await expect(reputationDecay.connect(otherAccount).applyDecay(user1.address))
                 .to.be.revertedWithCustomError(reputationDecay, "AccessControlUnauthorizedAccount");
         });
     });
@@ -323,31 +468,55 @@ describe("ReputationDecay", function () {
         it("Should handle very large reputation values", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
-            const largeValue = hre.ethers.parseEther("1000000000"); // 1 billion tokens
+            const largeValue = hre.ethers.parseEther("1000000000");
             await reputationDecay.setReputation(user1.address, largeValue);
 
             await time.increase(5 * ONE_WEEK);
 
-            // 1% decay
-            const expected = (largeValue * BigInt(99)) / BigInt(100);
+            const expected = (largeValue * BigInt(95)) / BigInt(100);
             expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(expected);
         });
 
         it("Should work with custom decay parameters", async function () {
             const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
 
-            // Set 5% decay per day, 2 day grace, 80% max
-            await reputationDecay.setDecayRatePerEpoch(500); // 5%
-            await reputationDecay.setEpochDuration(ONE_DAY);
-            await reputationDecay.setInactivityThreshold(2);
-            await reputationDecay.setMaxDecayPercent(8000); // 80%
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_DAY,
+                decayPercentage: 500,
+                minimumReputation: 1,
+                enabled: true
+            });
 
             await reputationDecay.setReputation(user1.address, 1000);
 
-            // After 4 days (2 past grace) = 10% decay
-            await time.increase(4 * ONE_DAY);
+            await time.increase(3 * ONE_DAY);
 
-            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(900);
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(850);
+        });
+
+        it("Should not decay below custom minimum reputation", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            await reputationDecay.setDecayConfig({
+                decayInterval: ONE_DAY,
+                decayPercentage: 2000,
+                minimumReputation: 100,
+                enabled: true
+            });
+
+            await reputationDecay.setReputation(user1.address, 1000);
+
+            await time.increase(10 * ONE_DAY);
+
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(100);
+        });
+
+        it("Should return zero for user with zero base reputation", async function () {
+            const { reputationDecay, user1 } = await loadFixture(deployReputationDecayFixture);
+
+            expect(await reputationDecay.getEffectiveReputation(user1.address)).to.equal(0);
+            expect(await reputationDecay.calculateDecay(user1.address)).to.equal(0);
+            expect(await reputationDecay.isDecayRequired(user1.address)).to.equal(false);
         });
     });
 });

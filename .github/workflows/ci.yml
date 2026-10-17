@@ -3,8 +3,13 @@
 
 name: CI
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_VERSION: "22"
+  SOLC_VERSION: "0.8.28"
 
 on:
   push:
@@ -23,13 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
-          node-version: 20
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -37,10 +44,31 @@ jobs:
             ${{ runner.os }}-node-
       - name: Install dependencies
         run: npm ci
+      - name: Repository Boundary and Lint Checks
+        run: npm run lint
+      # V2-SC-152: the canonical EIP-712 vectors, the Solidity mirror, and both
+      # implementations must agree; drift fails here with an expected/found diff.
+      - name: EIP-712 canonical vector drift check
+        run: |
+          node scripts/check-eip712-vectors.mjs
+          node --test test/scripts/check-eip712-vectors.test.mjs
       - name: Solidity Lint
         run: npm run lint:sol --if-present
-      - name: TypeScript Lint
-        run: npm run lint --if-present
+      - name: Native Value Policy inventory (V2-SC-153)
+        run: node scripts/check-native-value-policy.mjs
+      - name: Native Value Policy self-tests (V2-SC-153)
+        run: node --test test/scripts/check-native-value-policy.test.mjs
+      # V2-SC-161: every integer-narrowing cast in canonical V2 must be proven safe or guarded
+      # by V2SafeCast; a new unlisted cast or a raw block.timestamp/chainid narrowing fails here.
+      - name: Safe-cast inventory (V2-SC-161)
+        run: node scripts/check-safe-casts.mjs
+      - name: Safe-cast inventory self-tests (V2-SC-161)
+        run: node --test test/scripts/check-safe-casts.test.mjs
+      # STAB-SC-006: compiler/Node/network authority drift gate.
+      - name: Toolchain and network drift gate (STAB-SC-006)
+        run: |
+          node scripts/check-toolchain-drift.mjs
+          node --test test/scripts/check-toolchain-drift.test.mjs
 
   test:
     name: Test
@@ -51,12 +79,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
-          node-version: 20
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -67,15 +98,55 @@ jobs:
       - name: Check owned Solidity compiler warnings
         run: npm run warning-gate -- --base-ref "${{ github.event.pull_request.base.sha || '' }}" --review-approved "${{ contains(github.event.pull_request.labels.*.name, 'solidity-warning-baseline-reviewed') }}"
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: latest
+          version: v1.8.3
       - name: Build contracts (forge build)
         run: forge build
+      # V2-SC-129: rebuilt artifacts must match the approved release manifest
+      # (compiler, optimizer, metadata, libraries, source hashes, explorer).
+      - name: Release reproducibility gate (V2-SC-129)
+        run: |
+          node scripts/check-release-reproducibility.mjs
+          node --test test/scripts/check-release-reproducibility.test.mjs
+      # PREWAVE-SC-062: per-contract and proxy deployment size budgets — oversized
+      # contracts must not be broadcast.  Growth is attributed per contract in the
+      # release report written to deployments/releases/deployment-size-report.json.
+      - name: Deployment size budget gate (PREWAVE-SC-062)
+        run: |
+          node scripts/check-deployment-sizes.mjs
+          node --test test/scripts/check-deployment-sizes.test.mjs
       - name: Run Foundry tests (forge test)
-        run: forge test --no-match-path test/invariant --no-match-path test/fuzz
+        run: forge test --no-match-path "test/{invariant,fuzz}/**"
       - name: Run Hardhat tests
         run: npx hardhat test
+
+  storage-layouts:
+    name: Storage Layout Manifests (V2-SC-121)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Verify frozen storage-layout manifests
+        run: npm run test:layouts
+      - name: Verify storage namespace and reserved-slot isolation (V2-SC-159)
+        run: node scripts/check-storage-namespaces.mjs
 
   fuzz-tests:
     name: Fuzz Tests
@@ -83,13 +154,15 @@ jobs:
     needs: test
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
-          node-version: 20
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -98,11 +171,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: latest
+          version: v1.8.3
       - name: Run Foundry fuzz tests
-        run: forge test --match-path test/fuzz
+        run: forge test --match-path "test/fuzz/**"
 
   invariant-tests:
     name: Invariant Tests
@@ -110,13 +183,15 @@ jobs:
     needs: test
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
-          node-version: 20
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -125,11 +200,81 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: latest
+          version: v1.8.3
       - name: Run Foundry invariant tests
-        run: forge test --match-path test/invariant
+        run: forge test --match-path "test/invariant/**"
+      - name: Capture invariant failure seeds (SC-065)
+        if: failure()
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          FORGE_VERSION: ${{ steps.foundry.outputs.version || 'v1.8.3' }}
+          SOLC_VERSION: ${{ env.SOLC_VERSION }}
+        run: |
+          mkdir -p artifacts/invariant-seeds
+          # Hosted runners may leave forge cache counterexamples under cache/;
+          # contributors can also drop a seed JSON manually into the folder.
+          if [ -d cache ]; then
+            find cache -type f \( -name '*counterexample*' -o -name '*.json' \) 2>/dev/null | head -50 | while read -r f; do
+              cp -n "$f" artifacts/invariant-seeds/ 2>/dev/null || true
+            done
+          fi
+          # Validate any committed regression seeds (always, no secrets)
+          node --test test/scripts/invariant-seed-tools.test.mjs
+
+      - name: Upload invariant failure seeds
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invariant-failure-seeds-${{ github.sha }}
+          path: artifacts/invariant-seeds/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  coverage-gate:
+    name: Coverage Gate
+    runs-on: ubuntu-latest
+    needs: test
+    # Report coverage even when tests fail; the Test job still fails the run on its own.
+    if: ${{ always() && needs.test.result != 'cancelled' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          persist-credentials: false
+          submodules: recursive
+      # Pinned so the floor below is always measured with the same toolchain.
+      # Update this version and MIN_BRANCH_PCT together when remeasuring.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      # Deploy scripts are skipped because they hit "stack too deep" under coverage instrumentation.
+      # Test pass/fail is enforced by the Test job; this job only enforces branch coverage.
+      - name: Measure V2 branch coverage
+        run: forge coverage --ir-minimum --skip "*.s.sol" --match-path "test/v2/**" --no-match-path "test/v2/*Invariant*" --allow-failure --report lcov --report-file lcov.info
+      # Fails if StakeVault's branch coverage drops below the floor, or if its record is missing or malformed.
+      # Lowering the floor requires editing this file, so any regression is explicit in review.
+      - name: Enforce StakeVault branch coverage floor
+        env:
+          COVERAGE_FILE: contracts/v2/StakeVault.sol
+          MIN_BRANCH_PCT: "54.83"
+        run: |
+          awk -v file="$COVERAGE_FILE" -v min="$MIN_BRANCH_PCT" '
+            open && /^SF:/ { open = 0; broken = 1 }
+            $0 == ("SF:" file) { open = 1; seen++; next }
+            open && /^BRF:/ { found = substr($0, 5); brf++ }
+            open && /^BRH:/ { hit = substr($0, 5); brh++ }
+            open && $0 == "end_of_record" { open = 0 }
+            END {
+              if (seen != 1 || open || broken || brf != 1 || brh != 1 || found !~ /^[0-9]+$/ || hit !~ /^[0-9]+$/ || length(found) > 9 || found + 0 == 0 || hit + 0 > found + 0) {
+                print file ": missing or malformed branch coverage record"; exit 1
+              }
+              pct = 100 * hit / found
+              printf "%s branch coverage: %.2f%% (%d/%d), floor %s%%\n", file, pct, hit, found, min
+              if (pct + 0.005 < min + 0) { print "Branch coverage regressed below the floor."; exit 1 }
+            }' lcov.info
 
   gas-check:
     name: Gas Check
@@ -137,13 +282,15 @@ jobs:
     needs: test
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
-          node-version: 20
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -152,13 +299,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          version: latest
-      - name: Check gas snapshots
-        run: |
-          if [ -f .gas-snapshots.json ]; then
-            forge snapshot --check
-          else
-            echo "No gas snapshot file found. Skipping."
-          fi
+          version: v1.8.3
+      - name: Check SC-064 scenario budgets and snapshot
+        run: npm run check:gas:sc064
+      - name: Check full-suite gas snapshot
+        run: forge snapshot --check
+
+  coverage-quality-gate:
+    name: Coverage Quality Gate
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          submodules: recursive
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Cache node_modules
+        uses: actions/cache@v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - name: Generate coverage report
+        run: forge coverage --report lcov --report summary --skip script
+      - name: Run coverage quality gate
+        run: npx ts-node scripts/coverage-quality-gate.ts

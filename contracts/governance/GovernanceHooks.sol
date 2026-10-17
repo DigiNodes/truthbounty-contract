@@ -4,7 +4,8 @@ pragma solidity ^0.8.20;
 /**
  * @title GovernanceHooks
  * @notice Interface for DAO governance control over protocol parameters
- * @dev Allows governance to control fee percentages, thresholds, and role assignments
+ * @dev Legacy per-parameter surface only. Canonical V2 immutable parameter sets are
+ *      owned by ParameterVersionRegistry and intentionally excluded from this interface.
  */
 interface GovernanceHooks {
     // ============ Parameter Update Types ============
@@ -32,7 +33,32 @@ interface GovernanceHooks {
         TREASURY_ROLE,
         PAUSER_ROLE,
         // Upgrade authorization (40+)
-        UPGRADE_AUTHORIZATION
+        UPGRADE_AUTHORIZATION,
+        // RewardEngine parameters (50+)
+        BASE_REWARD_RATE,
+        MIN_REWARD_AMOUNT,
+        MAX_REWARD_AMOUNT,
+        DAILY_EMISSION_LIMIT,
+        ANTI_WHALE_LIMIT,
+        MIN_REPUTATION_MULTIPLIER,
+        MAX_REPUTATION_MULTIPLIER,
+        MIN_DIFFICULTY_MULTIPLIER,
+        MAX_DIFFICULTY_MULTIPLIER,
+        MIN_STAKE_MULTIPLIER,
+        MAX_STAKE_MULTIPLIER,
+        MIN_GOVERNANCE_MULTIPLIER,
+        MAX_GOVERNANCE_MULTIPLIER,
+        // TokenomicsEngine parameters (60+)
+        VERIFIER_REWARD_ALLOCATION_BPS,
+        TREASURY_RESERVE_ALLOCATION_BPS,
+        ECOSYSTEM_INCENTIVE_ALLOCATION_BPS,
+        GOVERNANCE_INCENTIVE_ALLOCATION_BPS,
+        PROTOCOL_DEVELOPMENT_ALLOCATION_BPS,
+        EMERGENCY_RESERVE_ALLOCATION_BPS,
+        EMISSION_LIMIT,
+        REWARD_MULTIPLIER,
+        TREASURY_RESERVE_TARGET_BPS,
+        PROTOCOL_FEE_ALLOCATION_BPS
     }
 
     // ============ Events ============
@@ -185,4 +211,5 @@ interface GovernanceHooks {
         uint8 status,
         address proposer
     );
+
 }

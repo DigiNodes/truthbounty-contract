@@ -83,6 +83,9 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should calculate effective stake based on reputation when voting", async function () {
+      // Move past the reputation update grace period so the updated scores apply
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       // Set different reputations
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("2")); // 2x
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("1")); // 1x
@@ -152,6 +155,9 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should apply minimum reputation bound", async function () {
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       // Set very low reputation (below minimum)
       await mockOracle.setReputationScore(
         await verifier1.getAddress(),
@@ -169,6 +175,9 @@ describe("TruthBountyWeighted", function () {
     });
 
     it("Should apply maximum reputation bound", async function () {
+      // Move past the reputation update grace period so the updated score applies
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       // Set very high reputation (above maximum)
       await mockOracle.setReputationScore(
         await verifier1.getAddress(),
@@ -198,8 +207,30 @@ describe("TruthBountyWeighted", function () {
       await truthBounty.connect(verifier3).stake(ethers.parseEther("1000"));
     });
 
+    it("keeps the vote cutoff fixed across recovery and settles once at the confirmation boundary", async function () {
+      const claim = await truthBounty.getClaim(claimId);
+      const deadline = Number(claim.verificationWindowEnd);
+      const stakeAmount = ethers.parseEther("100");
+
+      await time.setNextBlockTimestamp(deadline - 1);
+      await truthBounty.connect(verifier1).vote(claimId, true, stakeAmount);
+
+      await time.setNextBlockTimestamp(deadline);
+      await expect(truthBounty.connect(verifier2).vote(claimId, false, stakeAmount))
+        .to.be.revertedWith("Verification window closed");
+
+      await time.setNextBlockTimestamp(deadline + CONFIRMATION_DELAY);
+      await truthBounty.settleClaim(claimId);
+
+      expect((await truthBounty.settlementResults(claimId)).passed).to.equal(true);
+      await expect(truthBounty.settleClaim(claimId)).to.be.revertedWith("Claim already settled");
+    });
+
     it("Should determine outcome based on weighted votes", async function () {
       // Setup: High reputation votes FOR, low reputation votes AGAINST
+      // Move past the reputation update grace period so the updated scores apply
+      await time.increase(2 * 24 * 60 * 60 + 1);
+
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("3")); // 3x
       await mockOracle.setReputationScore(await verifier2.getAddress(), ethers.parseEther("0.5")); // 0.5x
       await mockOracle.setReputationScore(await verifier3.getAddress(), ethers.parseEther("0.5")); // 0.5x
@@ -509,6 +540,9 @@ describe("TruthBountyWeighted", function () {
       // Stake for verifiers
       await truthBounty.connect(verifier1).stake(ethers.parseEther("1000"));
       await truthBounty.connect(verifier2).stake(ethers.parseEther("1000"));
+
+      // Move past the reputation update grace period so the updated scores apply
+      await time.increase(2 * 24 * 60 * 60 + 1);
 
       // Make verifier2 stronger so the claim clearly fails without hitting the tie branch
       await mockOracle.setReputationScore(await verifier1.getAddress(), ethers.parseEther("1"));

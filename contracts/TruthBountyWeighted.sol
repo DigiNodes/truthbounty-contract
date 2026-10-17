@@ -6,8 +6,11 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./utils/ResolverRoleTimelock.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./IReputationOracle.sol";
+import "./IReputationUpdateEngine.sol";
 import "./governance/GovernanceOwnable.sol";
+import "./interfaces/ITruthBountyEvents.sol";
 
 /**
  * @title TruthBountyWeighted
@@ -20,7 +23,7 @@ import "./governance/GovernanceOwnable.sol";
  * - Prevents low-reputation dominance
  * - Maintains backward compatibility with equal-weight fallback
  */
-contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable {
+contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     // ============ Roles ============
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -38,6 +41,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /// @notice Denominator for percentage-based governance parameters.
     uint256 public constant PERCENT_DENOMINATOR = 100;
+
+    function _percentOf(uint256 value, uint256 percent) internal pure returns (uint256) {
+        return Math.mulDiv(value, percent, PERCENT_DENOMINATOR);
+    }
 
     /// @notice Default verification window for new claims.
     uint256 public constant DEFAULT_VERIFICATION_WINDOW_DURATION = 7 days;
@@ -79,6 +86,11 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     uint256 public constant MAX_REPUTATION_STALENESS = 1 hours;
     /// @notice Threshold above which a withdrawal is considered "large" and requires a 2-day cooldown (#152)
     uint256 public constant LARGE_WITHDRAWAL_THRESHOLD = 10_000 * TOKEN_DECIMALS_MULTIPLIER;
+    /// @notice Canonical indexing schema emitted by this module.
+    uint16 public constant EVENT_SCHEMA_VERSION = 1;
+
+    /// @notice Epoch duration for reputation snapshot tracking (7 days) (SC-013)
+    uint256 public constant EPOCH_DURATION = 7 days;
     // ============ State Variables ============
 
     /// @notice Token contract for staking and rewards
@@ -86,6 +98,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     /// @notice Reputation oracle for score lookups
     IReputationOracle public reputationOracle;
+
+    /// @notice Reputation update engine for post-settlement reputation changes
+    IReputationUpdateEngine public reputationUpdateEngine;
 
     // ============ Configuration Parameters (Governance-controlled) ============
 
@@ -118,7 +133,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     /// @notice Whether weighted staking is enabled
     bool public weightedStakingEnabled = true;
 
+    /// @notice Treasury address receiving protocol fees from successful settlements.
+    address public treasury;
+
+    /// @notice Percentage of the settlement reward pool routed to the treasury.
+    uint256 public protocolFeePercent = 10;
+
     // ============ Structs ============
+
+    enum SettlementState {
+        Pending,
+        Executing,
+        Completed
+    }
 
     struct Claim {
         uint256 id;
@@ -127,9 +154,12 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 createdAt;
         uint256 verificationWindowEnd;
         bool settled;
+        bool finalized;
         uint256 totalWeightedFor;      // Weighted votes for claim (NEW)
         uint256 totalWeightedAgainst;  // Weighted votes against claim (NEW)
         uint256 totalStakeAmount;      // Total raw stake amount
+        uint256 totalStakedFor;        // Total raw stake for (support)
+        uint256 totalStakedAgainst;    // Total raw stake against
     }
 
     struct Vote {
@@ -141,6 +171,20 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         bool rewardClaimed;
         bool stakeReturned;
         uint256 slashAmount;           // Per-vote slash amount calculated at settlement (prevents double-slash)
+        uint256 snapshotTimestamp;     // Block timestamp when snapshot was captured at vote time (SC-013)
+        uint256 snapshotEpoch;         // Protocol epoch at vote time (SC-013)
+        bytes32 snapshotRoot;          // Merkle root reserved for future proof verification (SC-013)
+    }
+
+    struct Verification {
+        address verifier;
+        uint256 reputationSnapshot;
+        uint256 snapshotTimestamp;
+        uint256 snapshotEpoch;
+        bytes32 snapshotRoot;
+        uint256 effectiveStake;
+        uint256 stakeAmount;
+        bool support;
     }
 
     struct SettlementResult {
@@ -152,6 +196,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 winnerCount;           // Number of winning voters eligible for rewards
         uint256 winnersClaimed;        // Number of winning voters that claimed rewards
         uint256 rewardsClaimed;        // Total rewards already distributed
+        uint256 rewardPool;
+        uint256 winningStake;
+        uint256 losingStake;
+        uint256 protocolFee;
+        uint256 treasuryFee;
+        uint256 refundedStake;
+        bool settled;
     }
 
     struct VerifierStake {
@@ -172,6 +223,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(address => VerifierStake) public verifierStakes;
     mapping(uint256 => address[]) private claimVoters;  // Track all voters per claim for settlement
+    mapping(uint256 => SettlementState) public settlementStates;
     
     /// @notice Track reputation snapshots for staleness validation: user => (reputationScore, timestamp)
     mapping(address => ReputationSnapshot) public reputationSnapshots;
@@ -206,6 +258,9 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 totalRewards,
         uint256 totalSlashed
     );
+    event SettlementPreviewed(uint256 indexed claimId, uint256 rewardPool, uint256 protocolFee);
+    event SettlementCompleted(uint256 indexed claimId, uint256 rewardPool, uint256 protocolFee, address indexed treasury);
+    event TreasuryAllocated(uint256 indexed claimId, address indexed treasury, uint256 amount);
 
     event RewardsDistributed(
         uint256 indexed claimId,
@@ -223,18 +278,22 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
     event StakeWithdrawn(address indexed verifier, uint256 amount);
     event ReputationOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event ReputationBoundsUpdated(uint256 minScore, uint256 maxScore);
+    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event WeightedStakingToggled(bool enabled);
     event DefaultReputationScoreUpdated(uint256 oldScore, uint256 newScore);
     event ReputationSnapshotRecorded(address indexed user, uint256 reputationScore, uint256 timestamp);
     event ReputationStalenessValidated(address indexed user, uint256 expectedReputation, uint256 actualReputation, uint256 maxDrift);
-    event ReputationUpdateGracePeriodUpdated(uint256 newGracePeriod);
     event ClaimWiped(uint256 indexed claimId, address indexed admin, string reason);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event ProtocolFeePercentUpdated(uint256 oldPercent, uint256 newPercent);
+    event ReputationUpdateEngineUpdated(address indexed oldEngine, address indexed newEngine);
 
     // ============ Errors ============
 
     error InvalidReputationOracle();
     error InvalidReputationBounds();
     error InvalidReputationUpdateGracePeriod();
+    error InvalidReputationUpdateEngine();
 
     // ============ Constructor ============
 
@@ -258,6 +317,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         _setRoleAdmin(RESOLVER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(TREASURY_ROLE, ADMIN_ROLE);
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
+
+        treasury = initialAdmin;
         
         // Initialize governance
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
@@ -293,9 +354,12 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             createdAt: block.timestamp,
             verificationWindowEnd: verificationWindowEnd,
             settled: false,
+            finalized: false,
             totalWeightedFor: 0,
             totalWeightedAgainst: 0,
-            totalStakeAmount: 0
+            totalStakeAmount: 0,
+            totalStakedFor: 0,
+            totalStakedAgainst: 0
         });
 
         emit ClaimCreated(claimId, msg.sender, content, verificationWindowEnd);
@@ -381,7 +445,8 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         );
 
         // Calculate weighted stake based on reputation
-        uint256 reputationScore = _getReputationScore(msg.sender);
+        // Check for last-minute reputation boosts using grace period
+        uint256 reputationScore = _getReputationScoreWithGracePeriod(msg.sender, claim.createdAt);
         
         // Validate reputation staleness if expected reputation is provided
         if (expectedReputation > 0) {
@@ -393,7 +458,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         // Lock the raw stake
         verifierStakes[msg.sender].activeStakes += stakeAmount;
 
-        // Record the vote with both raw and effective stakes
+        // Record the vote with both raw and effective stakes and immutable reputation snapshot (SC-013)
         votes[claimId][msg.sender] = Vote({
             voted: true,
             support: support,
@@ -402,7 +467,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             reputationScore: reputationScore,
             rewardClaimed: false,
             stakeReturned: false,
-            slashAmount: 0
+            slashAmount: 0,
+            snapshotTimestamp: block.timestamp,
+            snapshotEpoch: block.timestamp / EPOCH_DURATION,
+            snapshotRoot: bytes32(0)
         });
 
         // Store reputation snapshot for future validation
@@ -418,8 +486,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         // Update claim totals with WEIGHTED stakes
         if (support) {
             claim.totalWeightedFor += effectiveStake;
+            claim.totalStakedFor += stakeAmount;
         } else {
             claim.totalWeightedAgainst += effectiveStake;
+            claim.totalStakedAgainst += stakeAmount;
         }
         claim.totalStakeAmount += stakeAmount; // Still track raw stake total
 
@@ -434,22 +504,34 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         Claim storage claim = claims[claimId];
         require(claim.submitter != address(0), "Claim does not exist");
         require(block.timestamp >= claim.verificationWindowEnd + confirmationDelay, "Confirmation delay pending");
-        require(!claim.settled, "Claim already settled");
+        require(!claim.settled && !claim.finalized, "Claim already settled");
+        require(settlementStates[claimId] != SettlementState.Executing, "Settlement already executing");
+        require(settlementStates[claimId] != SettlementState.Completed, "Settlement already completed");
         require(claim.totalStakeAmount > 0, "No votes cast");
 
-        claim.settled = true;
+        settlementStates[claimId] = SettlementState.Executing;
 
         // Determine outcome based on WEIGHTED votes. Exact ties are resolved as
         // a refund-only outcome so no side is left unable to recover stake.
         bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
         bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
 
-        // Calculate rewards and slashing
+        // Calculate rewards and slashing deterministically before any state changes are finalized.
         (uint256 rewardAmount, uint256 slashedAmount) = _calculateSettlement(
             claimId,
             passed,
             isTie
         );
+
+        claim.settled = true;
+        claim.finalized = true;
+        settlementStates[claimId] = SettlementState.Completed;
+
+        SettlementResult storage settlement = settlementResults[claimId];
+        if (settlement.protocolFee > 0) {
+            require(bountyToken.transfer(treasury, settlement.protocolFee), "Treasury transfer failed");
+            emit TreasuryAllocated(claimId, treasury, settlement.protocolFee);
+        }
 
         emit ClaimSettled(
             claimId,
@@ -459,6 +541,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             rewardAmount,
             slashedAmount
         );
+        emit SettlementCompleted(claimId, settlement.rewardPool, settlement.protocolFee, treasury);
     }
 
     /**
@@ -718,13 +801,6 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 expectedReputation,
         uint256 maxDrift
     ) internal {
-        ReputationSnapshot memory lastSnapshot = reputationSnapshots[user];
-        
-        // If no previous snapshot, this is the first preview - allow it
-        if (lastSnapshot.timestamp == 0) {
-            return;
-        }
-        
         // Check if reputation has changed more than the allowed drift
         if (maxDrift > 0) {
             // Calculate percentage change: (|current - expected| / expected) * 10000
@@ -737,8 +813,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         }
         
         // Check if reputation is too stale (timestamp-based)
-        uint256 timeSinceSnapshot = block.timestamp - lastSnapshot.timestamp;
-        require(timeSinceSnapshot <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        uint256 lastSnapshotTime = reputationSnapshots[user].timestamp;
+        if (lastSnapshotTime == 0) {
+            // No prior snapshot - fall back to the oracle's last update time
+            try reputationOracle.getLastReputationUpdate(user) returns (uint256 lastUpdateTime) {
+                lastSnapshotTime = lastUpdateTime;
+            } catch {
+                lastSnapshotTime = 0;
+            }
+        }
+        if (lastSnapshotTime > 0) {
+            require(block.timestamp - lastSnapshotTime <= MAX_REPUTATION_STALENESS, "Reputation too stale");
+        }
         
         // Emit validation event
         emit ReputationStalenessValidated(user, expectedReputation, currentReputation, maxDrift);
@@ -798,8 +884,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
                 loserWeightedStake: 0,
                 winnerCount: 0,
                 winnersClaimed: 0,
-                rewardsClaimed: 0
+                rewardsClaimed: 0,
+                rewardPool: 0,
+                winningStake: 0,
+                losingStake: 0,
+                protocolFee: 0,
+                treasuryFee: 0,
+                refundedStake: claim.totalStakeAmount,
+                settled: true
             });
+
+            // SC-008: Apply neutral reputation updates for all voters in a tie
+            _applyReputationUpdates(claimId, /* isTie */ true);
 
             return (0, 0);
         }
@@ -808,16 +904,19 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         uint256 winnerWeightedStake = passed ? claim.totalWeightedFor : claim.totalWeightedAgainst;
         uint256 loserWeightedStake = passed ? claim.totalWeightedAgainst : claim.totalWeightedFor;
 
-        // Calculate total RAW stake from losers for slashing
-        uint256 loserRawStake = _calculateLoserRawStake(claimId, passed);
+        // Exact total RAW stake from losing side (pre-calculated during voting)
+        uint256 winnerRawStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
+        uint256 loserRawStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
 
         // Slash the configured percentage of losing raw stake.
-        slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
+        slashedAmount = _percentOf(loserRawStake, slashPercent);
         // Calculate and assign per-vote slash amounts, returns total slashed
         slashedAmount = _assignPerVoteSlashes(claimId, passed);
 
         // The configured reward share of slashed stake goes to winners.
         rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
+        uint256 protocolFee = (rewardAmount * protocolFeePercent) / PERCENT_DENOMINATOR;
+        rewardAmount = _percentOf(slashedAmount, rewardPercent);
 
         totalSlashed += slashedAmount;
         totalRewarded += rewardAmount;
@@ -830,8 +929,18 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             loserWeightedStake: loserWeightedStake,
             winnerCount: _countWinners(claimId, passed),
             winnersClaimed: 0,
-            rewardsClaimed: 0
+            rewardsClaimed: 0,
+            rewardPool: rewardAmount,
+            winningStake: winnerRawStake,
+            losingStake: loserRawStake,
+            protocolFee: protocolFee,
+            treasuryFee: protocolFee,
+            refundedStake: claim.totalStakeAmount - slashedAmount,
+            settled: true
         });
+
+        // SC-008: Apply reputation updates after settlement is fully recorded
+        _applyReputationUpdates(claimId, /* isTie */ false);
     }
 
     /**
@@ -878,39 +987,203 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
             
             if (isLoser) {
                 // Calculate slash as the configured percentage of raw stake.
-                uint256 slashAmount = (vote.stakeAmount * slashPercent) / PERCENT_DENOMINATOR;
+                uint256 slashAmount = _percentOf(vote.stakeAmount, slashPercent);
                 vote.slashAmount = slashAmount;
                 totalSlashed += slashAmount;
             } else {
                 // Winners are not slashed
                 vote.slashAmount = 0;
             }
+
+            // Reputation updates handled in _calculateSettlement after this returns.
         }
     }
 
+    // ============ SC-008: Reputation Update Integration ============
+
     /**
-     * @notice Helper to calculate total raw stake from losing side
-     * @dev Iterates through votes - in production, consider off-chain indexing
+     * @notice Apply reputation updates for all voters after settlement
+     * @param claimId The settled claim ID
+     * @param isTie   Whether the settlement resulted in a tie
+     * @dev Winners (or all voters in a tie) receive correct-verification updates.
+     *      Losers receive incorrect-verification penalties.
+     *      The claim submitter receives a neutral disputed-claim update.
+     *      If no update engine is configured, this is a no-op.
      */
-    function _calculateLoserRawStake(
-        uint256 claimId,
-        bool passed
-    ) internal view returns (uint256 total) {
-        // Note: This is a simplified implementation
-        // In production, you'd want to track this during voting or use off-chain indexing
-        // For now, we'll use the total stake as an approximation
+    function _applyReputationUpdates(uint256 claimId, bool isTie) internal {
+        if (address(reputationUpdateEngine) == address(0)) return;
+
+        SettlementResult storage settlement = settlementResults[claimId];
+        address[] storage voters = claimVoters[claimId];
+
+        for (uint256 i = 0; i < voters.length; i++) {
+            address voter = voters[i];
+            if (reputationUpdateEngine.isClaimProcessed(voter, claimId)) continue;
+
+            IReputationUpdateEngine.UpdateReason reason;
+
+            if (isTie) {
+                reason = IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM;
+            } else {
+                bool isWinner = (votes[claimId][voter].support == settlement.passed);
+                reason = isWinner
+                    ? IReputationUpdateEngine.UpdateReason.CORRECT_VERIFICATION
+                    : IReputationUpdateEngine.UpdateReason.INCORRECT_VERIFICATION;
+            }
+
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: voter,
+                delta: 0,
+                reason: reason,
+                claimId: claimId
+            }));
+        }
+
+        // Also update the claim submitter's reputation as a disputed outcome
+        // so submitters cannot spam claims without reputation consequence.
+        address submitter = claims[claimId].submitter;
+        if (submitter != address(0) && !reputationUpdateEngine.isClaimProcessed(submitter, claimId)) {
+            reputationUpdateEngine.updateReputation(IReputationUpdateEngine.ReputationUpdate({
+                verifier: submitter,
+                delta: 0,
+                reason: IReputationUpdateEngine.UpdateReason.DISPUTED_CLAIM,
+                claimId: claimId
+            }));
+        }
+    }
+
+    // ============ Settlement View Functions ============
+
+    function getSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        if (claims[claimId].submitter == address(0)) {
+            return _emptySettlementResult();
+        }
+
+        if (settlementResults[claimId].settled) {
+            return settlementResults[claimId];
+        }
+
+        return _previewSettlement(claimId);
+    }
+
+    function isSettled(uint256 claimId) external view returns (bool) {
         Claim storage claim = claims[claimId];
+        if (claim.submitter == address(0)) {
+            return false;
+        }
+        return claim.settled || settlementResults[claimId].settled;
+    }
 
-        // Rough approximation: total stake * (loser weighted / total weighted)
-        uint256 totalWeighted = claim.totalWeightedFor + claim.totalWeightedAgainst;
-        uint256 loserWeighted = passed ? claim.totalWeightedAgainst : claim.totalWeightedFor;
+    function calculateSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        return _previewSettlement(claimId);
+    }
 
-        if (totalWeighted == 0) return 0;
+    function previewSettlement(uint256 claimId) external view returns (SettlementResult memory) {
+        return _previewSettlement(claimId);
+    }
 
-        return (claim.totalStakeAmount * loserWeighted) / totalWeighted;
+    function _previewSettlement(uint256 claimId) internal view returns (SettlementResult memory) {
+        Claim storage claim = claims[claimId];
+        if (claim.submitter == address(0)) {
+            return _emptySettlementResult();
+        }
+
+        bool isTie = claim.totalWeightedFor == claim.totalWeightedAgainst && claim.totalWeightedFor > 0;
+        bool passed = isTie ? false : _determineOutcome(claim.totalWeightedFor, claim.totalWeightedAgainst);
+
+        if (isTie) {
+            return SettlementResult({
+                passed: false,
+                totalRewards: 0,
+                totalSlashed: 0,
+                winnerWeightedStake: 0,
+                loserWeightedStake: 0,
+                winnerCount: 0,
+                winnersClaimed: 0,
+                rewardsClaimed: 0,
+                rewardPool: 0,
+                winningStake: 0,
+                losingStake: 0,
+                protocolFee: 0,
+                treasuryFee: 0,
+                refundedStake: claim.totalStakeAmount,
+                settled: false
+            });
+        }
+
+        uint256 winnerRawStake = passed ? claim.totalStakedFor : claim.totalStakedAgainst;
+        uint256 loserRawStake = passed ? claim.totalStakedAgainst : claim.totalStakedFor;
+        uint256 slashedAmount = (loserRawStake * slashPercent) / PERCENT_DENOMINATOR;
+        uint256 rewardAmount = (slashedAmount * rewardPercent) / PERCENT_DENOMINATOR;
+        uint256 protocolFee = (rewardAmount * protocolFeePercent) / PERCENT_DENOMINATOR;
+
+        return SettlementResult({
+            passed: passed,
+            totalRewards: rewardAmount,
+            totalSlashed: slashedAmount,
+            winnerWeightedStake: passed ? claim.totalWeightedFor : claim.totalWeightedAgainst,
+            loserWeightedStake: passed ? claim.totalWeightedAgainst : claim.totalWeightedFor,
+            winnerCount: _countWinners(claimId, passed),
+            winnersClaimed: 0,
+            rewardsClaimed: 0,
+            rewardPool: rewardAmount,
+            winningStake: winnerRawStake,
+            losingStake: loserRawStake,
+            protocolFee: protocolFee,
+            treasuryFee: protocolFee,
+            refundedStake: claim.totalStakeAmount - slashedAmount,
+            settled: false
+        });
+    }
+
+    function _emptySettlementResult() internal pure returns (SettlementResult memory) {
+        return SettlementResult({
+            passed: false,
+            totalRewards: 0,
+            totalSlashed: 0,
+            winnerWeightedStake: 0,
+            loserWeightedStake: 0,
+            winnerCount: 0,
+            winnersClaimed: 0,
+            rewardsClaimed: 0,
+            rewardPool: 0,
+            winningStake: 0,
+            losingStake: 0,
+            protocolFee: 0,
+            treasuryFee: 0,
+            refundedStake: 0,
+            settled: false
+        });
+    }
+
+    /**
+     * @notice Set the reputation update engine address
+     * @param _newEngine Address of the ReputationUpdateEngine contract
+     */
+    function setReputationUpdateEngine(address _newEngine) external onlyRole(ADMIN_ROLE) {
+        if (_newEngine == address(0)) revert InvalidReputationUpdateEngine();
+
+        address oldEngine = address(reputationUpdateEngine);
+        reputationUpdateEngine = IReputationUpdateEngine(_newEngine);
+
+        emit ReputationUpdateEngineUpdated(oldEngine, _newEngine);
     }
 
     // ============ Admin Functions ============
+
+    function setTreasury(address newTreasury) external onlyGovernanceOrAdmin {
+        require(newTreasury != address(0), "Invalid treasury address");
+        address oldTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryUpdated(oldTreasury, newTreasury);
+    }
+
+    function setProtocolFeePercent(uint256 newProtocolFeePercent) external onlyGovernanceOrAdmin {
+        require(newProtocolFeePercent <= PERCENT_DENOMINATOR, "Invalid protocol fee percent");
+        uint256 oldPercent = protocolFeePercent;
+        protocolFeePercent = newProtocolFeePercent;
+        emit ProtocolFeePercentUpdated(oldPercent, newProtocolFeePercent);
+    }
 
     /**
      * @notice Emergency function to wipe a claim containing illegal or harmful content
@@ -1027,7 +1300,7 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
      */
     function setMinStakeAmount(uint256 newAmount) external onlyGovernanceOrAdmin {
         require(newAmount > 0, "Invalid amount");
-        require(newAmount <= bountyToken.totalSupply(), "Min stake exceeds token supply");
+        require(newAmount < bountyToken.totalSupply(), "Min stake exceeds token supply");
         
         uint256 oldAmount = minStakeAmount;
         minStakeAmount = newAmount;
@@ -1090,6 +1363,49 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         
         emit ParameterUpdatedByGovernance(GOVERNANCE_PARAM_REPUTATION_GRACE_PERIOD, old, newGracePeriod);
         emit ReputationUpdateGracePeriodUpdated(newGracePeriod);
+    }
+
+    // ============ IVerificationSource (SC-005) ============
+
+    function getClaimVoterCount(uint256 claimId) external view returns (uint256) {
+        return claimVoters[claimId].length;
+    }
+
+    function getClaimVoterAt(uint256 claimId, uint256 index) external view returns (address) {
+        return claimVoters[claimId][index];
+    }
+
+    function getVoteData(uint256 claimId, address verifier)
+        external
+        view
+        returns (bool voted, bool support, uint256 effectiveStake)
+    {
+        Vote storage v = votes[claimId][verifier];
+        return (v.voted, v.support, v.effectiveStake);
+    }
+
+    /// @notice Get the verification weight (effectiveStake) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationWeight(uint256 claimId, address verifier) external view returns (uint256) {
+        return votes[claimId][verifier].effectiveStake;
+    }
+
+    /// @notice Get the verification support (vote direction) for a verifier on a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getVerificationSupport(uint256 claimId, address verifier) external view returns (bool) {
+        return votes[claimId][verifier].support;
+    }
+
+    /// @notice Get the verification window end timestamp for a claim
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimVerificationWindowEnd(uint256 claimId) external view returns (uint256) {
+        return claims[claimId].createdAt + verificationWindowDuration;
+    }
+
+    /// @notice Get the claim submitter address
+    /// @dev Compatibility method for VerificationAggregation.sol interface
+    function getClaimSubmitter(uint256 claimId) external view returns (address) {
+        return claims[claimId].submitter;
     }
 
     // ============ View Functions ============
@@ -1161,6 +1477,76 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         
         // Consider stale if reputation changed significantly or too much time has passed
         hasChanged = (currentReputation != previewReputation) || (timeSincePreview > MAX_REPUTATION_STALENESS);
+    }
+
+    /**
+     * @notice Expose historical verification query for inspecting reputation, timestamp, epoch, and aggregation contribution (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return reputationUsed The reputation score captured at vote time
+     * @return timestamp The timestamp when the vote/snapshot was recorded
+     * @return epoch The epoch when the vote/snapshot was recorded
+     * @return aggregationContribution The effective weighted stake contributed during vote aggregation
+     */
+    function getHistoricalVerification(
+        uint256 claimId,
+        address verifier
+    ) external view returns (
+        uint256 reputationUsed,
+        uint256 timestamp,
+        uint256 epoch,
+        uint256 aggregationContribution
+    ) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return (v.reputationScore, v.snapshotTimestamp, v.snapshotEpoch, v.effectiveStake);
+    }
+
+    /**
+     * @notice Get structured Verification data for a claim and verifier (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return verification Struct containing full immutable verification snapshot details
+     */
+    function getVerification(
+        uint256 claimId,
+        address verifier
+    ) external view returns (Verification memory verification) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return Verification({
+            verifier: verifier,
+            reputationSnapshot: v.reputationScore,
+            snapshotTimestamp: v.snapshotTimestamp,
+            snapshotEpoch: v.snapshotEpoch,
+            snapshotRoot: v.snapshotRoot,
+            effectiveStake: v.effectiveStake,
+            stakeAmount: v.stakeAmount,
+            support: v.support
+        });
+    }
+
+    /**
+     * @notice Get verification snapshot details for future Merkle proof compatibility (SC-013)
+     * @param claimId The ID of the claim
+     * @param verifier The verifier address
+     * @return reputationSnapshot Reputation score recorded at vote time
+     * @return snapshotTimestamp Timestamp recorded at vote time
+     * @return snapshotEpoch Epoch recorded at vote time
+     * @return snapshotRoot Merkle root (reserved for future proof verification)
+     */
+    function getVerificationSnapshot(
+        uint256 claimId,
+        address verifier
+    ) external view returns (
+        uint256 reputationSnapshot,
+        uint256 snapshotTimestamp,
+        uint256 snapshotEpoch,
+        bytes32 snapshotRoot
+    ) {
+        Vote storage v = votes[claimId][verifier];
+        require(v.voted, "No vote cast");
+        return (v.reputationScore, v.snapshotTimestamp, v.snapshotEpoch, v.snapshotRoot);
     }
 
     // ============ Admin & Pauser Functions ============

@@ -31,6 +31,11 @@ describe("Reentrancy Protection Tests", function () {
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address);
 
+    // Wire treasury accounting mock
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
+
     // Mint tokens to users
     const stakeAmount = ethers.parseEther("1000");
     await token.transfer(user1.address, stakeAmount);
@@ -91,6 +96,11 @@ describe("Reentrancy Protection Tests", function () {
     // Deploy staking
     const Staking = await ethers.getContractFactory("Staking");
     const staking = await Staking.deploy(await token.getAddress(), 86400, owner.address);
+
+    // Wire treasury accounting mock
+    const MockTreasuryAccounting = await ethers.getContractFactory("MockTreasuryAccounting");
+    const treasuryAccounting = await MockTreasuryAccounting.deploy();
+    await staking.connect(owner).setTreasuryAccounting(await treasuryAccounting.getAddress());
 
     // Deploy slashing
     const VerifierSlashing = await ethers.getContractFactory("VerifierSlashing");
@@ -460,7 +470,8 @@ describe("Reentrancy Protection Tests", function () {
       it("Should block reentrancy on general stake withdrawal", async function () {
         const { token, truthBounty, verifier1 } = await loadFixture(deployTruthBountyWeightedFixture);
 
-        const stakeAmount = ethers.parseEther("1000");
+        // At or above LARGE_WITHDRAWAL_THRESHOLD (10000) to trigger the cooldown path
+        const stakeAmount = ethers.parseEther("10000");
 
         // Stake
         await token.connect(verifier1).approve(await truthBounty.getAddress(), stakeAmount);
@@ -473,7 +484,7 @@ describe("Reentrancy Protection Tests", function () {
         // Withdraw initiation (will revert with cooldown notice)
         await expect(
           truthBounty.connect(verifier1).withdrawStake(stakeAmount)
-        ).to.be.revertedWith("Withdrawal initiated. Please wait 2 days cooldown.");
+        ).to.be.revertedWith("Large withdrawal initiated. Please wait 2 days cooldown.");
 
         // Verify no withdrawal occurred (balances remain the same)
         const contractBalanceAfter = await token.balanceOf(await truthBounty.getAddress());
@@ -618,8 +629,9 @@ describe("Reentrancy Protection Tests", function () {
         const contractBalanceBefore = await token.balanceOf(await claims.getAddress());
         const beneficiaryBalanceBefore = await token.balanceOf(beneficiary1.address);
 
-        // Settle claim
-        await claims.connect(owner).settleClaim(beneficiary1.address, amount);
+        // V2-SC-062: settleClaim now requires a unique settlementId
+        const sid1 = ethers.keccak256(ethers.toUtf8Bytes("reentrant-single-1"));
+        await claims.connect(owner).settleClaim(beneficiary1.address, amount, sid1);
 
         // Verify transfer
         const contractBalanceAfter = await token.balanceOf(await claims.getAddress());
@@ -642,10 +654,12 @@ describe("Reentrancy Protection Tests", function () {
         const ben1BalanceBefore = await token.balanceOf(beneficiary1.address);
         const ben2BalanceBefore = await token.balanceOf(beneficiary2.address);
 
-        // Batch settle
+        // V2-SC-062: settleClaimsBatch now requires a unique settlementId
+        const sid2 = ethers.keccak256(ethers.toUtf8Bytes("reentrant-batch-1"));
         await claims.connect(owner).settleClaimsBatch(
           [beneficiary1.address, beneficiary2.address],
-          [amount1, amount2]
+          [amount1, amount2],
+          sid2
         );
 
         // Verify transfers
@@ -671,8 +685,9 @@ describe("Reentrancy Protection Tests", function () {
           amounts.push(ethers.parseEther("1"));
         }
 
-        // Should succeed with max batch size
-        await expect(claims.connect(owner).settleClaimsBatch(beneficiaries, amounts))
+        // V2-SC-062: unique settlementId per batch call
+        const sid3 = ethers.keccak256(ethers.toUtf8Bytes("reentrant-max-batch"));
+        await expect(claims.connect(owner).settleClaimsBatch(beneficiaries, amounts, sid3))
           .to.not.be.reverted;
       });
     });
