@@ -8,6 +8,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_VERSION: "22"
+  SOLC_VERSION: "0.8.28"
 
 on:
   push:
@@ -31,7 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -61,6 +63,11 @@ jobs:
         run: node scripts/check-safe-casts.mjs
       - name: Safe-cast inventory self-tests (V2-SC-161)
         run: node --test test/scripts/check-safe-casts.test.mjs
+      # STAB-SC-006: compiler/Node/network authority drift gate.
+      - name: Toolchain and network drift gate (STAB-SC-006)
+        run: |
+          node scripts/check-toolchain-drift.mjs
+          node --test test/scripts/check-toolchain-drift.test.mjs
 
   test:
     name: Test
@@ -74,7 +81,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -118,7 +125,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -145,7 +152,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -174,7 +181,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -190,12 +197,12 @@ jobs:
           version: v1.8.3
       - name: Run Foundry invariant tests
         run: forge test --match-path "test/invariant/**"
-       - name: Capture invariant failure seeds (SC-065)
+      - name: Capture invariant failure seeds (SC-065)
         if: failure()
         env:
           GITHUB_SHA: ${{ github.sha }}
-          FORGE_VERSION: ${{ steps.foundry.outputs.version || 'unknown' }}
-          SOLC_VERSION: "0.8.28"
+          FORGE_VERSION: ${{ steps.foundry.outputs.version || 'v1.8.3' }}
+          SOLC_VERSION: ${{ env.SOLC_VERSION }}
         run: |
           mkdir -p artifacts/invariant-seeds
           # Hosted runners may leave forge cache counterexamples under cache/;
@@ -273,7 +280,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
@@ -304,7 +311,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
         uses: actions/cache@v6
         with:
