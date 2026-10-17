@@ -60,7 +60,13 @@
     "test:deployment-sizes": "node --test test/scripts/check-deployment-sizes.test.mjs",
     "lint": "npm run check:boundaries && npm run test:boundaries && npm run check:canonical-abi && npm run test:canonical-abi && npm run check:release && npm run test:release && npm run test:reproducibility && npm run test:deployment-sizes",
     "sbom:release": "ts-node scripts/generateContractReleaseSbom.ts",
-    "test:sbom": "hardhat test test/ContractReleaseSbom.test.ts"
+    "test:sbom": "hardhat test test/ContractReleaseSbom.test.ts",
+    "events:snapshot": "node scripts/generate-event-snapshots.mjs",
+    "events:verify": "node scripts/generate-event-snapshots.mjs --verify",
+    "test:events": "forge test --match-path \"test/events/**/*.sol\" -vv",
+    "test:events:drift": "forge test --match-contract EventSnapshotDriftTest -vv",
+    "test:events:ordering": "forge test --match-contract EventOrderingCorrelationTest -vv",
+    "test:events:legacy": "forge test --match-contract LegacyEventExclusionTest -vv"
   },
   "keywords": [
     "blockchain",
