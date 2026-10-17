@@ -75,6 +75,26 @@ library V2EventCompleteness {
     /// @notice Hard cap on a single `cellCoverage` page.
     uint256 internal constant MAX_COVERAGE_PAGE_SIZE = 8;
 
+    /// @notice Hard cap on events enumerated in a single transaction's canonical
+    ///         ordering sequence. Bounded so ordering validation can never loop
+    ///         unboundedly, even for a batch that emits many events.
+    uint256 internal constant MAX_ORDERED_EVENTS = 64;
+
+    /// @notice Canonical emission phases. Within one transaction, events are
+    ///         ordered by ascending phase, then by ascending emission index
+    ///         within the phase. Phases are spelled out so ordering never
+    ///         depends on enum declaration order at a call site.
+    uint8 internal constant PHASE_LIFECYCLE = 0;
+    uint8 internal constant PHASE_CUSTODY = 1;
+    uint8 internal constant PHASE_CONFIGURATION = 2;
+    uint8 internal constant PHASE_ROLE = 3;
+    uint8 internal constant PHASE_PAUSE = 4;
+    uint8 internal constant PHASE_UPGRADE = 5;
+    uint8 internal constant PHASE_SETTLEMENT = 6;
+
+    /// @notice Number of canonical ordering phases.
+    uint256 internal constant PHASE_COUNT = 7;
+
     /// @notice Coverage ordinals, spelled out so the catalogue never depends on
     ///         enum declaration order at a call site.
     uint8 internal constant COVERAGE_DIRECT = 0;
@@ -190,6 +210,13 @@ library V2EventCompleteness {
     ///      observed at all.
     bytes32 internal constant RULE_EVIDENCE_STATUS_FROM_COMMITMENT =
         keccak256("R7:evidence-status-defaults-submitted-at-commit");
+
+    /// @notice Canonical ordering rule: within a single transaction, events are
+    ///         ordered by ascending phase, then by ascending emission index
+    ///         within the phase. Reverted calls emit no durable logs, so a
+    ///         reverted transaction contributes no ordered events.
+    bytes32 internal constant RULE_CANONICAL_EVENT_ORDERING =
+        keccak256("R8:canonical-event-ordering-within-transaction");
 
     // =========================================================================
     // Canonical event signatures
