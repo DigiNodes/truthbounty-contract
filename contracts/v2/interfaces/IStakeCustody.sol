@@ -6,6 +6,12 @@ import {IV2Types} from "./IV2Types.sol";
 
 /// @notice Canonical V2 stake custody interface.
 /// @dev Primary stake is tracked at round zero. Settlement hooks are restricted to the registered settlement module, and every transition is checked against exact lock accounting and recorded idempotency state.
+/// @dev Conservation invariants (enforced by implementation and verified by the stateful Foundry suite):
+///   - Accounted balances reconcile after every generated sequence:
+///       tokenBŰalance(this) >= sum(locked) + sum(claimable) + protocolAllocation.
+///   - No participant can claim or withdraw more than authorized.
+///   - Rounding policy is explicit and bounded: all amounts are integer base units, no division is performed in custody, and any remainder stays in protocolAllocation rather than being stranded or duplicated.
+///   - Unsupported token behavior (fee-on-transfer, rebasing, non-standard ERC-20) fails safely by reverting on inexact deltas.
 interface IStakeCustody is IV2Module {
     /// @notice Emitted when a verifier deposits primary stake.
     /// @param account Account whose balance was credited.
