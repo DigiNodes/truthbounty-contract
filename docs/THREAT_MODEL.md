@@ -1,7 +1,7 @@
 # TruthBounty V2 — Canonical Contract Threat Model
 
-**Scope**: V2-SC-147  
-**Version**: 1.0.0  
+**Scope**: V2-SC-147, PREWAVE-SC-021  
+**Version**: 1.1.0  
 **Status**: Draft — awaiting independent maintainer approval  
 **Date**: 2026-09-24  
 **Covers**: Canonical modular V2 contract suite deployed on Optimism/EVM  
@@ -231,6 +231,7 @@ GOAL: Take permanent control of the protocol
 | `StakeVault` bond custody | `StakeVault`, `OPERATOR_ROLE` restriction | No direct bond withdrawal |
 | `AccessControl` role gating | All privileged entrypoints | Least-privilege enforcement |
 | Pausable | All settlement/staking paths | Emergency halt without upgrade |
+| Canonical pause/token-failure errors | All pause and token-transfer paths | Deterministic, operation-scoped failure semantics (see §14) |
 | Round write-once parameters | `VerificationRoundManager` | No post-open round manipulation |
 | At-most-one-open-round invariant | `VerificationRoundManager` | No round spam per claim |
 | Reputation bounds | `WeightedStaking` (min 0.1, max 10×) | Sybil stake dominance limited |
@@ -332,3 +333,74 @@ Each invariant below is mapped to its corresponding test file.
 ---
 
 *This document covers the canonical V2 modular suite only. Legacy `TruthBountyClaims`, `TruthBountyWeighted`, and V1 contracts are explicitly out of scope.*
+
+---
+
+## 14. Pause and Token-Failure Error Semantics (PREWAVE-SC-021)
+
+This section is the canonical authority for which layer owns each pause and token-failure
+error, and for the precedence rules that govern them. Any test, fixture, manifest, or vector
+that asserts a different error must be regenerated from this section. Legacy string errors
+are explicitly non-canonical and must not be asserted by new tests.
+
+### 14.1 — Canonical Error Mapping
+
+| Failure Condition | Canonical Error | Owning Layer | Notes |
+|---|---|---|---|
+| Local pause active on the called contract | `EnforcedPause()` | Contract-local `Pausable` (OZ v5) | Raised by `whenNotPaused` on the entrypoint |
+| Scoped pause active (module/operation scope) | `ProtocolPaused(bytes32 scope)` | Pause controller / `PauseGuard` | `scope` is a deterministic operation identifier |
+| Global pause active (protocol-wide) | `ProtocolPaused(bytes32 scope)` with `scope == GLOBAL_SCOPE` | Pause controller / `PauseGuard` | Global pause is a scoped pause with the reserved global scope |
+| Blacklisted account (sender or recipient) | `Blacklisted(address account)` | Token / compliance layer | Checked before any balance mutation |
+| Token returns `false` from `transfer`/`transferFrom` | `SafeERC20FailedOperation(address token)` | `SafeERC20` wrapper | Raised by `SafeERC20` on false return |
+| Token reverts on `transfer`/`transferFrom` | `SafeERC20FailedOperation(address token)` | `SafeERC20` wrapper | Revert data is bubbled or wrapped per `SafeERC20` |
+| Recipient rejects transfer (e.g. reverting hook) | `SafeERC20FailedOperation(address token)` | `SafeERC20` wrapper | Custody state must not advance |
+| Callback reentrancy during payout | `ReentrancyGuardReentrantCall()` | `ReentrancyGuard` | Raised before any state mutation on re-entry |
+| Legacy string errors (`"Paused"`, `"paused"`, `"SafeERC20: ..."`) | **Non-canonical** | — | Must not be asserted; remove stale assertions |
+
+### 14.2 — Pause Precedence (Deterministic, Operation-Scoped)
+
+Precedence is evaluated in this fixed order on every guarded entrypoint:
+
+1. **Reentrancy guard** — `ReentrancyGuardReentrantCall()` wins over all pause errors.
+2. **Global pause** — `ProtocolPaused(GLOBAL_SCOPE)`.
+3. **Scoped pause** — `ProtocolPaused(scope)` for the operation's scope.
+4. **Local pause** — `EnforcedPause()` on the called contract.
+5. **Authorization** — `AccessControlUnauthorizedAccount(account, role)`.
+6. **Token / compliance failures** — `Blacklisted` or `SafeERC20FailedOperation`.
+
+Rules:
+
+- A pause check MUST occur before any token transfer, balance mutation, or external call.
+- A scoped pause MUST NOT block operations outside its scope; scope identifiers are stable
+  and documented per operation.
+- Global pause MUST block every state-mutating operation but MUST NOT block view functions
+  or recovery/retry entrypoints explicitly designated as pause-exempt.
+- When multiple pause conditions are simultaneously active, the highest-precedence error in
+  the list above is the only error surfaced.
+
+### 14.3 — Fail-Closed Guarantees
+
+- **Paused paths**: no state mutation, no token movement, no bond release while any pause
+  applies. Recovery entrypoints remain callable and retryable after the pause clears.
+- **Blacklisted paths**: transfers to or from a blacklisted account revert with
+  `Blacklisted(account)`; custody balances are unchanged.
+- **False-return / reverting token paths**: `SafeERC20FailedOperation(token)` is raised and
+  custody accounting MUST NOT advance. A failed payout cannot be recorded as settled.
+- **Rejecting-recipient paths**: `SafeERC20FailedOperation(token)` is raised; the claim
+  remains retryable to an accepted recipient where the operation permits recipient change.
+- **Callback reentrancy paths**: `ReentrancyGuardReentrantCall()` is raised before any
+  mutation; no double-pay or custody corruption is possible.
+
+### 14.4 — Recovery and Retry
+
+Operations that fail due to a pause, blacklist, false-return token, reverting token, or
+rejecting recipient MUST leave the operation in a state that is retryable once the
+condition clears, except where the operation is explicitly terminal (e.g. a settled claim).
+Retries MUST re-evaluate pause precedence from step 1.
+
+### 14.5 — Reproduction and Toolchain
+
+Canonical error semantics are verified by selector-level ABI regression tests plus the
+behavioral tests listed in §11. Reproduction commands and exact toolchain versions are
+recorded in the repository's CI configuration and MUST be updated in the same change as
+any modification to this section.
