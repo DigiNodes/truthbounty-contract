@@ -190,7 +190,7 @@ jobs:
           version: v1.8.3
       - name: Run Foundry invariant tests
         run: forge test --match-path "test/invariant/**"
-       - name: Capture invariant failure seeds (SC-065)
+      - name: Capture invariant failure seeds (SC-065)
         if: failure()
         env:
           GITHUB_SHA: ${{ github.sha }}
