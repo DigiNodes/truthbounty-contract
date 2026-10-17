@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
@@ -28,7 +30,7 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      A claimant's own `cancelClaim` refund is a RISK_REDUCING exit that stays available under every
 ///      scoped pause (frozen only at protocol SHUTDOWN); a manager-initiated cancel is an outcome
 ///      decision and additionally fails closed under `SCOPE_SETTLEMENT`.
-contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPauseGuard {
+contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPauseGuard, UntrackedAssetRecovery {
     /// @notice Maximum optional metadata accepted with a claim creation request.
     uint256 public constant MAX_CLAIM_METADATA_BYTES = 1_024;
 
@@ -206,6 +208,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPause
         c.claimant = claimant;
         c.subject = subject;
         c.reward = reward;
+        _increaseRecoveryReserve(address(bountyToken), reward);
         c.createdAt = nowTs;
         c.status = IV2Types.ClaimStatus.OPEN;
 
@@ -241,6 +244,7 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPause
         _openClaimCount[c.claimant] -= 1;
 
         uint256 refund = c.reward;
+        _decreaseRecoveryReserve(address(bountyToken), refund);
         bountyToken.safeTransfer(c.claimant, refund);
 
         emit ClaimStateChanged(
@@ -309,5 +313,23 @@ contract Claims is ERC165, AccessControl, ReentrancyGuard, IClaims, V2WiredPause
 
     function claimsInWindow(address account) external view returns (uint64 windowStart, uint256 count) {
         return (_claimWindowStart[account], _claimsInWindow[account]);
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        _checkRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) revert RecoveryAuthorityUnavailable();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_TREASURY);
+        _requireExitsNotShutdown();
+    }
+
+    // Terminal status alone does not release custody: finalized bounties stay reserved.
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        return asset == address(bountyToken) ? _recoveryReserved(asset) : 0;
     }
 }

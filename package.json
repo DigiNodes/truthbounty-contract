@@ -18,6 +18,7 @@
     "test:fuzz": "forge test --match-contract WeightedStakingFuzzTest -vv && forge test --match-contract StakingFuzzTest -vv && forge test --match-contract IntegrationFuzzTest -vv && forge test --match-test \"test_fuzz_\" -vv",
     "test:fuzz:extended": "forge test --match-contract WeightedStakingFuzzTest --fuzz-runs 1000 -vv && forge test --match-contract StakingFuzzTest --fuzz-runs 1000 -vv",
     "test:invariant": "forge test --match-test \"invariant_\" -vv",
+    "test:asset-recovery": "bash scripts/test-asset-recovery.sh && tsx --test test/scripts/asset-recovery-artifacts.test.ts",
     "test:recovery": "forge test --match-test \"test_recovery_scenario_\" -vv",
     "test:testnet": "forge test --match-path \"test/testnet/\" -vv",
     "test:reconciliation": "forge test --match-test \"test_reconciliation_\" -vv",

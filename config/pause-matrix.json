@@ -49,6 +49,29 @@
           "signature": "renounceRole(bytes32,address)",
           "class": "NEUTRAL",
           "rationale": "Self-renunciation only removes authority and can never create exposure."
+        },
+        {
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: creates a fixed two-day recovery intent, with current governance authority and fail-closed governance/treasury pause gates, without touching tracked liabilities."
+        },
+        {
+          "signature": "executeAssetRecovery(bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: governed exact-value transfer after the fixed delay; fail-closed authority resolution, governance/treasury scopes, shutdown and live liabilities are rechecked."
+        },
+        {
+          "signature": "cancelAssetRecovery(bytes32)",
+          "class": "RISK_REDUCING",
+          "rationale": "V2-SC-154 extension: existing governance authority can only cancel a queued recovery; cancellation transfers no value and stays available under scoped pauses."
         }
       ],
       "operations": [
@@ -171,6 +194,29 @@
           "signature": "renounceRole(bytes32,address)",
           "class": "NEUTRAL",
           "rationale": "Self-renunciation only removes authority and can never create exposure."
+        },
+        {
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: creates a fixed two-day recovery intent, with current governance authority and fail-closed governance/treasury pause gates, without touching tracked liabilities."
+        },
+        {
+          "signature": "executeAssetRecovery(bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: governed exact-value transfer after the fixed delay; fail-closed authority resolution, governance/treasury scopes, shutdown and live liabilities are rechecked."
+        },
+        {
+          "signature": "cancelAssetRecovery(bytes32)",
+          "class": "RISK_REDUCING",
+          "rationale": "V2-SC-154 extension: existing governance authority can only cancel a queued recovery; cancellation transfers no value and stays available under scoped pauses."
         }
       ],
       "operations": [
@@ -238,6 +284,68 @@
           "rationale": "Adds evidence that can influence verification; gated through commitEvidence, which carries both the scoped and the local pause."
         }
       ]
+    },
+    {
+      "name": "FinalRewardAllocator",
+      "file": "contracts/v2/FinalRewardAllocator.sol",
+      "authority": "registry",
+      "inheritedOperations": [
+        {
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: creates a fixed two-day recovery intent, with current governance authority and fail-closed governance/treasury pause gates, without touching tracked liabilities."
+        },
+        {
+          "signature": "executeAssetRecovery(bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: governed exact-value transfer after the fixed delay; fail-closed authority resolution, governance/treasury scopes, shutdown and live liabilities are rechecked."
+        },
+        {
+          "signature": "cancelAssetRecovery(bytes32)",
+          "class": "RISK_REDUCING",
+          "rationale": "V2-SC-154 extension: existing governance authority can only cancel a queued recovery; cancellation transfers no value and stays available under scoped pauses."
+        }
+      ],
+      "operations": []
+    },
+    {
+      "name": "PullSettlementLedger",
+      "file": "contracts/performance/PullSettlementLedger.sol",
+      "authority": "wired",
+      "inheritedOperations": [
+        {
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: creates a fixed two-day recovery intent, with current governance authority and fail-closed governance/treasury pause gates, without touching tracked liabilities."
+        },
+        {
+          "signature": "executeAssetRecovery(bytes32)",
+          "class": "RISK_INCREASING",
+          "gates": [
+            "SCOPE_GOVERNANCE",
+            "SCOPE_TREASURY"
+          ],
+          "rationale": "V2-SC-154 extension: governed exact-value transfer after the fixed delay; fail-closed authority resolution, governance/treasury scopes, shutdown and live liabilities are rechecked."
+        },
+        {
+          "signature": "cancelAssetRecovery(bytes32)",
+          "class": "RISK_REDUCING",
+          "rationale": "V2-SC-154 extension: existing governance authority can only cancel a queued recovery; cancellation transfers no value and stays available under scoped pauses."
+        }
+      ],
+      "operations": []
     }
   ]
 }
