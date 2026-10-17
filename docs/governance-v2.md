@@ -16,6 +16,7 @@ outcome override calls.
 | `GovernedModuleRegistry` | Allowlist of proposal targets |
 | `GovernanceGuardian` | Separate veto/cancel authority; no execution power |
 | `GovernanceRoleTopology` | Canonical timelock role wiring (V2-SC-026 dependency) |
+| `TimelockRolePolicy` | Canonical proposer/executor/canceller role graph and open/closed executor policy |
 
 ## Proposal Lifecycle
 
@@ -40,6 +41,8 @@ outcome override calls.
 - Guardian receives `CANCELLER_ROLE` on timelock and may veto via `GovernanceGuardian`
 - `GovernanceGuardian` calls `TruthBountyGovernor.cancel(proposalId)`; the governor must be wired once via `setGovernanceGuardianModule`
 - Guardian cannot propose, execute, or bypass timelock delays
+- Guardian cancellation is bounded to queued/pending proposals and emits an audited `ProposalCancelled` event
+- Cancellation authority is exactly `{Governor, Guardian}`; no other actor may hold `CANCELLER_ROLE`
 - Governance cannot invoke guardian emergency pause paths
 
 ## Token & Delegation Assumptions
@@ -57,6 +60,10 @@ forge script script/deploy/DeployGovernanceV2.s.sol --rpc-url $RPC_URL --broadca
 Required env vars: `ADMIN_ADDRESS`, `GUARDIAN_ADDRESS`. Optional: `TIMELOCK_MIN_DELAY`,
 `GOV_VOTING_DELAY`, `GOV_VOTING_PERIOD`, `GOV_PROPOSAL_THRESHOLD`, `GOV_QUORUM_NUMERATOR`,
 `GOV_TOKEN_SUPPLY`.
+
+Deployment must satisfy the canonical timelock role graph: `PROPOSER_ROLE` = Governor only,
+`EXECUTOR_ROLE` = closed (address(0) only, no open executor), `CANCELLER_ROLE` = {Governor, Guardian},
+and `TIMELOCK_ADMIN_ROLE` renounced to the timelock itself after `finalizeTimelockAdmin`.
 
 Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and written by
 `DeployBase.generateManifestWithGovernance()`.
@@ -77,3 +84,31 @@ Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and wri
 - Proposal spam mitigated by `proposalThreshold`
 - Timelock bypass prevented: governor is sole proposer; guardian cannot execute
 - Target allowlist enforced at proposal creation
+- No actor can both propose and execute: `PROPOSER_ROLE` and `EXECUTOR_ROLE` are disjoint
+- Open executor policy is rejected: `EXECUTOR_ROLE` is granted to no address
+- Cancellation is bounded to `{Governor, Guardian}` and audited via events
+- Timelock self-administration is explicit: `TIMELOCK_ADMIN_ROLE` held by the timelock after renunciation
+
+## Authority Boundaries (V2-SC-111)
+
+`GovernanceAuthorityBoundaries` publishes the canonical `(role, capability)` matrix encoded by
+`GovernanceAuthorityMatrix`. Each authority role is bound to at most one accountable account and an
+account may hold at most one role, so overlapping authority is rejected on-chain.
+
+| Authority | Exclusive capabilities |
+|-----------|------------------------|
+| Governor | `PROPOSE_PROPOSAL`, `QUEUE_PROPOSAL` |
+| Timelock | `EXECUTE_PROPOSAL`, `SET_TIMELOCK_ROLES`, `UPGRADE_IMPLEMENTATION` |
+| Guardian | `PAUSE_PROTOCOL` |
+| Registry | `REGISTER_GOVERNED_MODULE` |
+| Configuration | `SET_PROTOCOL_PARAMETER` |
+| Treasury | `RELEASE_TREASURY_FUNDS` |
+| Operations | `ROTATE_OPERATIONAL_ROLE` |
+
+`CANCEL_PROPOSAL` is the only intentionally shared capability (Governor and Guardian). Claim-outcome
+selectors (`settleClaim*`) belong to no authority and remain rejected by `GovernanceForbiddenCalls`.
+
+`AUTHORITY_ADMIN_ROLE` is granted to the bootstrap admin at deployment and must be handed to the
+timelock once the topology is bound, mirroring `GovernanceRoleTopology.finalizeTimelockAdmin`.
+Deployment is machine-checked against this role graph; missing/extra roles, same-actor conflicts,
+open executor grants, unauthorized cancellers, delay bypass, and admin retention all revert.
