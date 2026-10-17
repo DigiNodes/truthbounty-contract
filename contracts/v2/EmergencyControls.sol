@@ -62,11 +62,6 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     // ─── Custom Errors ────────────────────────────────────────────────
 
-    error AlreadyPaused(bytes32 scope);
-    error NotPaused(bytes32 scope);
-    error UnauthorizedToPause(address account);
-    error UnauthorizedToUnpause(address account);
-
     // ─── State ────────────────────────────────────────────────────────
 
     /// @notice Mapping from scope hash to paused status
@@ -136,9 +131,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      */
     function pause(bytes32 scope) external override {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert UnauthorizedToPause(msg.sender);
+            revert V2Errors.Unauthorized(msg.sender);
         }
-        if (_pausedScopes[scope]) revert AlreadyPaused(scope);
+        if (_pausedScopes[scope]) revert V2Errors.AlreadyPaused(scope);
 
         _pausedScopes[scope] = true;
         pausedAt[scope] = block.timestamp;
@@ -155,9 +150,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      */
     function unpause(bytes32 scope) external override {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert UnauthorizedToUnpause(msg.sender);
+            revert V2Errors.Unauthorized(msg.sender);
         }
-        if (!_pausedScopes[scope]) revert NotPaused(scope);
+        if (!_pausedScopes[scope]) revert V2Errors.NotPaused(scope);
 
         _pausedScopes[scope] = false;
         pausedAt[scope] = 0;
