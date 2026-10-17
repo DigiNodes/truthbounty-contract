@@ -15,7 +15,7 @@ pragma solidity ^0.8.24;
  * │ TimelockController   │ PROPOSER_ROLE       → governor (sole holder)           │
  * │                      │ CANCELLER_ROLE      → governor + guardian EOA          │
  * │                      │ EXECUTOR_ROLE       → address(0) (permissionless)      │
- * │                      │ TIMELOCK_ADMIN_ROLE → timelock itself (self-admin)     │
+ * │                      │ DEFAULT_ADMIN_ROLE  → timelock itself (self-admin)     │
  * │                      │ deployer holds NONE of the above                       │
  * ├──────────────────────┼────────────────────────────────────────────────────────┤
  * │ GovernanceGuardian   │ DEFAULT_ADMIN_ROLE  → admin (governance lifecycle)     │
@@ -44,6 +44,7 @@ pragma solidity ^0.8.24;
  */
 import "forge-std/Test.sol";
 
+import {Vm} from "forge-std/Vm.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -67,6 +68,7 @@ contract GovernanceRoleTopologyFixture is Test {
     bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
     bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
+    /// @dev Retired OZ < 5.0 timelock administration role; must stay absent (legacy negative).
     bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
     bytes32 internal constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
     bytes32 internal constant REGISTRY_ADMIN_ROLE = keccak256("REGISTRY_ADMIN_ROLE");
@@ -113,7 +115,7 @@ contract GovernanceRoleTopologyFixture is Test {
         // 2. Governance token
         token = new TruthBountyGovernanceToken(deployer, TOKEN_SUPPLY);
 
-        // 3. TimelockController — deployer holds TIMELOCK_ADMIN_ROLE initially
+        // 3. TimelockController — deployer holds DEFAULT_ADMIN_ROLE initially (OZ >= 5.0)
         address[] memory noProposers = new address[](0);
         address[] memory noExecutors = new address[](0);
         timelock = new TimelockController(TIMELOCK_DELAY, noProposers, noExecutors, deployer);
@@ -161,8 +163,9 @@ contract GovernanceRoleTopologyFixture is Test {
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, deployer);
 
-        // Governance controls module registry
-        timelock.grantRole(REGISTRY_ADMIN_ROLE, address(timelock));
+        // Governance controls module registry (grant lives on the registry; after
+        // finalizeTimelockAdmin the deployer no longer administers the timelock)
+        registry.grantRole(REGISTRY_ADMIN_ROLE, address(timelock));
         // Deployer renounces own registry roles (mirrors _performFullHandoff in PostDeploymentRoleRenunciation)
         registry.renounceRole(REGISTRY_ADMIN_ROLE, deployer);
         registry.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
@@ -222,10 +225,10 @@ contract GovernanceRoleTopologyPositiveTest is GovernanceRoleTopologyFixture {
         _assertHasRole(IAccessControl(address(timelock)), EXECUTOR_ROLE, address(0), "Timelock.EXECUTOR_ROLE[address(0)]");
     }
 
-    /// @notice Timelock is self-admin; no EOA retains TIMELOCK_ADMIN_ROLE.
+    /// @notice Timelock is self-admin; no EOA retains administration.
     function test_TimelockSelfAdminAfterFinalization() public view {
         _assertHasRole(
-            IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, address(timelock), "Timelock.TIMELOCK_ADMIN_ROLE[self]"
+            IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, address(timelock), "Timelock.DEFAULT_ADMIN_ROLE[self]"
         );
     }
 
@@ -312,17 +315,21 @@ contract GovernanceRoleTopologyNegativeTest is GovernanceRoleTopologyFixture {
         _assertLacksRole(IAccessControl(address(timelock)), EXECUTOR_ROLE, deployer, "Timelock.EXECUTOR_ROLE[deployer]");
     }
 
-    /// @notice Deployer no longer holds TIMELOCK_ADMIN_ROLE after finalizeTimelockAdmin.
+    /// @notice Deployer no longer holds timelock administration after finalizeTimelockAdmin.
     function test_DeployerLacksTimelockAdminRoleAfterFinalization() public view {
+        _assertLacksRole(
+            IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, deployer, "Timelock.DEFAULT_ADMIN_ROLE[deployer]"
+        );
+        // The retired legacy role is absent as well.
         _assertLacksRole(
             IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, deployer, "Timelock.TIMELOCK_ADMIN_ROLE[deployer]"
         );
     }
 
-    /// @notice Admin holds no TIMELOCK_ADMIN_ROLE; the timelock is its own admin.
+    /// @notice Admin holds no timelock administration; the timelock is its own admin.
     function test_AdminLacksTimelockAdminRole() public view {
         _assertLacksRole(
-            IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, admin, "Timelock.TIMELOCK_ADMIN_ROLE[admin]"
+            IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, admin, "Timelock.DEFAULT_ADMIN_ROLE[admin]"
         );
     }
 
@@ -445,7 +452,7 @@ contract GovernanceRoleTopologyBoundaryTest is GovernanceRoleTopologyFixture {
     function test_ZeroAddressHoldsNoOtherTimelockRoles() public view {
         _assertLacksRole(IAccessControl(address(timelock)), PROPOSER_ROLE, address(0), "Timelock.PROPOSER_ROLE[address(0)]");
         _assertLacksRole(IAccessControl(address(timelock)), CANCELLER_ROLE, address(0), "Timelock.CANCELLER_ROLE[address(0)]");
-        _assertLacksRole(IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, address(0), "Timelock.TIMELOCK_ADMIN_ROLE[address(0)]");
+        _assertLacksRole(IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, address(0), "Timelock.DEFAULT_ADMIN_ROLE[address(0)]");
     }
 
     /// @notice address(0) holds no SNAPSHOT_REGISTRAR_ROLE.
@@ -455,34 +462,39 @@ contract GovernanceRoleTopologyBoundaryTest is GovernanceRoleTopologyFixture {
         );
     }
 
-    // ── Self-admin (timelock owns its own TIMELOCK_ADMIN_ROLE) ────────────────
+    // ── Self-admin (timelock owns its own DEFAULT_ADMIN_ROLE) ────────────────
 
-    /// @notice Timelock holds its own TIMELOCK_ADMIN_ROLE — the self-referential admin invariant.
+    /// @notice Timelock holds its own DEFAULT_ADMIN_ROLE — the self-referential admin invariant.
     function test_TimelockOwnsSelfAdminRole() public view {
         assertTrue(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, address(timelock)),
-            "TimelockController must self-hold TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, address(timelock)),
+            "TimelockController must self-hold DEFAULT_ADMIN_ROLE"
         );
     }
 
-    /// @notice After finalization, exactly one account holds TIMELOCK_ADMIN_ROLE: the timelock itself.
+    /// @notice After finalization, exactly the timelock holds administration; no other account does.
     function test_TimelockAdminRoleHeldByExactlyTimelock() public view {
-        // The only account that should hold TIMELOCK_ADMIN_ROLE is address(timelock)
+        // The only account that should hold timelock administration is address(timelock)
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, deployer),
-            "Deployer must not hold TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, deployer),
+            "Deployer must not hold timelock administration"
         );
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, admin),
-            "Admin must not hold TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, admin),
+            "Admin must not hold timelock administration"
         );
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, guardian),
-            "Guardian must not hold TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, guardian),
+            "Guardian must not hold timelock administration"
         );
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, address(governor)),
-            "Governor must not hold TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, address(governor)),
+            "Governor must not hold timelock administration"
+        );
+        // The retired legacy role is held by nobody, including the timelock itself.
+        assertFalse(
+            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, address(timelock)),
+            "Legacy TIMELOCK_ADMIN_ROLE must not be granted"
         );
     }
 
@@ -605,11 +617,11 @@ contract GovernanceRoleTopologyAuthorizationTest is GovernanceRoleTopologyFixtur
         IAccessControl(address(timelock)).revokeRole(CANCELLER_ROLE, guardian);
     }
 
-    /// @notice Random caller cannot revoke TIMELOCK_ADMIN_ROLE from the timelock itself.
+    /// @notice Random caller cannot revoke timelock administration from the timelock itself.
     function test_UnauthorizedCannotRevokeTimelockSelfAdminRole() public {
         vm.prank(rando);
         vm.expectRevert();
-        IAccessControl(address(timelock)).revokeRole(TIMELOCK_ADMIN_ROLE, address(timelock));
+        IAccessControl(address(timelock)).revokeRole(DEFAULT_ADMIN_ROLE, address(timelock));
     }
 
     // ── GovernanceGuardian role mutation gates ────────────────────────────────
@@ -705,9 +717,10 @@ contract GovernanceRoleTopologyReplayTest is GovernanceRoleTopologyFixture {
      *         Critically the guardian EOA must not gain a second CANCELLER_ROLE entry.
      */
     function test_DoubleConfigureIsIdempotent() public {
-        // Re-run configure as self-admin timelock
-        vm.prank(address(timelock));
+        // Re-run configure as the self-admin timelock (startPrank covers all inner calls)
+        vm.startPrank(address(timelock));
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
+        vm.stopPrank();
 
         // Topology must be unchanged
         _assertHasRole(IAccessControl(address(timelock)), PROPOSER_ROLE, address(governor), "Re-configure: proposer");
@@ -717,7 +730,8 @@ contract GovernanceRoleTopologyReplayTest is GovernanceRoleTopologyFixture {
 
         // Deployer must still hold zero roles
         _assertLacksRole(IAccessControl(address(timelock)), PROPOSER_ROLE, deployer, "Re-configure: no deployer proposer");
-        _assertLacksRole(IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, deployer, "Re-configure: no deployer admin");
+        _assertLacksRole(IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, deployer, "Re-configure: no deployer admin");
+        _assertLacksRole(IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, deployer, "Re-configure: no legacy admin");
     }
 
     /**
@@ -725,8 +739,9 @@ contract GovernanceRoleTopologyReplayTest is GovernanceRoleTopologyFixture {
      *         reconfiguration; the catalog sweep is a monotone pass.
      */
     function test_CatalogSweepPassesAfterIdempotentReconfigure() public {
-        vm.prank(address(timelock));
+        vm.startPrank(address(timelock));
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
+        vm.stopPrank();
 
         address[] memory targets = new address[](4);
         targets[0] = address(timelock);
@@ -773,12 +788,16 @@ contract GovernanceRoleTopologyFailureTest is GovernanceRoleTopologyFixture {
         GovernanceRoleTopology.configure(freshTimelock, freshGov, guardian, TIMELOCK_DELAY);
     }
 
-    /// @notice Deployer cannot re-grant themselves TIMELOCK_ADMIN_ROLE after finalization.
+    /// @notice Deployer cannot re-grant themselves timelock administration after finalization.
     function test_DeployerCannotRegainTimelockAdminRole() public {
         _deployCanonicalTopology();
 
         vm.prank(deployer);
-        vm.expectRevert(); // deployer no longer holds TIMELOCK_ADMIN_ROLE
+        vm.expectRevert(); // deployer no longer holds timelock administration
+        IAccessControl(address(timelock)).grantRole(DEFAULT_ADMIN_ROLE, deployer);
+
+        vm.prank(deployer);
+        vm.expectRevert(); // and the retired legacy role is un-grantable too
         IAccessControl(address(timelock)).grantRole(TIMELOCK_ADMIN_ROLE, deployer);
     }
 
@@ -832,7 +851,7 @@ contract GovernanceRoleTopologyFailureTest is GovernanceRoleTopologyFixture {
  *   I1  Governor always holds PROPOSER_ROLE on timelock
  *   I2  Guardian always holds CANCELLER_ROLE on timelock
  *   I3  address(0) always holds EXECUTOR_ROLE on timelock
- *   I4  Timelock always holds its own TIMELOCK_ADMIN_ROLE
+ *   I4  Timelock always holds its own DEFAULT_ADMIN_ROLE
  *   I5  Deployer never re-acquires any governance role after handoff
  *   I6  Governor always holds SNAPSHOT_REGISTRAR_ROLE on snapshot
  *       (unless the admin explicitly rotated it away — tested in auth suite)
@@ -876,12 +895,12 @@ contract GovernanceRoleTopologyInvariantTest is GovernanceRoleTopologyFixture {
         );
     }
 
-    // ── I4: Timelock always self-holds TIMELOCK_ADMIN_ROLE ───────────────────
+    // ── I4: Timelock always self-holds DEFAULT_ADMIN_ROLE ────────────────────
 
     function invariant_TimelockAlwaysSelfHoldsAdminRole() public view {
         assertTrue(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, address(timelock)),
-            "I4: timelock lost TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, address(timelock)),
+            "I4: timelock lost DEFAULT_ADMIN_ROLE"
         );
     }
 
@@ -891,7 +910,7 @@ contract GovernanceRoleTopologyInvariantTest is GovernanceRoleTopologyFixture {
         _assertLacksRole(IAccessControl(address(timelock)), PROPOSER_ROLE, deployer, "I5a");
         _assertLacksRole(IAccessControl(address(timelock)), CANCELLER_ROLE, deployer, "I5b");
         _assertLacksRole(IAccessControl(address(timelock)), EXECUTOR_ROLE, deployer, "I5c");
-        _assertLacksRole(IAccessControl(address(timelock)), TIMELOCK_ADMIN_ROLE, deployer, "I5d");
+        _assertLacksRole(IAccessControl(address(timelock)), DEFAULT_ADMIN_ROLE, deployer, "I5d");
         _assertLacksRole(IAccessControl(address(snapshot)), SNAPSHOT_REGISTRAR_ROLE, deployer, "I5e");
         _assertLacksRole(IAccessControl(address(registry)), REGISTRY_ADMIN_ROLE, deployer, "I5f");
         _assertLacksRole(IAccessControl(address(registry)), DEFAULT_ADMIN_ROLE, deployer, "I5g");
@@ -998,7 +1017,7 @@ contract GovernanceRoleTopologyHandler is Test {
  * Each test is tagged with the finding it guards against.  New regression tests
  * MUST be appended here when audit defects are displaced by this work.
  *
- *   REG-001: Deployer did not renounce TIMELOCK_ADMIN_ROLE before handoff
+ *   REG-001: Deployer did not renounce timelock administration before handoff
  *            (would allow deployer to unilaterally rotate all timelock roles).
  *   REG-002: Bootstrap admin retained SNAPSHOT_REGISTRAR_ROLE after governor deploy
  *            (would allow admin to register arbitrary snapshot timestamps).
@@ -1016,15 +1035,19 @@ contract GovernanceRoleTopologyRegressionTest is GovernanceRoleTopologyFixture {
         _deployCanonicalTopology();
     }
 
-    /// REG-001: Deployer renounced TIMELOCK_ADMIN_ROLE — timelock is self-admin.
+    /// REG-001: Deployer renounced timelock administration — timelock is self-admin.
     function test_REG001_DeployerRenounceTimelockAdminRole() public view {
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, deployer),
-            "REG-001: deployer retained TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, deployer),
+            "REG-001: deployer retained timelock administration"
         );
         assertTrue(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, address(timelock)),
-            "REG-001: timelock lost its own TIMELOCK_ADMIN_ROLE"
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, address(timelock)),
+            "REG-001: timelock lost its own DEFAULT_ADMIN_ROLE"
+        );
+        assertFalse(
+            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, deployer),
+            "REG-001: deployer retained legacy TIMELOCK_ADMIN_ROLE"
         );
     }
 
@@ -1144,21 +1167,26 @@ contract GovernanceRoleTopologyEventReconciliationTest is GovernanceRoleTopology
         );
     }
 
-    /// @notice TIMELOCK_ADMIN_ROLE revoke from deployer emits RoleRevoked on the timelock.
+    /// @notice DEFAULT_ADMIN_ROLE revoke from deployer emits RoleRevoked on the timelock.
     function test_TimelockAdminRoleRevokeEmitsRoleRevokedEvent() public {
         vm.startPrank(deployer);
         address[] memory empty = new address[](0);
         timelock = new TimelockController(TIMELOCK_DELAY, empty, empty, deployer);
 
+        assertTrue(
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, deployer),
+            "Deployer must hold DEFAULT_ADMIN_ROLE before revoke"
+        );
+
         // Expect RoleRevoked before the call
         vm.expectEmit(true, true, true, true, address(timelock));
-        emit IAccessControl.RoleRevoked(TIMELOCK_ADMIN_ROLE, deployer, deployer);
+        emit IAccessControl.RoleRevoked(DEFAULT_ADMIN_ROLE, deployer, deployer);
 
-        timelock.revokeRole(TIMELOCK_ADMIN_ROLE, deployer);
+        timelock.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
         vm.stopPrank();
 
         assertFalse(
-            IAccessControl(address(timelock)).hasRole(TIMELOCK_ADMIN_ROLE, deployer),
+            IAccessControl(address(timelock)).hasRole(DEFAULT_ADMIN_ROLE, deployer),
             "Storage must reflect emitted RoleRevoked event"
         );
     }
@@ -1180,13 +1208,37 @@ contract GovernanceRoleTopologyEventReconciliationTest is GovernanceRoleTopology
             guardian, VOTING_DELAY, VOTING_PERIOD, PROPOSAL_THRESHOLD, QUORUM_NUMERATOR
         );
 
-        vm.expectEmit(true, true, true, true);
-        emit GovernanceRoleTopology.GovernanceTopologyConfigured(
-            address(timelock), address(governor), guardian, TIMELOCK_DELAY
-        );
-
+        // configure() grants four roles (each emitting RoleGranted from the timelock) and then
+        // emits the summary event. Every grant and the summary must be observable, in order.
+        // `recordLogs` is used because the four grants are four separate timelock calls and
+        // foundry matches a queued `expectEmit` batch against a single call entry.
+        vm.recordLogs();
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         vm.stopPrank();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 5, "configure must emit four grants and one summary");
+
+        bytes32[4] memory expectedRoles = [PROPOSER_ROLE, CANCELLER_ROLE, CANCELLER_ROLE, EXECUTOR_ROLE];
+        address[4] memory expectedAccounts = [address(governor), address(governor), guardian, address(0)];
+        for (uint256 i; i < 4; ++i) {
+            assertEq(logs[i].emitter, address(timelock), "grant must be emitted by the timelock");
+            assertEq(logs[i].topics[0], keccak256("RoleGranted(bytes32,address,address)"), "expected RoleGranted");
+            assertEq(logs[i].topics[1], expectedRoles[i], "granted role mismatch");
+            assertEq(address(uint160(uint256(logs[i].topics[2]))), expectedAccounts[i], "granted account mismatch");
+            assertEq(address(uint160(uint256(logs[i].topics[3]))), deployer, "grant sender mismatch");
+        }
+
+        assertEq(logs[4].emitter, address(this), "library summary must be emitted by the caller");
+        assertEq(
+            logs[4].topics[0],
+            GovernanceRoleTopology.GovernanceTopologyConfigured.selector,
+            "summary event mismatch"
+        );
+        assertEq(address(uint160(uint256(logs[4].topics[1]))), address(timelock), "summary timelock mismatch");
+        assertEq(address(uint160(uint256(logs[4].topics[2]))), address(governor), "summary governor mismatch");
+        assertEq(address(uint160(uint256(logs[4].topics[3]))), guardian, "summary guardian mismatch");
+        assertEq(abi.decode(logs[4].data, (uint256)), TIMELOCK_DELAY, "summary min delay mismatch");
     }
 
     /// @notice SNAPSHOT_REGISTRAR_ROLE transfer emits matching grant + revoke events.

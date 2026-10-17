@@ -125,7 +125,10 @@ contract DeployGovernanceV2 is Script {
         GovernanceRoleTopology.configure(timelock, governor, cfg.guardian, cfg.timelockMinDelay);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, cfg.admin);
 
-        timelock.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
+        // Governance (the timelock) administers the module registry. The grant targets the
+        // registry contract: granting on the timelock would only mint an unused role there, and
+        // after `finalizeTimelockAdmin` the broadcasting admin no longer holds timelock authority.
+        registry.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
 
         governor.publishManifest();
 

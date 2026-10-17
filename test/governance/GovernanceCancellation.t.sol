@@ -79,7 +79,7 @@ contract GovernanceCancellationTest is Test {
         vm.startPrank(admin);
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
-        timelock.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
+        registry.grantRole(registry.REGISTRY_ADMIN_ROLE(), address(timelock));
 
         module = new MockGovernedModule();
         registry.registerModule("MOCK_MODULE", address(module));

@@ -77,6 +77,11 @@ Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and wri
 - Proposal spam mitigated by `proposalThreshold`
 - Timelock bypass prevented: governor is sole proposer; guardian cannot execute
 - Target allowlist enforced at proposal creation
+- Timelock role graph is self-administered: OpenZeppelin `TimelockController >= 5.0` uses
+  `DEFAULT_ADMIN_ROLE` (0x00) as the admin of every timelock role and no longer defines the retired
+  `TIMELOCK_ADMIN_ROLE`. `GovernanceRoleTopology.finalizeTimelockAdmin` revokes
+  `DEFAULT_ADMIN_ROLE` from the bootstrap admin (retiring any stale legacy grant), so only the
+  timelock — reachable exclusively through governance — can mutate timelock roles
 
 ## Authority Boundaries (V2-SC-111)
 

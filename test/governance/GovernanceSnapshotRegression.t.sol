@@ -105,7 +105,7 @@ contract GovernanceSnapshotRegression is Test {
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
-        timelock.grantRole(registryAdminRole, address(timelock));
+        registry.grantRole(registryAdminRole, address(timelock));
 
         module = new MockGovernedModule();
         registry.registerModule("MOCK_MODULE", address(module));
