@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           ref: feature/sc-022-event-architecture
           fetch-depth: 0
@@ -73,7 +73,6 @@ jobs:
 
       - name: Compile
         id: compile
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -86,7 +85,3 @@ jobs:
           name: sc022-compile-output
           path: compile-output.txt
           if-no-files-found: ignore
-
-      - name: Report compile failure
-        if: steps.compile.outcome == 'failure'
-        run: exit 1

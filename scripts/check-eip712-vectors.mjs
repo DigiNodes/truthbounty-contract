@@ -515,7 +515,7 @@ export function expectedConstants(doc) {
     WRONG_VERIFYING_CONTRACT: { value: WRONG_VERIFYING_CONTRACT, kind: "address" },
     DOMAIN_TYPE_STRING: { value: DOMAIN_TYPE_STRING, kind: "string" },
     CLAIM_TYPE_STRING: { value: CLAIM_TYPE_STRING, kind: "string" },
-    VERIFICATION_INTENT_TYPE_STRING: { value: VERIFICATION_INTENT_TYPE_STRING, kind: "string" },
+    VERIFICATION_INTENT_TYPE_STRING: { value: INTENT_TYPE_STRING, kind: "string" },
     MUTATED_CLAIM_TYPE_STRING: { value: MUTATED_CLAIM_TYPE_STRING, kind: "string" },
     CLAIM_A_CONTENT: { value: CLAIM_A_CONTENT, kind: "string" },
     CLAIM_B_CONTENT: { value: CLAIM_B_CONTENT, kind: "string" },

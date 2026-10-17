@@ -72,7 +72,7 @@ library EIP712CanonicalVectors {
     uint256 internal constant CLAIM_NONCE_B = 0;
     uint256 internal constant INTENT_NONCE_A = 3;
     uint256 internal constant INTENT_NONCE_B = 4;
-    uint256 internal constant CANONICAL_DEADLINE = 1767225600;
+    uint256 internal constant CANONICAL_DEADLINE = 4102444800; // 2100-01-01T00:00:00Z
     string internal constant CLAIM_A_CONTENT = "truthbounty:claim:42";
     string internal constant CLAIM_B_CONTENT = "truthbounty:claim:1";
     string internal constant INTENT_A_REASON = "evidence verified";
