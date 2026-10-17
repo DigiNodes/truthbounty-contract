@@ -11,6 +11,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -48,6 +49,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -61,6 +64,8 @@ jobs:
             ${{ runner.os }}-node-
       - name: Install dependencies
         run: npm ci
+      - name: Check owned Solidity compiler warnings
+        run: npm run warning-gate -- --base-ref "${{ github.event.pull_request.base.sha || '' }}" --review-approved "${{ contains(github.event.pull_request.labels.*.name, 'solidity-warning-baseline-reviewed') }}"
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:

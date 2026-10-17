@@ -11,6 +11,8 @@
     "test:coverage": "forge coverage --report lcov",
     "compile": "hardhat compile",
     "compile:forge": "forge build",
+    "test:warning-gate": "node --test scripts/solidity-warning-gate.test.js",
+    "warning-gate": "hardhat clean && hardhat compile && node scripts/solidity-warning-gate.js check",
     "deploy": "hardhat run scripts/deploySlashing.ts",
     "verify": "hardhat run scripts/verify.ts",
     "stake": "hardhat run scripts/stake.ts",
