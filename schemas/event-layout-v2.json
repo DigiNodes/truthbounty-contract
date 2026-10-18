@@ -48,6 +48,120 @@
       ]
     },
     {
+      "module": "IUntrackedAssetRecovery",
+      "signature": "AssetRecoveryCancelledV2(bytes32,address)",
+      "topic0": "0xc44427ec98ca2f70002f5aea6f87e6c269ed11bcd9bd1e3f1788249d3a48b4b8",
+      "anonymous": false,
+      "fields": [
+        {
+          "index": 0,
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "index": 1,
+          "name": "authority",
+          "type": "address",
+          "indexed": true
+        }
+      ]
+    },
+    {
+      "module": "IUntrackedAssetRecovery",
+      "signature": "AssetRecoveryExecutedV2(bytes32,address,address,uint256,address,uint256)",
+      "topic0": "0x32dc4a3883da013e37799d6566663ea92c758c36398c81076f6cf9b30da662e0",
+      "anonymous": false,
+      "fields": [
+        {
+          "index": 0,
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "index": 1,
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "index": 2,
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "index": 3,
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "index": 4,
+          "name": "authority",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "index": 5,
+          "name": "availableBalance",
+          "type": "uint256",
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "module": "IUntrackedAssetRecovery",
+      "signature": "AssetRecoveryQueuedV2(bytes32,address,address,uint256,address,uint256,uint256)",
+      "topic0": "0xab14064c3dc956cc3fcc31928a6c108274e1bd1e5d9eb2a6e25d17d01d43eeab",
+      "anonymous": false,
+      "fields": [
+        {
+          "index": 0,
+          "name": "operationId",
+          "type": "bytes32",
+          "indexed": true
+        },
+        {
+          "index": 1,
+          "name": "asset",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "index": 2,
+          "name": "recipient",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "index": 3,
+          "name": "amount",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "index": 4,
+          "name": "authority",
+          "type": "address",
+          "indexed": false
+        },
+        {
+          "index": 5,
+          "name": "executableAt",
+          "type": "uint256",
+          "indexed": false
+        },
+        {
+          "index": 6,
+          "name": "availableBalance",
+          "type": "uint256",
+          "indexed": false
+        }
+      ]
+    },
+    {
       "module": "canonical ABI",
       "signature": "ClaimCreated(uint256,address,bytes32,uint256,uint64,uint16)",
       "topic0": "0x5ecddb64d06b2dfcb9e6b8220c3cfcce834d2dcf8f148c9cd4e26fea2d6226a1",

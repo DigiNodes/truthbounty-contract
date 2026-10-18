@@ -39,6 +39,10 @@ export const CANONICAL_MODULE_SOURCES: Record<string, string> = {
 
 /** Base discovery interface inherited by every canonical module. */
 export const BASE_MODULE_SOURCE = "contracts/v2/interfaces/IV2Module.sol";
+/** Additive surfaces do not alter the existing module ownership interfaces or ERC-165 IDs. */
+export const CANONICAL_EXTENSION_SOURCES = {
+  IUntrackedAssetRecovery: "contracts/interfaces/IUntrackedAssetRecovery.sol",
+};
 /** Named aggregate manifest of the complete V2 module topology. */
 export const AGGREGATE_MODULE_SOURCE = "contracts/v2/interfaces/ICanonicalV2.sol";
 /** Shared value-type registry used to canonicalize user-defined ABI types. */
@@ -125,6 +129,7 @@ export interface AbiArtifactExport {
   aggregate: string;
   modules: ResolvedModule[];
   canonicalAbi: AbiFragment[];
+  extensions?: Array<ResolvedModule & { abi: AbiFragment[]; policy: unknown }>;
   addressManifest: {
     note: string;
     networks: Array<{ name: string; chainId: number; config: string }>;
@@ -483,6 +488,19 @@ export function buildAbiArtifactExport(rootDir: string): AbiArtifactExport {
   );
   registerTypes(parsedModules, registry);
 
+  const parsedExtensions = Object.values(CANONICAL_EXTENSION_SOURCES)
+    .filter(source => fs.existsSync(path.join(rootDir, source)))
+    .map(source => parseInterfaceSource(readSource(rootDir, source), source));
+  registerTypes(parsedExtensions, registry);
+  const extensions = parsedExtensions.map(parsed => {
+    const resolved = resolveModule(parsed, registry);
+    return {
+      ...resolved.module,
+      abi: resolved.fragments,
+      policy: JSON.parse(readSource(rootDir, "deployments/config/asset-recovery.json")),
+    };
+  });
+
   const resolved = parsedModules.map((parsed) => resolveModule(parsed, registry));
   const modules = resolved.map((entry) => entry.module);
   const resolvedFragments = resolved.flatMap((entry) => entry.fragments);
@@ -511,6 +529,7 @@ export function buildAbiArtifactExport(rootDir: string): AbiArtifactExport {
     aggregate: AGGREGATE_MODULE_SOURCE,
     modules,
     canonicalAbi,
+    extensions,
     addressManifest: {
       note: "Module identity manifest. Concrete addresses are injected at deployment time from deployments/config and are never committed.",
       networks: ADDRESS_MANIFEST_NETWORKS.map((network) => ({ ...network })),
@@ -584,10 +603,23 @@ export function writeFreeze(rootDir: string): string {
   return target;
 }
 
+/** Publish additive extension handoffs without rewriting already released ownership ABIs. */
+export function writeExtensionFreeze(rootDir: string): string {
+  const target = exportPath(rootDir);
+  const { checksum: previousChecksum, ...frozen } = JSON.parse(fs.readFileSync(target, "utf8"));
+  const partial = { ...frozen, extensions: buildAbiArtifactExport(rootDir).extensions };
+  fs.writeFileSync(target, `${JSON.stringify({ ...partial, checksum: id(stableStringify(partial)) }, null, 2)}\n`);
+  return target;
+}
+
 const invokedDirectly = process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href;
 
 if (invokedDirectly) {
   const rootDir = process.cwd();
+  if (process.argv.includes("--write-extensions")) {
+    console.log(`Froze additive ABI extensions at: ${writeExtensionFreeze(rootDir)}`);
+    process.exit(0);
+  }
   if (process.argv.includes("--write")) {
     const target = writeFreeze(rootDir);
     const bundle = buildAbiArtifactExport(rootDir);

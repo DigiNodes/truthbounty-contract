@@ -26,6 +26,12 @@ describe("Canonical Modular Deployment Composition (SC-031)", () => {
       expect(await suite.provisionalSettlementEngine.getAddress()).to.not.equal(ethers.ZeroAddress);
       expect(await suite.appealVerificationRound.getAddress()).to.not.equal(ethers.ZeroAddress);
       expect(await suite.bondVault.getAddress()).to.not.equal(ethers.ZeroAddress);
+      expect(suite.deployment.plan.steps).to.have.length(12);
+      expect(suite.deployment.checkpoint.transactions).to.have.length(12);
+      for (const record of suite.deployment.checkpoint.transactions) {
+        const receipt = await ethers.provider.getTransactionReceipt(record.hash!);
+        expect(record.receipt!.blockHash).to.equal(receipt!.blockHash);
+      }
     });
 
     it("wires the V2-SC-059 bond vault and grants the appeal module OPERATOR_ROLE", async () => {
