@@ -1,17 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IFinalRewardAllocator} from "./interfaces/IFinalRewardAllocator.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
+import {V2Precision} from "./libraries/V2Precision.sol";
+import {PauseMatrix} from "./libraries/PauseMatrix.sol";
+import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
 
 /// @title FinalRewardAllocator
 /// @notice Records pull-based reward entitlements from one immutable final outcome.
 /// @dev The settlement module is the sole writer. It must pass frozen effective weights
 ///      and an explicit recipient for integer-division remainders.
-contract FinalRewardAllocator is IFinalRewardAllocator {
+///
+///      Pause matrix (V2-SC-162, `PauseMatrix` v1): the pause authority is resolved from
+///      `moduleRegistry` under `EMERGENCY_CONTROLS`. `fund` and `finalizeRewards` fail closed under
+///      `SCOPE_SETTLEMENT`; `claim` of an already-final entitlement is a RISK_REDUCING exit that is
+///      never scope-gated and freezes only at protocol SHUTDOWN.
+contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
 
     bytes32 public constant MODULE_SETTLEMENT = keccak256("SETTLEMENT");
@@ -54,10 +65,12 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
 
     function fund(address asset, uint256 amount, bytes32 settlementId) external override {
         _onlySettlementModule();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (asset == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
         _funded[asset] += amount;
+        _increaseRecoveryReserve(asset, amount);
         _settlementFunded[settlementId][asset] += amount;
         emit RewardPoolFunded(asset, amount, settlementId);
     }
@@ -69,6 +82,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
         Allocation[] calldata allocations
     ) external override {
         _onlySettlementModule();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
         if (_finalized[settlementId]) revert SettlementAlreadyFinalized(settlementId);
         if (asset == address(0)) revert ZeroAddress();
         if (allocations.length > 5) revert InvalidRecipientCount();
@@ -99,10 +113,15 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
         emit RewardsFinalized(settlementId, asset, outcome, totalAmount);
     }
 
+    /// @notice Pulls the caller's already-final reward entitlement.
+    /// @dev V2-SC-162: RISK_REDUCING exit. Never scope-gated; frozen only at protocol SHUTDOWN.
+    ///      Idempotent: claiming more than the remaining entitlement reverts with `InsufficientClaimable`.
     function claim(address asset, uint256 amount) external override {
+        _requireExitsNotShutdown();
         uint256 available = _claimable[asset][msg.sender];
         if (amount == 0 || amount > available) revert InsufficientClaimable(amount, available);
         _claimable[asset][msg.sender] = available - amount;
+        _decreaseRecoveryReserve(asset, amount);
         IERC20(asset).safeTransfer(msg.sender, amount);
         emit RewardClaimed(asset, msg.sender, amount);
     }
@@ -127,6 +146,11 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
         return _finalOutcome[settlementId];
     }
 
+    /// @dev Pause authority resolved from the module registry (timelocked replacement path).
+    function _pauseAuthority() internal view override returns (bool resolved, address authority) {
+        return _registryPauseAuthority(address(moduleRegistry));
+    }
+
     function _onlySettlementModule() internal view {
         (address implementation,,) = moduleRegistry.module(MODULE_SETTLEMENT);
         if (implementation != msg.sender) revert UnauthorizedSettlementModule(msg.sender);
@@ -143,7 +167,19 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
 
         uint256 distributed;
         for (uint256 i; i < count; ++i) {
-            uint256 share = allocation.amount * allocation.effectiveWeights[i] / totalWeight;
+            // Rounding is pro-rata and truncating, via V2Precision (V2-SC-100).
+            //
+            // Down is the correct direction for a payout: every recipient is
+            // paid no more than their exact entitlement, so the parts can only
+            // sum to at most `allocation.amount` and the shortfall is dust that
+            // `remainderRecipient` receives below. Rounding up here would let
+            // the sum of shares exceed the funded amount.
+            //
+            // mulDivDown also computes the product over 512 bits. The previous
+            // inline form multiplied before dividing, so a large amount times a
+            // large effective weight could overflow and revert a settlement that
+            // is arithmetically valid.
+            uint256 share = V2Precision.mulDivDown(allocation.amount, allocation.effectiveWeights[i], totalWeight);
             distributed += share;
             if (share != 0) {
                 _claimable[asset][allocation.accounts[i]] += share;
@@ -156,5 +192,25 @@ contract FinalRewardAllocator is IFinalRewardAllocator {
             _claimable[asset][allocation.remainderRecipient] += remainder;
             emit RewardAllocated(settlementId, allocation.category, asset, allocation.remainderRecipient, remainder);
         }
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!IAccessControl(address(moduleRegistry)).hasRole(keccak256("GOVERNANCE_ROLE"), msg.sender)) {
+            revert RecoveryAuthorityUnavailable();
+        }
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) revert RecoveryAuthorityUnavailable();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_TREASURY);
+        _requireExitsNotShutdown();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        // Allocation is a subset of funding, not an additional reserve. Unallocated funding is protected too.
+        return _recoveryReserved(asset);
     }
 }

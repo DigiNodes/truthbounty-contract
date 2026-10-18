@@ -68,6 +68,12 @@ contract TruthBountyGovernorTest is Test {
         snapshot.revokeRole(registrarRole, admin);
 
         guardianContract = new GovernanceGuardian(admin, guardian, ITruthBountyGovernor(address(governor)));
+        vm.stopPrank();
+
+        vm.prank(guardian);
+        governor.setGovernanceGuardianModule(address(guardianContract));
+
+        vm.startPrank(admin);
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
@@ -86,6 +92,8 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(voter);
         token.delegate(voter);
 
+        // Voting power checkpoints must predate the proposal snapshot lookup (clock() - 1).
+        vm.warp(block.timestamp + 1);
         // Warp so delegation checkpoints are in the past — getPastVotes(x, block.timestamp)
         // requires the timepoint to be strictly before current block.timestamp (OZ Votes invariant).
         vm.warp(block.timestamp + 2);
@@ -108,9 +116,12 @@ contract TruthBountyGovernorTest is Test {
     }
 
     function _voteAndQueue(uint256 proposalId) internal {
+        // Enter the Active window first so the vote is accepted ...
         vm.warp(block.timestamp + VOTING_DELAY + 1);
         vm.prank(voter);
         governor.castVote(proposalId, 1);
+        // ... then cross the voting deadline so the proposal reaches Succeeded and can be queued.
+        vm.warp(block.timestamp + VOTING_PERIOD + 1);
         governor.queue(proposalId);
     }
 
@@ -134,6 +145,55 @@ contract TruthBountyGovernorTest is Test {
         assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Defeated));
     }
 
+    function test_VotingBeforeDelayReverts() public {
+        uint256 proposalId = _createProposal(8);
+
+        vm.prank(voter);
+        vm.expectRevert();
+        governor.castVote(proposalId, 1);
+    }
+
+    function test_VoteAtVotingDeadlineIsCountedBeforeQueueing() public {
+        uint256 proposalId = _createProposal(18);
+        uint256 deadline = governor.proposalDeadline(proposalId);
+
+        vm.warp(deadline);
+        vm.prank(voter);
+        uint256 votingWeight = governor.castVote(proposalId, 1);
+
+        assertEq(votingWeight, 800_000 ether);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Active));
+
+        vm.warp(deadline + 1);
+        vm.expectRevert();
+        vm.prank(proposer);
+        governor.castVote(proposalId, 1);
+
+        governor.queue(proposalId);
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Queued));
+    }
+
+    function test_ProposerCanCancelPendingProposal() public {
+        uint256 proposalId = _createProposal(12);
+
+        vm.prank(proposer);
+        governor.cancel(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Canceled));
+        vm.expectRevert();
+        governor.queue(proposalId);
+    }
+
+    function test_CancelledProposalCannotExecute() public {
+        uint256 proposalId = _createProposal(13);
+
+        vm.prank(guardian);
+        guardianContract.vetoProposal(proposalId);
+
+        vm.expectRevert();
+        governor.execute(proposalId);
+    }
+
     function test_CancelledByGuardian() public {
         uint256 proposalId = _createProposal(11);
         vm.warp(block.timestamp + VOTING_DELAY + 1);
@@ -150,6 +210,18 @@ contract TruthBountyGovernorTest is Test {
 
         vm.expectRevert();
         governor.execute(proposalId);
+    }
+
+    function test_TimelockExecutesAtExactEtaAfterRecovery() public {
+        uint256 proposalId = _createProposal(77);
+        _voteAndQueue(proposalId);
+        uint256 eta = governor.proposalEta(proposalId);
+
+        vm.warp(eta);
+        governor.execute(proposalId);
+
+        assertEq(uint256(governor.state(proposalId)), uint256(IGovernor.ProposalState.Executed));
+        assertEq(module.value(), 77);
     }
 
     function test_DuplicateExecuteReverts() public {
@@ -200,6 +272,93 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(spammer);
         vm.expectRevert();
         governor.propose(targets, values, calldatas, "spam");
+    }
+
+    function test_ProposalRejectsMismatchedOperationArrays() public {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](0);
+        bytes[] memory calldatas = new bytes[](1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.InvalidProposalOperationCount.selector, 1, 0, 1,
+                governor.MAX_PROPOSAL_OPERATIONS()
+            )
+        );
+        governor.propose(targets, values, calldatas, "bad arrays");
+    }
+
+    function test_ProposalRejectsTooManyOperations() public {
+        uint256 count = governor.MAX_PROPOSAL_OPERATIONS() + 1;
+        address[] memory targets = new address[](count);
+        uint256[] memory values = new uint256[](count);
+        bytes[] memory calldatas = new bytes[](count);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.InvalidProposalOperationCount.selector, count, count, count,
+                governor.MAX_PROPOSAL_OPERATIONS()
+            )
+        );
+        governor.propose(targets, values, calldatas, "too many operations");
+    }
+
+    function test_ProposalRejectsOversizedOperationCalldata() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = new bytes(governor.MAX_OPERATION_CALLDATA_BYTES() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.OperationCalldataTooLarge.selector,
+                0,
+                governor.MAX_OPERATION_CALLDATA_BYTES() + 1,
+                governor.MAX_OPERATION_CALLDATA_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, "oversized action");
+    }
+
+    function test_ProposalRejectsOversizedAggregateCalldata() public {
+        uint256 perOperationLimit = governor.MAX_OPERATION_CALLDATA_BYTES();
+        uint256 count = governor.MAX_PROPOSAL_CALLDATA_BYTES() / perOperationLimit + 1;
+        address[] memory targets = new address[](count);
+        uint256[] memory values = new uint256[](count);
+        bytes[] memory calldatas = new bytes[](count);
+        for (uint256 i; i < count; ++i) {
+            targets[i] = address(module);
+            calldatas[i] = new bytes(perOperationLimit);
+        }
+
+        uint256 aggregateSize = count * perOperationLimit;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.ProposalCalldataTooLarge.selector,
+                aggregateSize,
+                governor.MAX_PROPOSAL_CALLDATA_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, "oversized proposal payload");
+    }
+
+    function test_ProposalRejectsOversizedDescription() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = _proposalCalldata(1);
+        string memory description = new string(governor.MAX_PROPOSAL_DESCRIPTION_BYTES() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.ProposalDescriptionTooLarge.selector,
+                governor.MAX_PROPOSAL_DESCRIPTION_BYTES() + 1,
+                governor.MAX_PROPOSAL_DESCRIPTION_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, description);
     }
 
     function test_PublishManifestEmitsConfig() public {

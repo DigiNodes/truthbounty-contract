@@ -155,6 +155,7 @@ contract ParameterVersionRegistry is
     function _createGenesisVersion() internal {
         versionCounter = 1;
         
+        // Set genesis version as active
         EconomicParameters memory genesisParams = EconomicParameters({
             verifierRewardsBPS: 4000,
             treasuryReserveBPS: 2000,
@@ -251,6 +252,14 @@ contract ParameterVersionRegistry is
         // Thresholds
         if (parameters.participationThresholdBPS < MIN_SAFE_PARTICIPATION_THRESHOLD || parameters.participationThresholdBPS > MAX_SAFE_PARTICIPATION_THRESHOLD) revert InvalidParticipationThreshold();
         if (parameters.confidenceThresholdBPS < MIN_SAFE_CONFIDENCE_THRESHOLD || parameters.confidenceThresholdBPS > MAX_SAFE_CONFIDENCE_THRESHOLD) revert InvalidConfidenceThreshold();
+        if (parameters.maxStakeAmount != 0 && parameters.minStakeAmount > parameters.maxStakeAmount) {
+            revert InvalidStakeAmount();
+        }
+        // Validate bounty floors used by anti-dust claim creation (V2-SC-105)
+        if (parameters.minBountyAmount == 0) revert InvalidBountyBounds();
+        if (parameters.maxBountyAmount != 0 && parameters.minBountyAmount > parameters.maxBountyAmount) {
+            revert InvalidBountyBounds();
+        }
 
         // Reputation
         if (parameters.minReputationScore > parameters.maxReputationScore) revert InvalidReputationRange();
@@ -377,7 +386,16 @@ contract ParameterVersionRegistry is
         if (versionId == 0) revert ClaimNotFound(claimId);
         return _versions[versionId].parameters;
     }
-    
+
+    /**
+     * @notice Get the parameter version a claim was frozen to at creation
+     * @param claimId The ID of the claim
+     * @return The linked version ID, or 0 if the claim was never recorded
+     */
+    function getClaimVersion(uint256 claimId) external view returns (uint256) {
+        return _claimVersionMap[claimId];
+    }
+
     /**
      * @notice Get the currently active parameters
      * @return The current economic parameters

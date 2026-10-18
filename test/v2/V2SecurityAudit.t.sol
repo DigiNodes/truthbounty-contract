@@ -140,7 +140,7 @@ contract V2_ThreatModel_Reentrancy is Test {
         vault    = new StakeVault(address(registry), address(rtoken), admin);
 
         vault.setSupportedAsset(address(rtoken), true);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         rtoken.mint(attacker, STAKE * 2);
         vm.prank(attacker);
@@ -204,8 +204,8 @@ contract V2_AccessControl_Tests is Test {
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.registerModule(vault.MODULE_SLASHING(),   slashing);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SLASHING(),   slashing);
 
         token.mint(verifier, 1_000 ether);
         vm.prank(verifier);
@@ -357,8 +357,8 @@ contract V2_Arithmetic_Tests is Test {
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
 
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
-        registry.registerModule(vault.MODULE_SLASHING(),   slashing);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SLASHING(),   slashing);
 
         token.mint(alice, 10_000 ether);
         token.mint(bob,   10_000 ether);
@@ -483,7 +483,7 @@ contract V2_StateTransition_Tests is Test {
         registry = new MockModuleRegistry();
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         token.mint(verifier, STAKE * 4);
         vm.prank(verifier); token.approve(address(vault), type(uint256).max);
@@ -549,7 +549,7 @@ contract V2_StateTransition_Tests is Test {
     /// @notice SC-STATE-006: carryForwardAppeal with same fromRound==toRound reverts.
     function test_carryForwardAppeal_sameRoundReverts() public {
         vm.prank(settlement);
-        vm.expectRevert(abi.encodeWithSelector(V2Errors.InvalidArgument.selector, "same round"));
+        vm.expectRevert(abi.encodeWithSelector(V2Errors.InvalidRoundTransfer.selector, uint256(0), uint256(0)));
         vault.carryForwardAppeal(address(token), verifier, CLAIM_A, 0, 0, STAKE);
     }
 
@@ -838,7 +838,7 @@ contract V2_ABI_Tests is Test {
         registry = new MockModuleRegistry();
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         token.mint(verifier, STAKE * 4);
         vm.prank(verifier); token.approve(address(vault), type(uint256).max);
@@ -856,7 +856,7 @@ contract V2_ABI_Tests is Test {
     /// @notice SC-ABI-002: StakeDeposited event is emitted on depositStake.
     function test_depositStake_emitsStakeDeposited() public {
         vm.expectEmit(true, true, false, true, address(vault));
-        emit IStakeCustody.StakeDeposited(verifier, CLAIM_A, STAKE);
+        emit IStakeCustody.StakeDeposited(verifier, CLAIM_A, STAKE, uint64(block.timestamp), 1);
 
         vm.prank(verifier);
         vault.depositStake(CLAIM_A, STAKE);
@@ -867,7 +867,7 @@ contract V2_ABI_Tests is Test {
         vm.prank(verifier); vault.depositStake(CLAIM_A, STAKE);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit IStakeCustody.VaultSettledConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
+        emit IStakeCustody.VaultSettledConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0, uint64(block.timestamp), 1);
 
         vm.prank(settlement);
         vault.settleConclusive(address(token), verifier, CLAIM_A, 0, STAKE, 0);
@@ -878,7 +878,7 @@ contract V2_ABI_Tests is Test {
         vm.prank(verifier); vault.depositStake(CLAIM_A, STAKE);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit IStakeCustody.VaultRefundedInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
+        emit IStakeCustody.VaultRefundedInconclusive(address(token), verifier, CLAIM_A, 0, STAKE, uint64(block.timestamp), 1);
 
         vm.prank(settlement);
         vault.refundInconclusive(address(token), verifier, CLAIM_A, 0, STAKE);
@@ -920,7 +920,7 @@ contract V2_Gas_Tests is Test {
         registry = new MockModuleRegistry();
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
     }
 
     /// @notice SC-GAS-001: Depositing stake for 10 claims fits within gas budget (≤ 350,000 per tx).
@@ -988,7 +988,7 @@ contract V2_FailClosed_Tests is Test {
         registry = new MockModuleRegistry();
         token    = new MockERC20("STK", "STK");
         vault    = new StakeVault(address(registry), address(token), admin);
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         token.mint(verifier, STAKE * 4);
         vm.prank(verifier); token.approve(address(vault), type(uint256).max);
@@ -1027,7 +1027,7 @@ contract V2_FailClosed_Tests is Test {
         vm.prank(verifier); vault.depositStake(CLAIM_A, STAKE);
 
         address slashing = makeAddr("slashing");
-        registry.registerModule(vault.MODULE_SLASHING(), slashing);
+        registry.permitModule(vault.MODULE_SLASHING(), slashing);
 
         vm.prank(slashing);
         vm.expectRevert(abi.encodeWithSelector(V2Errors.InsufficientLocked.selector, STAKE + 1, STAKE));

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {BoundedStaticCall} from "../libraries/BoundedStaticCall.sol";
 
 /**
  * @title PostDeploymentRoleCheck
@@ -74,6 +75,48 @@ library PostDeploymentRoleCheck {
 
     /// @dev Total distinct roles checked (used for static array sizing).
     uint256 internal constant ROLE_CATALOG_SIZE = 27;
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Timelock role graph policy (PREWAVE-SC-033)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// @dev Canonical timelock role graph: proposer, executor, canceller, admin.
+    struct TimelockRoleGraph {
+        address proposer;
+        address executor;
+        address canceller;
+        address admin;
+        bool executorOpen;
+    }
+
+    /// @dev Policy violation kinds for the timelock role graph.
+    enum TimelockPolicyViolation {
+        MissingRole,
+        ExtraRole,
+        SameActorConflict,
+        OpenExecutor,
+        UnauthorizedCancel,
+        DelayBypass,
+        AdminRetained
+    }
+
+    /// @notice Emitted when the timelock role graph matches policy exactly.
+    event TimelockRoleGraphVerified(
+        address indexed timelock,
+        address proposer,
+        address executor,
+        address canceller,
+        address admin,
+        bool executorOpen
+    );
+
+    /// @notice Emitted for each timelock role graph policy violation.
+    event TimelockPolicyViolationDetected(
+        address indexed timelock,
+        TimelockPolicyViolation indexed kind,
+        address indexed actor,
+        bytes32 role
+    );
 
     // ────────────────────────────────────────────────────────────────────
     //  Types
@@ -220,6 +263,128 @@ library PostDeploymentRoleCheck {
     //  Internals
     // ────────────────────────────────────────────────────────────────────
 
+    // ────────────────────────────────────────────────────────────────────
+    //  Timelock role graph verification (PREWAVE-SC-033)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Verify the deployed timelock role graph exactly matches the canonical policy.
+     * @dev Policy:
+     *      - proposer, executor, canceller, admin are distinct non-zero actors.
+     *      - executor is closed (executorOpen == false) unless explicitly allowed.
+     *      - admin is renounced (address(0)) after handoff.
+     *      - no actor can propose and bypass delay alone (proposer != executor).
+     *      - cancellation is bounded to the canceller role.
+     * @param timelock The timelock contract address.
+     * @param graph The observed role graph to check.
+     * @return ok True if the graph matches policy exactly.
+     */
+    function verifyTimelockRoleGraph(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal returns (bool ok) {
+        ok = true;
+
+        if (graph.proposer == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), PROPOSER_ROLE);
+            ok = false;
+        }
+        if (graph.executor == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), EXECUTOR_ROLE);
+            ok = false;
+        }
+        if (graph.canceller == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), CANCELLER_ROLE);
+            ok = false;
+        }
+
+        if (graph.proposer == graph.executor) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.proposer, PROPOSER_ROLE);
+            ok = false;
+        }
+        if (graph.proposer == graph.canceller) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.proposer, CANCELLER_ROLE);
+            ok = false;
+        }
+        if (graph.executor == graph.canceller) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.executor, CANCELLER_ROLE);
+            ok = false;
+        }
+
+        if (graph.executorOpen) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.OpenExecutor, graph.executor, EXECUTOR_ROLE);
+            ok = false;
+        }
+
+        if (graph.admin != address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.AdminRetained, graph.admin, TIMELOCK_ADMIN_ROLE);
+            ok = false;
+        }
+
+        if (ok) {
+            emit TimelockRoleGraphVerified(
+                timelock,
+                graph.proposer,
+                graph.executor,
+                graph.canceller,
+                graph.admin,
+                graph.executorOpen
+            );
+        }
+    }
+
+    /**
+     * @notice Assert that no actor can propose and bypass delay alone.
+     * @dev Reverts if the proposer and executor are the same actor or if the executor is open.
+     */
+    function assertNoDelayBypass(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.proposer == graph.executor) {
+            revert("PostDeploymentRoleCheck: proposer cannot be executor");
+        }
+        if (graph.executorOpen) {
+            revert("PostDeploymentRoleCheck: executor cannot be open");
+        }
+        if (graph.proposer == address(0) || graph.executor == address(0)) {
+            revert("PostDeploymentRoleCheck: missing proposer or executor");
+        }
+        // silence unused warning
+        timelock;
+    }
+
+    /**
+     * @notice Assert cancellation authority is bounded to the canceller role.
+     * @dev Reverts if canceller is zero, or if canceller overlaps proposer/executor.
+     */
+    function assertBoundedCancellation(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.canceller == address(0)) {
+            revert("PostDeploymentRoleCheck: missing canceller");
+        }
+        if (graph.canceller == graph.proposer || graph.canceller == graph.executor) {
+            revert("PostDeploymentRoleCheck: canceller must be distinct");
+        }
+        timelock;
+    }
+
+    /**
+     * @notice Assert timelock self-administration is explicit (admin renounced).
+     * @dev Reverts if the timelock admin is not address(0).
+     */
+    function assertTimelockSelfAdministration(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.admin != address(0)) {
+            revert("PostDeploymentRoleCheck: timelock admin must be renounced");
+        }
+        timelock;
+    }
+
     function _safeHasRole(
         address target,
         bytes32 role,
@@ -228,10 +393,11 @@ library PostDeploymentRoleCheck {
         // Guard: target must have code
         if (target.code.length == 0) return false;
 
-        (bool ok, bytes memory data) = target.staticcall(
+        (bool ok, uint256 value, uint256 returnSize) = BoundedStaticCall.staticcallWord(
+            target,
             abi.encodeCall(IAccessControl.hasRole, (role, account))
         );
-        if (!ok || data.length < 32) return false;
-        return abi.decode(data, (bool));
+        if (!ok || returnSize < 32 || value > 1) return false;
+        return value == 1;
     }
 }

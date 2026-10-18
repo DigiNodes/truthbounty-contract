@@ -60,6 +60,16 @@ interface IAppealVerificationRound is IVerificationSource {
         uint256 maxVotersPerRound;        // bounded-processing cap (1..MAX_VOTERS_PER_ROUND)
     }
 
+    struct BoundAppealParams {
+        uint256 claimId;
+        uint256 parentDisputeId;
+        uint8 parentOutcome;
+        uint256 roundIndex;
+        address appellant;
+        address bondPayer;
+        address bondBeneficiary;
+    }
+
     struct AppealRound {
         uint256 claimId;
         AppealRoundStatus status;
@@ -78,6 +88,11 @@ interface IAppealVerificationRound is IVerificationSource {
         uint256 requiredBond;    // bond posted by the opener (vaulted)
         uint256 bondLockId;      // unique {ISTakeVault} lock id for this round
         uint256 maxVoters;       // voter cap frozen at open
+        uint256 parentDisputeId; // bound parent dispute ID (0 if unbounded legacy open)
+        uint8 parentOutcome;     // bound parent dispute outcome
+        address appellant;       // authorized appellant
+        address bondPayer;       // party supplying the bond
+        address bondBeneficiary; // recipient upon refund/disposition
     }
 
     // =========================================================================
@@ -137,9 +152,61 @@ interface IAppealVerificationRound is IVerificationSource {
     /// @notice Emitted when the bond custody vault is re-pointed (governance/admin only).
     event VaultUpdated(address indexed oldVault, address indexed newVault);
 
+    event BoundAppealRoundOpened(
+        uint256 indexed claimId,
+        uint256 indexed parentDisputeId,
+        uint8 parentOutcome,
+        uint256 indexed roundIndex,
+        address appellant,
+        address bondPayer,
+        address bondBeneficiary,
+        uint256 requiredBond,
+        uint256 bondLockId
+    );
+
+    event AppealBondRefunded(
+        uint256 indexed claimId,
+        uint256 indexed bondLockId,
+        address indexed beneficiary,
+        uint256 amount
+    );
+
+    event AppealBondSlashed(
+        uint256 indexed claimId,
+        uint256 indexed bondLockId,
+        address indexed recipient,
+        uint256 amount
+    );
+
+    event DisputeResolutionUpdated(address indexed oldDisputeResolution, address indexed newDisputeResolution);
+
     // =========================================================================
     // Custom Errors
     // =========================================================================
+
+    /// @notice Thrown when appellant is not authorized for the parent dispute or claim.
+    error UnauthorizedAppellant(address appellant);
+
+    /// @notice Thrown when the parent dispute ID does not match the claim or does not exist.
+    error WrongParentDispute(uint256 claimId, uint256 parentDisputeId);
+
+    /// @notice Thrown when the parent outcome contested does not match the parent dispute.
+    error InvalidParentOutcome(uint8 provided, uint8 expected);
+
+    /// @notice Thrown when the provided round index does not strictly increment the previous round.
+    error WrongRound(uint256 provided, uint256 expected);
+
+    /// @notice Thrown when an appeal for the parent dispute and round has already been opened.
+    error DuplicateAppeal(uint256 parentDisputeId, uint256 roundIndex);
+
+    /// @notice Thrown when the appeal is submitted after the parent dispute appeal deadline.
+    error AppealWindowExpired(uint256 claimId, uint256 timestamp, uint256 deadline);
+
+    /// @notice Thrown when the bond source addresses (payer or beneficiary) are zero.
+    error InvalidBondSource(address payer, address beneficiary);
+
+    /// @notice Thrown when bond disposition is attempted on an active round.
+    error BondDispositionNotAllowed(uint256 claimId);
 
     /// @notice Thrown when a claim's appeal path has already been finalized.
     error AppealPathTerminal(uint256 claimId);
@@ -155,6 +222,14 @@ interface IAppealVerificationRound is IVerificationSource {
 
     /// @notice Thrown when the voter cap for a round is reached.
     error VoterLimitExceeded(uint256 claimId, uint256 maxVoters);
+
+    /// @notice Thrown when an action is attempted at or after the round deadline.
+    /// @dev Deadline semantics are EXCLUSIVE: an action is valid only while
+    ///      `block.timestamp < deadline`. The exact-deadline timestamp is expired.
+    error AppealDeadlineExpired(uint256 claimId, uint256 timestamp, uint256 deadline);
+
+    /// @notice Thrown when a rollover input (round index or stake) is out of bounds.
+    error InvalidRolloverInput(uint256 claimId, uint256 roundIndex, uint256 stakeAmount);
 
     /// @notice Thrown when no bond vault or bond amount is configured (fail closed).
     error BondNotConfigured();
@@ -192,6 +267,32 @@ interface IAppealVerificationRound is IVerificationSource {
      * @custom:emits AppealRoundOpened
      */
     function openAppealRound(uint256 claimId) external;
+
+    /**
+     * @notice Opens the next appeal round bound to an authorized appellant, parent dispute, and bond source.
+     * @param params Bound appeal opening parameters.
+     * @custom:emits BoundAppealRoundOpened
+     */
+    function openBoundAppealRound(BoundAppealParams calldata params) external;
+
+    /**
+     * @notice Refunds the appeal bond of a closed/resolved appeal round to the recorded bondBeneficiary.
+     * @param claimId Claim ID whose appeal bond is being refunded.
+     * @custom:emits AppealBondRefunded
+     */
+    function refundAppealBond(uint256 claimId) external;
+
+    /**
+     * @notice Slashes the appeal bond of a closed/resolved appeal round to the designated slashRecipient.
+     * @param claimId Claim ID whose appeal bond is being slashed.
+     * @param slashRecipient Recipient of the slashed bond funds.
+     * @custom:emits AppealBondSlashed
+     */
+    function slashAppealBond(uint256 claimId, address slashRecipient) external;
+
+    function setDisputeResolution(address newDisputeResolution) external;
+
+    function disputeResolution() external view returns (address);
 
     function submitAppealVote(uint256 claimId, bool support, uint256 stakeAmount) external;
 
@@ -235,4 +336,20 @@ interface IAppealVerificationRound is IVerificationSource {
     function getAppealVote(uint256 claimId, address verifier) external view returns (AppealVote memory);
 
     function isAppealOpen(uint256 claimId) external view returns (bool);
+
+    /**
+     * @notice Returns whether the appeal round for `claimId` is still open for
+     *         voting at `timestamp`.
+     * @dev Deadline semantics are EXCLUSIVE: returns true iff the round status is
+     *      OPEN and `timestamp < deadline`. At exactly `deadline` this returns
+     *      false, so one-second-before is open and exact-deadline is closed.
+     */
+    function isAppealOpenAt(uint256 claimId, uint256 timestamp) external view returns (bool);
+
+    /**
+     * @notice Returns the exclusive deadline for the current appeal round of `claimId`.
+     * @dev Actions are valid strictly before the returned timestamp; the timestamp
+     *      itself is expired. Reverts if no round has been opened.
+     */
+    function appealDeadline(uint256 claimId) external view returns (uint256);
 }

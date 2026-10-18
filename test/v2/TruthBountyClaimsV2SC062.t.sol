@@ -40,7 +40,12 @@ contract HostileRecipientERC20 is MockERC20 {
     function setHostile(address h) external { hostile = h; }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
-        if (to == hostile) revert("HostileRecipient: blocked");
+        if (to == hostile) {
+            assembly {
+                mstore(0, 0x12345678)
+                revert(0, 0x10000)
+            }
+        }
         return super.transfer(to, amount);
     }
 }
@@ -103,7 +108,7 @@ contract TruthBountyClaimsV2SC062Test is Test {
         claims.settleClaim(bob, AMOUNT, ID_A);
 
         // Bob must have received nothing.
-        assertEq(token.balanceOf(bob), 0, "replay executed — fix broken");
+        assertEq(token.balanceOf(bob), 0, "replay executed - fix broken");
     }
 
     function test_settleClaim_zeroIdReverts() public {
@@ -157,7 +162,7 @@ contract TruthBountyClaimsV2SC062Test is Test {
         );
         claims.settleClaimsBatch(bens, amts, ID_A);
 
-        assertEq(token.balanceOf(bob), 0, "replay executed on batch — fix broken");
+        assertEq(token.balanceOf(bob), 0, "replay executed on batch - fix broken");
     }
 
     function test_settleClaimsBatch_zeroIdReverts() public {
@@ -293,7 +298,7 @@ contract TruthBountyClaimsV2SC062Test is Test {
         assertEq(
             token.balanceOf(alice),
             balanceAfterFirst,
-            "double-spend succeeded — V2-SC-062 fix is missing"
+            "double-spend succeeded - V2-SC-062 fix is missing"
         );
     }
 

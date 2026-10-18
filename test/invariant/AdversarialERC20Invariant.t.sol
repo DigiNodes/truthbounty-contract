@@ -39,7 +39,7 @@ contract AdversarialERC20Handler is Test {
         registry = new MockModuleRegistry();
         MockERC20 primary = new MockERC20("Stake", "STK");
         vault = new StakeVault(address(registry), address(primary), address(this));
-        registry.registerModule(vault.MODULE_SETTLEMENT(), settlement);
+        registry.permitModule(vault.MODULE_SETTLEMENT(), settlement);
 
         feeToken = new FeeOnTransferERC20("Fee", "FEE", 100);
         falseToken = new FalseReturnERC20();

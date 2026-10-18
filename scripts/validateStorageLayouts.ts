@@ -316,8 +316,7 @@ export async function validateStorageLayouts(
     const baseline = manifestContracts[tracked.name];
     if (baseline === undefined) {
       issues.push(
-        `${tracked.name}: missing from manifest — run ` +
-          `\`npx tsx scripts/validateStorageLayouts.ts --update\` after review.`,
+        `${tracked.name}: missing from manifest — run \`npx tsx scripts/validateStorageLayouts.ts --update\` after review.`,
       );
       continue;
     }
@@ -331,17 +330,14 @@ export async function validateStorageLayouts(
   for (const name of manifestNames) {
     if (!trackedNames.includes(name)) {
       issues.push(
-        `${name}: present in manifest but not tracked — remove it from the manifest or ` +
-          `add it to TRACKED_CONTRACTS in scripts/validateStorageLayouts.ts`,
+        `${name}: present in manifest but not tracked — remove it from the manifest or add it to TRACKED_CONTRACTS in scripts/validateStorageLayouts.ts`,
       );
     }
   }
 
   for (const untracked of findUntrackedGapContracts(trackedNames)) {
     issues.push(
-      `${untracked}: declares a storage gap but is not tracked — add it to TRACKED_CONTRACTS ` +
-        `in scripts/validateStorageLayouts.ts, regenerate the manifest with --update, and ` +
-        `commit the result`,
+      `${untracked}: declares a storage gap but is not tracked — add it to TRACKED_CONTRACTS in scripts/validateStorageLayouts.ts, regenerate the manifest with --update, and commit the result`,
     );
   }
 

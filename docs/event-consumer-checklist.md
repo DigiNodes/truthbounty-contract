@@ -16,3 +16,51 @@ Reorganization expectations (confirmation depth, finality classes, bounded repla
 - Treat metadata hashes as references and verify fetched metadata independently.
 
 Schema version `1` is the initial compatibility target.
+
+---
+
+## Amplification metrics (PREWAVE-SC-024)
+
+The stress-test completion event exposes amplification metrics that must be decoded with documented units and bounds. The authoritative source is the on-chain emitter and its ABI artifact; the values below are normative for consumers and must not be relaxed to match broken output.
+
+The `StressTestCompleted` event emits `uint256 maxAmplificationRatioBps`.
+
+- Units: basis points (bps), where `1 bps = 0.01 %`. The ratio is expressed as a non-negative integer in bps.
+- Bounds: `0 `<= `$maxAmplificationRatioBps` `<= 1000000000` (100,000,000,000 bps = 100,000,000% ). This bound is the canonical maximum for the metric and is enforced before emission.
+- Overflow behavior: the emitter must revert when the computed ratio exceeds the canonical maximum or when arithmetic would overflow `uint256`. No wrapped or clipped value may be emitted.
+- Zero is valid and means no amplification was observed.
+- The event fixture in the test suite must match runtime output exactly, including topic and data layout.
+- Monitoring consumers must decode the metric directly from the event data without heuristics or unit guessing.
+- Impossible values (out-of-bounds or overflowing) must fail before emission.
+
+Consumers must also apply the following checks to the amplification metrics:
+
+- Reject any `StressTestCompleted` log whose decoded `maxAmplificationRatioBps` exceeds the canonical maximum.
+- Treat the metric as a non-negative integer in bps; do not scale it by 10,000 or by 100 without an explicit documented conversion.
+- Verify the event topic against the published ABI artifact and fail closed on schema drift.
+
+---
+
+## Canonical V2 projection replay (V2-SC-132)
+
+Consumers of the canonical V2 modules must also apply the following. The
+machine-readable catalogue is published on-chain by the read-only
+`EventCompletenessAnchor` and mirrored in
+[`deployments/config/event-completeness.json`](../deployments/config/event-completeness.json);
+the normative rules are in
+[`docs/v2/event-completeness-projection-replay.md`](./v2/event-completeness-projection-replay.md).
+
+Current published catalogue: 8 modules, 30 cells, 57 closing bindings, 10
+restatements, 8 reduction rules, catalogue root
+`0x1764935cecbbcfc6d387c9f03037d65e6ffabaaa19450c93cfc4f800498efb58`.
+
+- Pin `catalogueRoot`, `closingSetRoot`, and `restatementSetRoot` at ingestion and re-derive all three on every replay; treat any drift as a catalogue change, not as consumer drift.
+- Apply a cell's `closingEvents` as its sources. Treat its `restatements` as cross-checks and never as sources — applying both double-counts, which `test_ApplyingRestatementsAsSourcesDoubleCounts` demonstrates.
+- Apply the cell's published `reductionRuleId` for every `Aggregate` or `Derived` cell. An ad-hoc reduction will disagree with the anchor on at least one of the eight rules.
+- Reconstruct the verifier-stake cell from the `Stake*` family only (R6). The vault lock events restate the same delta.
+- Read `EvidenceCommitted` as establishing status `SUBMITTED`, then apply `EvidenceStatusChanged` to overwrite it (R7). A consumer that watches only the status-change event cannot distinguish a committed record in `SUBMITTED` from a record it never observed.
+- Take a transition's block number and timestamp from the receipt, never from the log's own `timestamp` field, which is proposer-influenceable (R5).
+- Re-derive the projection fold with `V2EventCompleteness.replayFold` from `EMPTY_FOLD` and compare it to your own. A mismatch means a log was applied twice, skipped, or applied out of order.
+- Assert conservation before serving a read: `claimable + locked + protocolAllocation == totalCustody` for every asset, summed over the per-key cells.
+- Do not decode these documented non-canonical emissions: `EvidenceSubmitted`, `EvidenceSubmittedV1`, `Paused`, `Unpaused`, `RoleGranted`, `RoleRevoked`, `ModuleRegistered`, `ModuleRemoved`. They are published machine-readably in `nonCanonicalEmissions` in the manifest, with each `topic0` and its reason. Quarantine anything outside that list and the catalogue; never silently ignore an unlisted emission.
+- Reject a record whose chain id disagrees with the chain being indexed.
