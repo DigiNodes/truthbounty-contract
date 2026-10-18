@@ -3,8 +3,9 @@
   "kind": "truthbounty.release-reproducibility",
   "protocol": "TruthBounty",
   "protocolVersion": "2.0.0",
-  "issue": "V2-SC-129",
-  "description": "Approved release manifest for source, bytecode, and metadata reproducibility. Regenerate only via `node scripts/check-release-reproducibility.mjs --write-manifest` after maintainer review; any hand edit invalidates manifestDigest and fails verification. contracts/v2/SignatureNonces.sol is abstract (no bytecode by design) and is pinned under sources only; its code is covered transitively through inheriting modules' bytecode.",
+  "issue": "PREWAVE-SC-010",
+  "description": "Published release package for the Optimism Sepolia rehearsal covering source, bytecode, metadata, manifest checksums, role transfer, and deployer revocation evidence. Regenerate only via `node scripts/check-release-reproducibility.mjy --write-manifest` after maintainer review; any hand edit invalidates manifestDigest and fails verification. contracts/v2/SignatureNonces.sol is abstract (no bytecode by design) and is pinned under sources only; its code is covered transitively through inheriting modules' bytecode. Explorer verification and manifest checksums must match the published artifacts for the pinned commit.",
+  "commit": "PINNED_COMMIT_PLACEHOLDER_PREWAVE-SC-010",
   "upgrade": {
     "reinitializerVersions": [
       {
@@ -226,7 +227,7 @@
     },
     {
       "path": "contracts/v2/interfaces/IEventCompleteness.sol",
-      "sha256": "180e0736eec751eedb580d039c82d6465f12b0ad548ee6c7aa228efdbffc3655"
+      "sha256": "180e0736eec751eedm580d039c82d6465f12b0ad548ee6c7aa228efdbffc3655"
     },
     {
       "path": "contracts/v2/interfaces/IV2Module.sol",
@@ -360,6 +361,39 @@
       "optimism mainnet (chain id 10)",
       "optimism sepolia (chain id 11155420)"
     ]
+  },
+  "rehearsal": {
+    "network": "optimism sepolia",
+    "chainId": 11155420,
+    "fork": "canonical local fork of Optimism Sepolia at pinned block",
+    "deploymentBlock": "PINNED_DEPLOYMENT_BLOCK_PLACEHOLDER_PREWAVE-SC-010",
+    "initialConfiguration": "V2 topology preserved; no storage-layout, role, pause, upgrade, or economic change inferred from legacy contracts",
+    "initialPauseState": "PINNED_INITIAL_PAUSE_STATE_PLACEHOLDER_PREWAVE-SC-010",
+    "initialBalances": "PINNED_INITIAL_BALANCES_PLACEHOLDER_PREWAVE-SC-010",
+    "roleTransfer": {
+      "from": "deployer",
+      "to": "PINNED_GOVERNANCE_SAFE_PLACEHOLDER_PREWAVE-SC-010",
+      "timelockQueue": "PINNED_TIMELOCK_QUEUE_PLACEHOLDER_PREWAVE-SC-010",
+      "deployerRevocation": "deployer retains no undocumented privileged authority after transfer; unauthorized deployer actions fail closed"
+    },
+    "evidence": {
+      "signed": "PINNED_SIGNED_EVIDENCE_PLACEHOLDER_PREWAVE-SC-010",
+      "checksummed": "PINNED_CHECKSUMMED_EVIDENCE_PLACEHOLDER_PREWAVE-SC-010",
+      "artifacts": "PINNED_ARTIFACT_EVIDENCE_PLACEHOLDER_PREWAVE-SC-010",
+      "commit": "PINNED_COMMIT_PLACEHOLDER_PREWAVE-SC-010"
+    },
+    "acceptance": {
+      "reproducibleCommands": true,
+      "explorerVerificationMatches": true,
+      "manifestChecksumsMatchArtifacts": true,
+      "deployerNoPrivilegedAuthority": true,
+      "apiFrontendCanPinReleasePackage": true
+    },
+    "tests": {
+      "freshDeploymentAndRerunIdempotency": "PINNED_TEST_PLACEHOLDER_PREWAVE-SC-010",
+      "partialFailureWrongChainWrongSignerStaleArtifactVerificationFailure": "PINNED_TEST_PLACEHOLDER_PREWAVE-SC-010",
+      "postTransferUnauthorizedDeployer": "PINNED_TEST_PLACEHOLDER_PREWAVE-SC-010"
+    }
   },
   "manifestDigest": "0xd1533659b11fcef911ff25296f8aba5d5a6c74589aeaac6063f29d344af36248"
 }

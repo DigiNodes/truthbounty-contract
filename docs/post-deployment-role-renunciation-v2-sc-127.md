@@ -1,5 +1,9 @@
 # Post-Deployment Role Renunciation Checks (V2-SC-127)
 
+> **Rehearsal evidence for PREWAVE-SC-010** — this document is the canonical
+> reference for the Optimism Sepolia rehearsal, verification, and role-transfer
+> procedure. See [Rehearsal Evidence](#rehearsal-evidence-prewave-sc-010) below.
+
 ## Overview
 
 V2-SC-127 closes the assurance gap between deployment and operational handoff. After
@@ -38,6 +42,9 @@ protocol roles. This module provides:
 ```
 
 ## Role Catalog
+
+See also the [Rehearsal Role Transfer Matrix](#rehearsal-role-transfer-matrix) for the
+exact post-handoff holder of each role on Optimism Sepolia.
 
 The library checks **27 distinct roles** covering every known V2 role hash:
 
@@ -101,6 +108,10 @@ PostDeploymentRoleCheck.assertRoleGraphMatchesPolicy(timelock, governor, guardia
 > and emit `RoleRenunciationViolation` events for every retained role.
 
 ## Running Verification
+
+The commands below are the exact commands used to produce the pinned rehearsal
+package. See [Exact Reproduction Commands](#exact-reproduction-commands) for the
+full end-to-end sequence including fork and Sepolia runs.
 
 ### Forge (local/CI)
 
