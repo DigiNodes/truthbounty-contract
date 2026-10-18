@@ -95,6 +95,7 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         bool storageAttested;
         bool storageCompatible;
         bool migrationValidated;
+        bool rollbackSupported;
         UpgradeStatus status;
         address proposer;
         uint256 proposedAt;
@@ -110,6 +111,12 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
 
     /// @notice Per-module registry state.
     mapping(bytes32 => ModuleState) public modules;
+
+    /// @notice Explicit rollback policy per module: whether rollback is supported and the
+    ///         maximum number of sequential rollback steps permitted from the current state.
+    mapping(bytes32 => bool) public rollbackSupported;
+    mapping(bytes32 => uint256) public rollbackLimit;
+    mapping(bytes32 => uint256) public rollbackCount;
 
     /// @notice Enumeration of registered module ids.
     bytes32[] private _registeredModuleIds;
@@ -204,6 +211,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         address indexed guardian
     );
 
+    event RollbackPolicyUpdated(bytes32 indexed moduleId, bool supported, uint256 limit);
+
     event UpgradeTimelockUpdated(uint256 oldTimelock, uint256 newTimelock);
 
     event ReinitializerVersionSet(
@@ -244,6 +253,9 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     error InvalidTimelock();
     error NotAuthorizedToCancel();
     error NotAuthorizedToRollback();
+    error RollbackNotSupported(bytes32 moduleId);
+    error RollbackLimitExceeded(bytes32 moduleId, uint256 limit);
+    error RollbackStateMismatch(bytes32 moduleId);
     error MigrationStepOutOfOrder(uint256 expected, uint256 provided);
     error MigrationAlreadyComplete(bytes32 moduleId);
     error MigrationNotComplete(bytes32 moduleId);
@@ -303,6 +315,10 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         _registeredModuleIds.push(moduleId);
         latestAuthorized[moduleId] = implementation;
 
+        // Default rollback policy: supported, single-step back (matches retained previous impl).
+        rollbackSupported[moduleId] = true;
+        rollbackLimit[moduleId] = 1;
+
         emit ModuleRegistered(
             moduleId,
             implementation,
@@ -311,6 +327,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
             initialVersion.patch,
             storageLayoutHash
         );
+
+        emit RollbackPolicyUpdated(moduleId, true, 1);
     }
 
     // ============ Upgrade Lifecycle ============
@@ -354,6 +372,7 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         p.toVersion = toVersion;
         p.newStorageLayoutHash = newStorageLayoutHash;
         p.migrationHash = migrationHash;
+        p.rollbackSupported = rollbackSupported[moduleId];
         p.status = UpgradeStatus.Proposed;
         p.proposer = msg.sender;
         p.proposedAt = block.timestamp;
@@ -534,6 +553,10 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         ModuleState storage m = modules[moduleId];
         if (!m.registered) revert ModuleNotRegistered(moduleId);
         if (m.previousImplementation == address(0)) revert NoPreviousImplementation();
+        if (!rollbackSupported[moduleId]) revert RollbackNotSupported(moduleId);
+        if (rollbackCount[moduleId] >= rollbackLimit[moduleId]) {
+            revert RollbackLimitExceeded(moduleId, rollbackLimit[moduleId]);
+        }
 
         address demoted = m.currentImplementation;
         Version memory demotedVersion = m.currentVersion;
@@ -552,6 +575,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
         m.previousStorageLayoutHash = demotedStorageHash;
 
         latestAuthorized[moduleId] = restored;
+
+        rollbackCount[moduleId] += 1;
 
         emit UpgradeRolledBack(moduleId, demoted, restored, reason, msg.sender);
     }
@@ -626,6 +651,25 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     /**
      * @notice Update the execution timelock applied to future approvals.
      */
+    function setRollbackPolicy(bytes32 moduleId, bool supported, uint256 limit)
+        external
+        onlyRole(ADMIN_ROLE)
+    {
+        if (!modules[moduleId].registered) revert ModuleNotRegistered(moduleId);
+        if (supported && limit == 0) revert InvalidTimelock();
+        rollbackSupported[moduleId] = supported;
+        rollbackLimit[moduleId] = limit;
+        emit RollbackPolicyUpdated(moduleId, supported, limit);
+    }
+
+    /**
+     * @notice Reset the per-module rollback counter after a fresh known-good baseline is set.
+     */
+    function resetRollbackCount(bytes32 moduleId) external onlyRole(ADMIN_ROLE) {
+        if (!modules[moduleId].registered) revert ModuleNotRegistered(moduleId);
+        rollbackCount[moduleId] = 0;
+    }
+
     function setUpgradeTimelock(uint256 newTimelock) external onlyRole(ADMIN_ROLE) {
         if (newTimelock < MIN_UPGRADE_DELAY || newTimelock > MAX_UPGRADE_DELAY) {
             revert InvalidTimelock();
