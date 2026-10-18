@@ -30,7 +30,8 @@ jobs:
     environment: $${{ github.event.inputs.environment }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        # actions/checkout v7.0.0
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 0
 
@@ -94,7 +95,8 @@ jobs:
           DEPLOY_ENV: $${{ github.event.inputs.environment }}
 
       - name: Upload deployment artifacts
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact v7.0.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: deployment-artifacts-$$ +{{ github.event.inputs.environment }}
           path: deployments/$$ +{{ github.event.inputs.environment }}/
@@ -102,7 +104,8 @@ jobs:
 
       - name: Create release tag
         if: github.event.inputs.environment == 'mainnet'
-        uses: actions/github-script@v2
+        # actions/github-script v9.0.0
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           script: |
             github.rest.git.createRef({
@@ -118,7 +121,8 @@ jobs:
     needs: deploy
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        # actions/checkout v7.0.0
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -141,7 +145,8 @@ jobs:
         run: npm run check:manifest
 
       - name: Download deployment artifacts
-        uses: actions/download-artifact@v4
+        # actions/download-artifact v8.0.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: deployment-artifacts-$$ +{{ github.event.inputs.environment }}
           path: deployments/$$ +{{ github.event.inputs.environment }}/
