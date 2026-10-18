@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Governor} from "@openzeppelin/contracts/governance/Governor.sol";
 import {GovernorCountingSimple} from "@openzeppelin/contracts/governance/extensions/GovernorCountingSimple.sol";
 import {GovernorSettings} from "@openzeppelin/contracts/governance/extensions/GovernorSettings.sol";
@@ -159,6 +160,16 @@ contract TruthBountyGovernor is
     /// @param index Index of the offending operation.
     /// @param value Rejected native value for that operation.
     error NativeValueProposalNotAllowed(uint256 index, uint256 value);
+    /// @notice The canonical snapshot timestamp for a proposal is not strictly in the past (V2-SC-019).
+    /// @param proposalId Proposal whose snapshot is being queried.
+    /// @param snapshotTs Registered snapshot timestamp.
+    /// @param currentTs Current governor clock.
+    error SnapshotNotInPast(uint256 proposalId, uint48 snapshotTs, uint48 currentTs);
+    /// @notice The canonical snapshot registry returned an inconsistent timestamp (V2-SC-019).
+    /// @param proposalId Proposal whose snapshot is being queried.
+    /// @param expected Expected snapshot timestamp derived from governor state.
+    /// @param actual Timestamp returned by the canonical snapshot registry.
+    error SnapshotTimestampMismatch(uint256 proposalId, uint48 expected, uint48 actual);
 
     /// @param token_ ERC20Votes token used to calculate voting power.
     /// @param timelock_ Timelock that queues and executes proposals.
@@ -319,6 +330,57 @@ contract TruthBountyGovernor is
         }
 
         return proposalId;
+    }
+
+    /**
+     * @notice Canonical voting-power freeze point for `proposalId` (V2-SC-019).
+     * @dev Returns the exact timepoint at which voting power for `proposalId` is frozen. When a
+     *      canonical {IGovernanceSnapshot} registry is wired, its registered timestamp is treated
+     *      as authoritative and is cross-checked against `proposalSnapshot(proposalId)`; any
+     *      divergence reverts with {SnapshotTimestampMismatch} so a corrupted or stale registry
+     *      cannot silently shift the freeze point. When no registry is wired, the governor's own
+     *      `proposalSnapshot(proposalId)` is returned.
+     *
+     *      The returned timepoint is guaranteed to be strictly in the past relative to `clock()`
+     *      for any proposal that has been created, because `proposalSnapshot` is
+     *      `creationTime + votingDelay` and `votingDelay >= 1` is enforced by {GovernorSettings}.
+     *      Callers that query historical voting power MUST use this value (via
+     *      {GovernorVotes-getVotes} / `token().getPastVotes(account, snapshotTs)`) rather than
+     *      `clock() - 1`, so post-snapshot transfers, delegations, mints, and burns cannot alter
+     *      the voting power attributed to a proposal.
+     * @param proposalId Proposal to inspect.
+     * @return snapshotTs Canonical voting-power freeze timepoint.
+     */
+    function canonicalSnapshot(uint256 proposalId) public view returns (uint48 snapshotTs) {
+        uint48 governorSnapshot = uint48(proposalSnapshot(proposalId));
+        if (governorSnapshot == 0) {
+            return 0;
+        }
+        if (address(governanceSnapshot) != address(0)) {
+            uint48 registered = governanceSnapshot.snapshotTimestamp(proposalId);
+            if (registered != governorSnapshot) {
+                revert SnapshotTimestampMismatch(proposalId, governorSnapshot, registered);
+            }
+            return registered;
+        }
+        return governorSnapshot;
+    }
+
+    /**
+     * @notice Historical voting power for `account` at the canonical snapshot of `proposalId` (V2-SC-019).
+     * @dev Convenience wrapper that always queries the canonical freeze point, never `clock() - 1`.
+     *      Reverts with {SnapshotNotInPast} if the snapshot is not strictly in the past, which
+     *      cannot happen for a created proposal but fails closed if the invariant is ever violated.
+     * @param proposalId Proposal whose snapshot is used.
+     * @param account Voter whose historical weight is queried.
+     * @return votes Historical voting power at the canonical snapshot.
+     */
+    function votesAtSnapshot(uint256 proposalId, address account) public view returns (uint256 votes) {
+        uint48 snapshotTs = canonicalSnapshot(proposalId);
+        if (snapshotTs == 0 || snapshotTs >= clock()) {
+            revert SnapshotNotInPast(proposalId, snapshotTs, clock());
+        }
+        return token().getPastVotes(account, snapshotTs);
     }
 
     /**
@@ -565,6 +627,14 @@ contract TruthBountyGovernor is
         uint256 length = values.length;
         for (uint256 i = 0; i < length; ++i) {
             if (values[i] != 0) revert NativeValueProposalNotAllowed(i, values[i]);
+        }
+    }
+
+    /// @dev Enforce that the canonical snapshot for `proposalId` is strictly in the past (V2-SC-019).
+    function _requireSnapshotInPast(uint256 proposalId) internal view {
+        uint48 snapshotTs = canonicalSnapshot(proposalId);
+        if (snapshotTs == 0 || snapshotTs >= clock()) {
+            revert SnapshotNotInPast(proposalId, snapshotTs, clock());
         }
     }
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IEmergencyControls} from "../interfaces/IEmergencyControls.sol";
+import {IGovernedUnpause} from "../interfaces/IGovernedUnpause.sol";
 import {V2Errors} from "./V2Errors.sol";
 import {PauseMatrix} from "./PauseMatrix.sol";
 import {EmergencyPauseOrdering} from "../../governance/libraries/EmergencyPauseOrdering.sol";
@@ -36,6 +37,12 @@ abstract contract V2PauseGuard {
 
     /// @notice A value exit was attempted while the protocol is at emergency SHUTDOWN.
     error ExitsFrozenByShutdown();
+
+    /// @notice A governed unpause was attempted without satisfying all preconditions.
+    error GovernedUnpausePreconditionsNotMet();
+
+    /// @notice A guardian (non-governed) caller attempted to unpause.
+    error GuardianCannotUnpause();
 
     /// @notice Returns the pause matrix version this module enforces.
     /// @return version `PauseMatrix.PAUSE_MATRIX_VERSION`.
@@ -147,6 +154,43 @@ abstract contract V2PauseGuard {
         return abi.decode(data, (uint256)) == 0;
     }
 
+    /// @notice Machine-verifiable governed-unpause preconditions for a scope.
+    /// @dev Returns false unless every precondition holds: the caller is the timelocked governance
+    ///      authority, an incident reference is bound, the repaired release matches the approved
+    ///      release, dependency health evidence is fresh, and the scope is currently paused.
+    /// @param scope Operation scope to unpause.
+    /// @param caller Address attempting the unpause.
+    /// @param incidentRef Incident reference bound to the pause being resolved.
+    /// @param releaseHash Hash of the repaired release being deployed.
+    /// @param dependencyHealthHash Hash of the dependency health evidence.
+    /// @return ok True when every precondition is satisfied.
+    function governedUnpausePreconditionsMet(
+        bytes32 scope,
+        address caller,
+        bytes32 incidentRef,
+        bytes32 releaseHash,
+        bytes32 dependencyHealthHash
+    ) public view returns (bool ok) {
+        if (caller == address(0)) return false;
+        if (incidentRef == bytes32(0)) return false;
+        if (releaseHash == bytes32(0)) return false;
+        if (dependencyHealthHash == bytes32(0)) return false;
+        if (!isScopePaused(scope)) return false;
+
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) return false;
+
+        (bool okGov, bytes memory data) = authority.staticcall{gas: PROBE_GAS_LIMIT}(
+            abi.encodeWithSignature("governanceAuthority()")
+        );
+        if (!okGov || data.length < 32) return false;
+        uint256 rawGov = abi.decode(data, (uint256));
+        if (rawGov == 0 || rawGov > type(uint160).max) return false;
+        if (address(uint160(rawGov)) != caller) return false;
+
+        return true;
+    }
+
     /// @notice Fail-closed gate for RISK_INCREASING operations.
     /// @param scope Operation scope that must not be paused.
     function _requireScopeNotPaused(bytes32 scope) internal view {
@@ -169,6 +213,36 @@ abstract contract V2PauseGuard {
         if (exitsFrozen()) revert ExitsFrozenByShutdown();
     }
 
+    /// @notice Governed unpause gate for a single operation scope.
+    /// @dev Reverts unless every precondition in `governedUnpausePreconditionsMet` holds. Guardians
+    ///      (any caller that is not the resolved governance authority) can never unpause.
+    /// @param scope Operation scope to unpause.
+    /// @param incidentRef Incident reference bound to the pause being resolved.
+    /// @param releaseHash Hash of the repaired release being deployed.
+    /// @param dependencyHealthHash Hash of the dependency health evidence.
+    function _requireGovernedUnpause(
+        bytes32 scope,
+        bytes32 incidentRef,
+        bytes32 releaseHash,
+        bytes32 dependencyHealthHash
+    ) internal view {
+        if (!governedUnpausePreconditionsMet(scope, msg.sender, incidentRef, releaseHash, dependencyHealthHash)) {
+            (bool resolved, address authority) = _pauseAuthority();
+            if (resolved && authority != address(0)) {
+                (bool okGov, bytes memory data) = authority.staticcall{gas: PROBE_GAS_LIMIT}(
+                    abi.encodeWithSignature("governanceAuthority()")
+                );
+                if (okGov && data.length >= 32) {
+                    uint256 rawGov = abi.decode(data, (uint256));
+                    if (rawGov != 0 && rawGov <= type(uint160).max && address(uint160(rawGov)) != msg.sender) {
+                        revert GuardianCannotUnpause();
+                    }
+                }
+            }
+            revert GovernedUnpausePreconditionsNotMet();
+        }
+    }
+
     /// @notice Resolves the pause authority for this module.
     /// @return resolved False when the authority source could not be read (risk-increasing gates fail closed).
     /// @return authority The `IEmergencyControls` authority, or `address(0)` when none is wired.
@@ -181,7 +255,7 @@ abstract contract V2PauseGuard {
     /// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
     /// @return resolved Whether the registry answered well-formed data.
     /// @return authority The registered authority (zero when the key is not registered).
-    function _registryPauseAuthority(address registry) internal view returns (bool resolved, address authority) {
+    function _registryPauseAuthority(address registry) 8internal view returns (bool resolved, address authority) {
         (bool ok, bytes memory data) = registry.staticcall{gas: PROBE_GAS_LIMIT}(
             abi.encodeWithSignature("module(bytes32)", PauseMatrix.MODULE_EMERGENCY_CONTROLS)
         );

@@ -2,8 +2,7 @@
 
 The canonical V2 custody invariant is:
 
-`actualBalance(asset) = custody(asset) = claimable(asset) + locked(asset) + protocolAllocation(asset)
-`
+`actualBalance(asset) = custody(asset) = claimable(asset) + locked(asset) + protocolAllocation(asset)`
 
 This equation is enforced by the canonical vault in `contracts/v2/StakeVault.sol` and is exposed through the `reconcile()` and `conservation()` views.
 

@@ -2,6 +2,20 @@
   "environment": "testnet",
   "network": "optimismSepolia",
   "chainId": 11155420,
+  "releaseId": "prewave-sc-028-testnet-v1",
+  "configChecksum": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "broadcaster": "${DEPLOYMENT_BROADCASTER}",
+  "noncePlan": {
+    "startNonce": 0,
+    "maxNonce": 0,
+    "reservedNonces": []
+  },
+  "configExpiry": 0,
+  "replayProtection": {
+    "boundChainId": 11155420,
+    "boundReleaseId": "prewave-sc-028-testnet-v1",
+    "boundEnvironment": "testnet"
+  },
   "rpcUrl": "${OPTIMISM_SEPOLIA_RPC_URL}",
   "admin": "${ADMIN_ADDRESS}",
   "guardian": "${GUARDIAN_ADDRESS}",

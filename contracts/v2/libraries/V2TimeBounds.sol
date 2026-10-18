@@ -66,6 +66,24 @@ library V2TimeBounds {
     /// @notice Maximum duration for any protocol round (30 days).
     uint64 internal constant MAX_ROUND_DURATION = 30 days;
 
+    /// @notice Maximum number of appeal rounds permitted for a single dispute (finite appeal depth).
+    uint8 internal constant MAX_APPEAL_ROUNDS = 3;
+
+    /// @notice Base bond required for the first appeal round (1 ether).
+    uint256 internal constant APPEAL_BASE_BOND = 1 ether;
+
+    /// @notice Multiplier numerator applied per appeal round (2x escalation).
+    uint256 internal constant APPEAL_BOND_MULTIPLIER = 2;
+
+    /// @notice Denominator for the appeal bond multiplier.
+    uint256 internal constant APPEAL_BOND_DENOMINATOR = 1;
+
+    /// @notice Absolute cap on any single appeal bond to bound economic escalation.
+    uint256 internal constant MAX_APPEAL_BOND = 64 ether;
+
+    /// @notice Minimum non-zero bond to reject dust griefing attempts.
+    uint256 internal constant MIN_APPEAL_BOND = 1 wei;
+
     /// @notice Minimum operational timelock delay (1 hour).
     uint64 internal constant MIN_TIMELOCK_DELAY = 1 hours;
 
@@ -74,6 +92,17 @@ library V2TimeBounds {
 
     /// @notice Maximum timelock execution delay (30 days).
     uint64 internal constant MAX_TIMELOCK_DELAY = 30 days;
+
+    /// @notice Minimum permitted timelock delay change (1 hour).
+    /// @dev Prevents immediate decrease of an active timelock delay below the floor.
+    uint64 internal constant MIN_TIMELOCK_DELAY_CHANGE = 1 hours;
+
+    /// @notice Maximum permitted timelock delay change (7 days).
+    /// @dev Bounds the magnitude of a single delay mutation to prevent governance capture.
+    uint64 internal constant MAX_TIMELOCK_DELAY_CHANGE = 7 days;
+
+    /// @notice Grace period after timelock maturity before an operation expires (14 days).
+    uint64 internal constant TIMELOCK_GRACE_PERIOD = 14 days;
 
     /// @notice Minimum cooldown duration between repeated rate-limited operations (1 hour).
     uint64 internal constant MIN_COOLDOWN_DURATION = 1 hours;
@@ -109,6 +138,93 @@ library V2TimeBounds {
         if (duration > MAX_DEADLINE_HORIZON) {
             revert IV2TimeBounds.DeadlineTooFar(duration, MAX_DEADLINE_HORIZON);
         }
+    }
+
+    // =========================================================================
+    // Appeal Depth & Economic Escalation Bounds
+    // =========================================================================
+
+    /// @notice Validates that a proposed appeal round index is within the finite appeal depth.
+    /// @dev Round indices are zero-based; the first appeal is round 0. Reverts when the requested
+    ///      round would exceed MAX_APPEAL_ROUNDS, preventing indefinite liveness and griefing.
+    /// @param appealRound Zero-based appeal round index being requested.
+    function validateAppealRound(uint8 appealRound) internal pure {
+        if (appealRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(appealRound, MAX_APPEAL_ROUNDS);
+        }
+    }
+
+    /// @notice Returns true when no further appeals may be opened for the given round index.
+    /// @param appealRound Zero-based appeal round index.
+    /// @return terminal True if the appeal counter has reached the finite depth bound.
+    function isAppealTerminal(uint8 appealRound) internal pure returns (bool terminal) {
+        return appealRound >= MAX_APPEAL_ROUNDS;
+    }
+
+    /// @notice Computes the exact, bounded bond required for a given appeal round.
+    /// @dev Uses exact integer arithmetic with overflow-safe exponentiation. The bond escalates
+    ///      geometrically by APPEAL_BOND_MULTIPLIER per round, is clamped to MAX_APPEAL_BOND,
+    ///      and is rejected if it falls below MIN_APPEAL_BOND (dust). Reverts if the round index
+    ///      exceeds the finite appeal depth.
+    /// @param appealRound Zero-based appeal round index.
+    /// @return bond The exact required bond for the round.
+    function requiredAppealBond(uint8 appealRound) internal pure returns (uint256 bond) {
+        if (appealRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(appealRound, MAX_APPEAL_ROUNDS);
+        }
+        uint256 factor = 1;
+        for (uint256 i = 0; i < appealRound; ++i) {
+            factor *= APPEAL_BOND_MULTIPLIER;
+            if (factor > type(uint256).max / APPEAL_BASE_BOND) {
+                return MAX_APPEAL_BOND;
+            }
+        }
+        uint256 computed = (APPEAL_BASE_BOND * factor) / APPEAL_BOND_DENOMINATOR;
+        if (computed > MAX_APPEAL_BOND) {
+            computed = MAX_APPEAL_BOND;
+        }
+        if (computed < MIN_APPEAL_BOND) {
+            revert IV2TimeBounds.AppealBondDust(computed, MIN_APPEAL_BOND);
+        }
+        return computed;
+    }
+
+    /// @notice Validates a submitted appeal bond against the exact required amount for the round.
+    /// @dev Rejects underpayment (griefing) and overpayment (fund conservation ambiguity) by
+    ///      requiring exact equality with requiredAppealBond.
+    /// @param appealRound Zero-based appeal round index.
+    /// @param submittedBond Bond amount supplied by the appellant.
+    function validateAppealBond(uint8 appealRound, uint256 submittedBond) internal pure {
+        uint256 required = requiredAppealBond(appealRound);
+        if (submittedBond != required) {
+            revert IV2TimeBounds.AppealBondMismatch(appealRound, submittedBond, required);
+        }
+    }
+
+    /// @notice Advances the appeal counter by exactly one, enforcing monotonic non-resettable depth.
+    /// @dev The counter can only increase; callers must persist the returned value. This guarantees
+    ///      no actor can reset the appeal counter to reopen exhausted rounds.
+    /// @param currentRound Current zero-based appeal round index.
+    /// @return nextRound The incremented appeal round index.
+    function advanceAppealRound(uint8 currentRound) internal pure returns (uint8 nextRound) {
+        if (currentRound >= MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(currentRound, MAX_APPEAL_ROUNDS);
+        }
+        unchecked {
+            nextRound = currentRound + 1;
+        }
+        if (nextRound > MAX_APPEAL_ROUNDS) {
+            revert IV2TimeBounds.AppealDepthExceeded(nextRound, MAX_APPEAL_ROUNDS);
+        }
+        return nextRound;
+    }
+
+    /// @notice Validates that an appeal deadline is set within the round duration envelope.
+    /// @dev Reuses round duration bounds to guarantee finite appeal liveness.
+    /// @param openedAt Timestamp when the appeal round opened.
+    /// @param deadline Timestamp when the appeal round closes.
+    function validateAppealDeadline(uint64 openedAt, uint64 deadline) internal pure {
+        validateRoundDuration(openedAt, deadline);
     }
 
     /// @notice Checks if a deadline is currently active (inclusive bound).
@@ -208,6 +324,63 @@ library V2TimeBounds {
     function validateTimelockDelay(uint64 delay) internal pure {
         if (delay < MIN_TIMELOCK_DELAY || delay > MAX_TIMELOCK_DELAY) {
             revert IV2TimeBounds.TimelockOutOfBounds(delay, MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY);
+        }
+    }
+
+    /// @notice Validates a proposed timelock delay change against current delay and bounds.
+    /// @dev Enforces that delay changes are bounded and cannot be decreased immediately.
+    /// @param currentDelay The currently configured timelock delay.
+    /// @param newDelay The proposed new timelock delay.
+    function validateTimelockDelayChange(uint64 currentDelay, uint64 newDelay) internal pure {
+        if (newDelay < MIN_TIMELOCK_DELAY || newDelay > MAX_TIMELOCK_DELAY) {
+            revert IV2TimeBounds.TimelockOutOfBounds(newDelay, MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY);
+        }
+        if (newDelay < currentDelay) {
+            uint64 decrease = currentDelay - newDelay;
+            if (decrease > MAX_TIMELOCK_DELAY_CHANGE) {
+                revert IV2TimeBounds.TimelockDelayChangeTooLarge(decrease, MAX_TIMELOCK_DELAY_CHANGE);
+            }
+        } else if (newDelay > currentDelay) {
+            uint64 increase = newDelay - currentDelay;
+            if (increase > MAX_TIMELOCK_DELAY_CHANGE) {
+                revert IV2TimeBounds.TimelockDelayChangeTooLarge(increase, MAX_TIMELOCK_DELAY_CHANGE);
+            }
+        }
+    }
+
+    /// @notice Validates that a scheduled delay change has matured before application.
+    /// @param scheduledAt Timestamp when the delay change was scheduled.
+    /// @param currentTimestamp Current block timestamp.
+    /// @param currentDelay The currently active timelock delay.
+    function validateTimelockDelayChangeReady(
+        uint64 scheduledAt,
+        uint64 currentTimestamp,
+        uint64 currentDelay
+    ) internal pure {
+        if (currentTimestamp < scheduledAt) {
+            revert IV2TimeBounds.TimelockNotMatured(currentTimestamp, scheduledAt);
+        }
+        uint64 elapsed = currentTimestamp - scheduledAt;
+        if (elapsed < currentDelay) {
+            revert IV2TimeBounds.TimelockNotMatured(currentTimestamp, scheduledAt + currentDelay);
+        }
+    }
+
+    /// @notice Validates that a timelocked operation has not exceeded its grace period.
+    /// @param readyAt The timestamp at which the operation unlocked.
+    /// @param currentTimestamp Current block timestamp.
+    function validateTimelockNotExpired(uint64 readyAt, uint64 currentTimestamp) internal pure {
+        if (currentTimestamp > readyAt + TIMELOCK_GRACE_PERIOD) {
+            revert IV2TimeBounds.TimelockExpired(currentTimestamp, readyAt, TIMELOCK_GRACE_PERIOD);
+        }
+    }
+
+    /// @notice Validates that a timelock operation targets the timelock contract itself for self-administration.
+    /// @param target The address the operation will call.
+    /// @param timelock The timelock contract address.
+    function validateSelfCall(address target, address timelock) internal pure {
+        if (target != timelock) {
+            revert IV2TimeBounds.SelfCallRequired(target, timelock);
         }
     }
 

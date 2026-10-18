@@ -7,6 +7,27 @@ import {V2SafeCast} from "../v2/libraries/V2SafeCast.sol";
 /// @title CanonicalEventLibrary
 /// @notice Helper library providing protocol-wide event schema constants and validation utilities.
 library CanonicalEventLibrary {
+    /// @notice Canonical ordering phases for events emitted within a single transaction.
+    /// @dev PREWAVE-SC-056: every call that emits several semantic events MUST emit them in
+    ///      strictly ascending phase order. Within a phase, events are ordered by emission site
+    ///      (source order) and, for repeated actions, by ascending action index. Indexers can
+    ///      therefore replay a transaction from logs alone without reading contract state.
+    ///      Phases are spaced by 100 so new phases can be inserted without renumbering.
+    uint16 public constant ORDER_PHASE_LIFECYCLE = 100;
+    uint16 public constant ORDER_PHASE_CONFIGURATION = 200;
+    uint16 public constant ORDER_PHASE_ROLE = 300;
+    uint16 public constant ORDER_PHASE_PAUSE = 400;
+    uint16 public constant ORDER_PHASE_CUSTODY = 500;
+    uint16 public constant ORDER_PHASE_SETTLEMENT = 600;
+    uint16 public constant ORDER_PHASE_UPGRADE = 700;
+
+    /// @notice Canonical schema version for the intra-transaction event ordering contract.
+    uint16 public constant EVENT_ORDERING_VERSION = 1;
+
+    /// @notice Emitted once per transaction boundary to anchor the ordering contract.
+    /// @dev Reverted calls emit no durable logs, so this anchor only persists on success.
+    event CanonicalEventOrdering(uint16 indexed orderingVersion, uint16 firstPhase, uint16 lastPhase);
+
     /// @notice Canonical schema version for all V1 events.
     uint16 public constant EVENT_SCHEMA_VERSION_V1 = 1;
 
@@ -51,5 +72,22 @@ library CanonicalEventLibrary {
         address actor
     ) internal pure returns (bytes32 opId) {
         return keccak256(abi.encode(OPERATION_ID_SCHEME_V2, domain, nonce, actor));
+    }
+
+    /// @notice Returns true when `phase` is a recognized canonical ordering phase.
+    function isValidOrderPhase(uint16 phase) internal pure returns (bool) {
+        return phase == ORDER_PHASE_LIFECYCLE
+            || phase == ORDER_PHASE_CONFIGURATION
+            || phase == ORDER_PHASE_ROLE
+            || phase == ORDER_PHASE_PAUSE
+            || phase == ORDER_PHASE_CUSTODY
+            || phase == ORDER_PHASE_SETTLEMENT
+            || phase == ORDER_PHASE_UPGRADE;
+    }
+
+    /// @notice Returns true when `previous` may be followed by `next` under canonical ordering.
+    /// @dev Equal phases are allowed only for repeated actions at the same emission site.
+    function isOrderedPhase(uint16 previous, uint16 next) internal pure returns (bool) {
+        return isValidOrderPhase(previous) && isValidOrderPhase(next) && previous <= next;
     }
 }

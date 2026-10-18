@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IV2Types} from "../interfaces/IV2Types.sol";
+import {IV2Types} from "../interfaces/IV2Types.sol";
 import {V2Errors} from "./V2Errors.sol";
 import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
 
@@ -466,6 +467,71 @@ library V2Lifecycle {
         return status == IV2Types.SettlementStatus.EXECUTED ||
                status == IV2Types.SettlementStatus.BLOCKED ||
                status == IV2Types.SettlementStatus.REFUNDED;
+    }
+
+    /// @notice Canonical terminal settlement outcomes for idempotent settlement.
+    /// @dev Every round/outcome must settle at most once; markers precede unsafe calls.
+    enum TerminalOutcome {
+        None,
+        Accepted,
+        Rejected,
+        Tie,
+        Refund,
+        Slash,
+        Expired,
+        Appealed
+    }
+
+    /// @notice Settlement marker storage keyed by round and outcome.
+    struct SettlementMarker {
+        /// @dev Whether the round/outcome has been marked as settled.
+        mapping(bytes32 => bool) settled;
+        /// @dev Monotonic sequence for exact replay ordering.
+        mapping(bytes32 => uint64) sequence;
+        /// @dev Global settlement counter for deterministic replay.
+        uint64 nextSequence;
+    }
+
+    /// @notice Computes the deterministic settlement key for a round/outcome pair.
+    /// @param roundId Round identifier.
+    /// @param outcome Terminal outcome being settled.
+    /// @return key Deterministic settlement marker key.
+    function settlementKey(bytes32 roundId, TerminalOutcome outcome) internal pure returns (bytes32 key) {
+        return keccak256(abi.encode(roundId, outcome));
+    }
+
+    /// @notice Marks a round/outcome as settled before any unsafe external call.
+    /// @dev Reverts if already settled, enforcing at-most-once semantics per round/outcome.
+    /// @param self Settlement marker storage.
+    /// @param roundId Round identifier.
+    /// @param outcome Terminal outcome being settled.
+    /// @return sequence Assigned monotonic sequence for replay.
+    function markSettled(
+        SettlementMarker storage self,
+        bytes32 roundId,
+        TerminalOutcome outcome
+    ) internal returns (uint64 sequence) {
+        bytes32 key = settlementKey(roundId, outcome);
+        if (self.settled[key]) revert V2Errors.SettlementAlreadyExecuted(roundId);
+        self.settled[key] = true;
+        sequence = self.nextSequence;
+        self.sequence[key] = sequence;
+        unchecked {
+            self.nextSequence = sequence + 1;
+        }
+    }
+
+    /// @notice Returns whether a round/outcome has already been settled.
+    /// @param self Settlement marker storage.
+    /// @param roundId Round identifier.
+    /// @param outcome Terminal outcome being queried.
+    /// @return settled True when the marker exists.
+    function isSettled(
+        SettlementMarker storage self,
+        bytes32 roundId,
+        TerminalOutcome outcome
+    ) internal view returns (bool settled) {
+        return self.settled[settlementKey(roundId, outcome)];
     }
 
     // =========================================================================

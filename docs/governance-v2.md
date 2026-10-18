@@ -45,11 +45,35 @@ outcome override calls.
 - Cancellation authority is exactly `{Governor, Guardian}`; no other actor may hold `CANCELLER_ROLE`
 - Governance cannot invoke guardian emergency pause paths
 
+## Timelock Delay Bounds & Self-Administration (V2-SC-072)
+
+- `TimelockController` enforces a `minDelay` floor and a `maxDelay` ceiling on any delay change
+- Delay changes must be scheduled through the timelock itself (self-call); immediate decrease is rejected
+- Each scheduled operation is identified by `keccak256(targets, values, calldatas, predecessor, salt)`; duplicate IDs revert
+- `predecessor` must reference a completed operation or `bytes32(0)`; missing predecessors block execution
+- Operations expire after the timelock grace period and cannot execute once expired
+- Cancellation is restricted to `CANCELLER_ROLE`; cancelled operations cannot execute
+- `CallScheduled`, `CallExecuted`, `Cancelled`, and `MinDelayChange` events are emitted for every state transition
+
 ## Token & Delegation Assumptions
 
 - Voting uses timestamp clock (`mode=timestamp`)
 - Holders must call `delegate()` before voting power is counted
 - Proposal threshold and quorum are configurable at deploy; launch values are a separate decision
+
+## Voting-Power Snapshot Immutability
+
+- Voting power is captured from `ERC20Votes.getPastVotes(account, snapshotTimestamp)` at the
+  proposal's snapshot, where `snapshotTimestamp = proposalSnapshot(proposalId)`.
+- `proposalSnapshot(proposalId)` is fixed at proposal creation as
+  `block.timestamp + votingDelay()`; it is never recomputed after the proposal exists.
+- Transfers, mints, burns, and delegation or redelegation changes that occur at or after the
+  snapshot timestamp MUST NOT alter the voting power available to that proposal.
+- Same-block edge behavior: a delegation or transfer included in the same block as the snapshot
+  timestamp is only counted if it is ordered before the snapshot checkpoint; otherwise it is
+  excluded. This ordering is explicit and covered by same-block and adjacent-block tests.
+- Total voting power is conserved across snapshot boundaries: sum of `getPastVotes` over all
+  accounts at the snapshot equals the total supply checkpointed at that timestamp.
 
 ## Deployment
 
@@ -68,6 +92,9 @@ and `TIMELOCK_ADMIN_ROLE` renounced to the timelock itself after `finalizeTimelo
 Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and written by
 `DeployBase.generateManifestWithGovernance()`.
 
+Deployment is machine-checked against this role graph; missing/extra roles, same-actor conflicts,
+open executor grants, unauthorized cancellers, delay bypass, and admin retention all revert.
+
 ## Reuse / Replace / Deprecate Map
 
 | Path | Status | Notes |
@@ -82,6 +109,7 @@ Manifest entries are emitted via `TruthBountyGovernor.publishManifest()` and wri
 - Duplicate execution prevented by OpenZeppelin governor + timelock state machine
 - Stale/defeated/expired proposals cannot execute
 - Proposal spam mitigated by `proposalThreshold`
+- Post-snapshot transfers, mints, burns, and delegation changes cannot increase historical voting power
 - Timelock bypass prevented: governor is sole proposer; guardian cannot execute
 - Target allowlist enforced at proposal creation
 - No actor can both propose and execute: `PROPOSER_ROLE` and `EXECUTOR_ROLE` are disjoint
@@ -110,5 +138,10 @@ selectors (`settleClaim*`) belong to no authority and remain rejected by `Govern
 
 `AUTHORITY_ADMIN_ROLE` is granted to the bootstrap admin at deployment and must be handed to the
 timelock once the topology is bound, mirroring `GovernanceRoleTopology.finalizeTimelockAdmin`.
-Deployment is machine-checked against this role graph; missing/extra roles, same-actor conflicts,
-open executor grants, unauthorized cancellers, delay bypass, and admin retention all revert.
+
+## Snapshot Test Coverage (PREWAVE-SC-019)
+
+- Transfer, delegate, redelegate, mint, burn, and self-delegation around snapshot boundaries.
+- Same-block and adjacent-block proposal creation versus delegation/transfer ordering.
+- Historical checkpoint lookup fuzzing against `getPastVotes` at and around the snapshot.
+- Regression: `test_VotingPowerFrozenAtSnapshot_TransferAfterProposalDoesNotHelp` must pass.
