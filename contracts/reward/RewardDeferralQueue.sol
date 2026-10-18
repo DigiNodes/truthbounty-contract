@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IRewardDeferralQueue.sol";
@@ -25,7 +27,7 @@ import "./RewardEngine.sol";
  * DEFAULT_ADMIN_ROLE  – can cancel entries and grant / revoke all roles.
  * ENQUEUE_ROLE        – can add entries to the queue.
  */
-contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyGuard {
+contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyGuard, UntrackedAssetRecovery {
     // =========================================================================
     // Constants
     // =========================================================================
@@ -368,5 +370,21 @@ contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyG
         );
 
         emit RewardFulfilled(queueId, recipient, amount);
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!engine.hasRole(engine.GOVERNANCE_ROLE(), msg.sender) || !engine.governanceEnabled()) {
+            revert RecoveryAuthorityUnavailable();
+        }
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        if (engine.paused()) revert RecoveryPaused();
+    }
+
+    function _reservedAssetBalance(address) internal pure override returns (uint256) {
+        // This queue holds metadata only. Every deferred entitlement is reserved at the engine.
+        return 0;
     }
 }

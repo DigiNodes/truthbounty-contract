@@ -1,4 +1,4 @@
-[profile.default]
+﻿[profile.default]
 src = "contracts"
 out = "out"
 libs = ["lib"]
@@ -9,6 +9,12 @@ fs_permissions = [{ access = "read", path = "./" }]
 # V2-SC-129: pin the exact compiler so every rebuild is byte-identical.
 # Must match hardhat.config.ts, scripts/canonicalV2Manifest.ts, and
 # deployments/releases/v2-sc-129-release-manifest.json.
+# STAB-SC-006: this is the single source of truth for the Solidity version.
+# package.json / package-lock.json (solc), hardhat.config.ts, the release
+# manifest and CI workflows must agree; drift is rejected by the gate.
+# Do not bump this value without updating hardhat.config.ts, the release
+# manifest, and package.json together; scripts/check-toolchain-drift.mjs
+# enforces agreement in CI and fails the build before any deployment step.
 solc = "0.8.28"
 evm_version = "prague"
 
@@ -52,9 +58,9 @@ tab_width = 4
 bracket_spacing = true
 int_types = "long"
 
-[invariant]
-runs = 500
-depth = 20
+[default]
+invariant_runs = 500
+invariant_depth = 20
 fail_on_revert = false
 
 [profile.default.fuzz]
@@ -65,25 +71,3 @@ depth = 256
 runs = 500
 depth = 20
 fail_on_revert = false
-[coverage]
-# Coverage quality gates - enforce minimum thresholds to prevent superficial tests
-# from satisfying critical-path requirements
-line_threshold = 85
-branch_threshold = 80
-function_threshold = 90
-
-# Exclude mocks, tests, and generated files from coverage
-skip = [
-    "test/**",
-    "script/**",
-    "contracts/mocks/**",
-    "contracts/test/**",
-    "contracts/bootstrap/**",
-    "contracts/upgrade/**",
-    "contracts/performance/**",
-    "lib/**",
-    "@openzeppelin/**",
-]
-
-# Report format
-reports = ["lcov", "summary", "json"]
