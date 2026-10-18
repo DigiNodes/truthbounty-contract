@@ -8,6 +8,14 @@ import "../interfaces/IStressTestEvents.sol";
 
 /// @title EventArchitectureHarness
 /// @notice Test harness exposing explicit emitters for all 16 canonical event families.
+/// @dev Canonical event ordering within a transaction is defined by the
+///      `CanonicalEventLibrary.EventDomain` enum. When a single call emits
+///      multiple events, they MUST be emitted in ascending domain order:
+///      Lifecycle < Custody < Configuration < Role < Pause < Upgrade < Settlement.
+///      Within a domain, events are emitted in the order defined by the
+///      corresponding emitter function. Indexers can replay logs without
+///      state reads because every event carries its schema version and
+///      timestamp. Reverted calls emit no durable logs (EVM guarantee).
 contract EventArchitectureHarness is ITruthBountyEvents, IVerificationRoundEvents, IStressTestEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
 

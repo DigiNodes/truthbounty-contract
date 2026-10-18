@@ -10,8 +10,7 @@ import {V2SafeCast} from "../../v2/libraries/V2SafeCast.sol";
 /**
  * @title TruthBountyGovernanceToken
  * @notice ERC20Votes token used for TruthBounty V2 on-chain governance.
- * @dev Delegation is required before voting power is active. Holders delegate to themselves
- *      or another address via {delegate}. Token transfers move voting units 1:1 with balances.
+ * @dev Delegation is required before voting power is active. Holders delegate to themselves or another address via {delegate}. Token transfers move voting units 1:1 with balances.
  */
 contract TruthBountyGovernanceToken is ERC20, ERC20Permit, ERC20Votes {
     /// @notice Recipient address must not be zero.

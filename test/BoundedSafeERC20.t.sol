@@ -12,6 +12,30 @@ contract BoundedERC20Harness {
     function transfer(IERC20 token, address recipient, uint256 amount) external {
         token.safeTransfer(recipient, amount);
     }
+
+    function approve(IERC20 token, address spender, uint256 value) external {
+        token.safeApprove(spender, value);
+    }
+
+    function increaseAllowance(IERC20 token, address spender, uint256 value) external {
+        token.safeIncreaseAllowance(spender, value);
+    }
+
+    function decreaseAllowance(IERC20 token, address spender, uint256 value) external {
+        token.safeDecreaseAllowance(spender, value);
+    }
+
+    function resetAllowance(IERC20 token, address spender) external {
+        token.safeResetAllowance(spender);
+    }
+
+    function revokeAllowance(IERC20 token, address spender) external {
+        token.safeRevokeAllowance(spender);
+    }
+
+    function forceApprove(IERC20 token, address spender, uint256 value) external {
+        token.safeForceApprove(spender, value);
+    }
 }
 
 contract NoReturnERC20Mock {
@@ -111,4 +135,111 @@ contract BoundedSafeERC20Test is Test {
 
         assertLt(gasBefore - gasleft(), 300_000);
     }
+
+    function test_approve_setsAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        assertEq(token.allowance(address(harness), spender), 100);
+    }
+
+    function test_increaseAllowance_increasesAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.increaseAllowance(IERC20(address(token)), spender, 50);
+        assertEq(token.allowance(address(harness), spender), 150);
+    }
+
+    function test_decreaseAllowance_decreasesAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.decreaseAllowance(IERC20(address(token)), spender, 50);
+        assertEq(token.allowance(address(harness), spender), 50);
+    }
+
+
+
+    function test_approve_setsAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        assertEq(token.allowance(address(harness), spender), 100);
+    }
+
+    function test_increaseAllowance_increasesAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.increaseAllowance(IERC20(address(token)), spender, 50);
+        assertEq(token.allowance(address(harness), spender), 150);
+    }
+
+    function test_decreaseAllowance_decreasesAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.decreaseAllowance(IERC20(address(token)), spender, 50);
+        assertEq(token.allowance(address(harness), spender), 50);
+    }
+
+    function test_forceApprove_rotatesAllowance() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.forceApprove(IERC20(address(token)), spender, 200);
+        assertEq(token.allowance(address(harness), spender), 200);
+    }
+
+    function test_revokeAllowance_setsZero() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.revokeAllowance(IERC20(address(token)), spender);
+        assertEq(token.allowance(address(harness), spender), 0);
+    }
+
+    function test_resetAllowance_setsZero() public {
+        MockERC20 token = new MockERC20("Standard", "STD");
+        address spender = address(0xBEEF);
+        harness.approve(IERC20(address(token)), spender, 100);
+        harness.resetAllowance(IERC20(address(token)), spender);
+        assertEq(token.allowance(address(harness), spender), 0);
+    }
+
+
+
+    function test_safeApprove_falseReturn_reverts() public {
+        address falseToken = address(new FalseReturnERC20Mock());
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedSafeERC20.SafeERC20FailedOperation.selector, falseToken)
+        );
+        harness.approve(IERC20(falseToken), address(0xBEEF), 100);
+    }
+
+    function test_safeIncreaseAllowance_falseReturn_reverts() public {
+        address falseToken = address(new FalseReturnERC20Mock());
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedSafeERC20.SafeERC20FailedOperation.selector, falseToken)
+        );
+        harness.increaseAllowance(IERC20(falseToken), address(0xBEEF), 100);
+    }
+
+    function test_safeDecreaseAllowance_falseReturn_reverts() public {
+        address falseToken = address(new FalseReturnERC20Mock());
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedSafeERC20.SafeERC20FailedOperation.selector, falseToken)
+        );
+        harness.decreaseAllowance(IERC20(falseToken), address(0xBEEF), 100);
+    }
+
+    function test_forceApprove_falseReturn_reverts() public {
+        address falseToken = address(new FalseReturnERC20Mock());
+        vm.expectRevert(
+            abi.encodeWithSelector(BoundedSafeERC20.SafeERC20FailedOperation.selector, falseToken)
+        );
+        harness.forceApprove(IERC20(falseToken), address(0xBEEF), 100);
+    }
+
 }

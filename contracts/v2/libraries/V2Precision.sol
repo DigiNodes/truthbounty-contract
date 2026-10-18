@@ -140,6 +140,20 @@ library V2Precision {
         return Math.mulDiv(part, BPS_DENOMINATOR, whole, Math.Rounding.Ceil);
     }
 
+    /// @notice The `bps` share of `amount`, truncating, without validating `bps`.
+    /// @dev For invariant harnesses and simulation paths that must exercise
+    ///      out-of-range inputs without reverting on the validation guard.
+    ///      Settlement paths must use {bpsPortionDown}.
+    function bpsPortionDownUnchecked(uint256 amount, uint256 bps) internal pure returns (uint256) {
+        return Math.mulDiv(amount, bps, BPS_DENOMINATOR);
+    }
+
+    /// @notice The `bps` share of `amount`, rounding up, without validating `bps`.
+    /// @dev See {bpsPortionDownUnchecked}.
+    function bpsPortionUpUnchecked(uint256 amount, uint256 bps) internal pure returns (uint256) {
+        return Math.mulDiv(amount, bps, BPS_DENOMINATOR, Math.Rounding.Ceil);
+    }
+
     // =========================================================================
     // Validation — fails closed
     // =========================================================================

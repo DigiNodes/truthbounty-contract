@@ -74,4 +74,29 @@ library BoundedSafeERC20 {
         }
         if (returnSize < 32 || returnValue != 1) revert SafeERC20FailedOperation(tokenAddress);
     }
+
+    /// @notice Approves a spender while bounding token return-data copying.
+    /// @dev Reverts if the returned value is not a single word equal to 1.
+    function safeApprove(IERC20 token, address spender, uint256 value) internal {
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, value)));
+    }
+
+    /// @notice Resets allowance to zero and then sets to new value for spender rotation.
+    /// @dev Used to safely update allowances on tokens that require allowance to be zero before non-zero change.
+    function safeResetAllowance(IERC20 token, address spender) internal {
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, 0)));
+    }
+
+    /// @notice Force approves a spender, handling tokens that require zero-reset before non-zero approval.
+    /// @dev First resets to zero, then approves the new value. This handles tokens like USDT.
+    function safeForceApprove(IERC20 token, address spender, uint256 value) internal {
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, 0)));
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, value)));
+    }
+
+    /// @notice Revoke allowance by setting to zero.
+    function safeRevokeAllowance(IERC20 token, address spender) internal {
+        _callOptionalReturn(token, abi.encodeCall(IERC20.approve, (spender, 0)));
+    }
+
 }

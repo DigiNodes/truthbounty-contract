@@ -58,7 +58,7 @@ contract MockEvidenceClaimRegistry is IClaimRegistry {
             statement: "",
             evidenceCID: "",
             status: status,
-            createdAt: uint64(blocktimestamp),
+            createdAt: uint64(block.timestamp),
             verificationDeadline: verificationDeadline
         });
         _exists[claimId] = true;
@@ -83,7 +83,7 @@ contract MockEvidenceClaimRegistry is IClaimRegistry {
             releaseId: releaseId,
             orderKey: orderKey,
             cid: cid,
-            appendedAt: uint64(blocktimestamp)
+            appendedAt: uint64(block.timestamp)
         });
         _claimEvidenceOrders[claimId].push(orderKey);
         _evidenceCidUsed[claimId][cid] = true;
