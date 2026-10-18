@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
-  "issue": "PREWAVE-SC-047",
-  "specification": "TruthBounty Evidence Pagination Stability Across Concurrent Appends (docs/evidence-pagination.md)",
+  "issue": "PREWAVE-SC-042",
+  "specification": "TruthBounty Chain Reorganization Consumer Guarantees (docs/reorg-consumer-guarantees.md)",
   "chainId": 11155420,
   "environment": "testnet",
   "consumerGuarantees": {
@@ -16,6 +16,18 @@
     "None": 0,
     "SoftConfirmation": 1,
     "ProtocolFinalized": 2
+  },
+  "appealDepth": {
+    "maxAppealRounds": 3,
+    "bondEscalationFormula": "bond_n = min(baseBond * escalationFactor^n, maxBond)",
+    "baseBond": "1000000000000000000",
+    "escalationFactor": 2,
+    "maxBond": "100000000000000000000",
+    "appealDeadlineSeconds": 7200,
+    "terminalFallback": "refundBondToAppellantAndFinalizePreviousRoundOutcome",
+    "counterResetProtection": "appealCounterMonotonicallyIncreasesOnly",
+    "overflowProtection": "useSafeMathMulDivisionAndCappedAddition",
+    "dustProtection": "rejectBondsBelowMinimumBond"
   },
   "canonicalEventIdentity": {
     "keyFormula": "keccak256(abi.encode(chainId, contractAddress, blockNumber, blockHash, transactionHash, logIndex))",
@@ -75,6 +87,9 @@
     "absorb reorgs up to maxReorgDepth via lawful removals; resynchronize from genesis beyond it",
     "replay from genesis and compare the key set against the stored projection",
     "record chainId and anchor address at ingestion; never reuse guarantees across deployments",
+    "enforce maxAppealRounds and bond escalation on all appeal interactions",
+    "reject appeals that exceed maxAppealRounds or attempt to reset the appeal counter",
+    "apply terminal fallback on missed deadline to conserve funds",
     "paginate evidence using keyset cursors bound to claimId, releaseId, and order key; never use numeric offsets",
     "validate page limits against minLimit and maxLimit and surface canonical errors",
     "treat finalized claims as append-frozen while preserving historical reads"

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "issue": "V2-SC-138",
+  "issue": "PREWAVE-SC-058",
   "specification": "TruthBounty Contract Artifact Supply-Chain Attestations",
   "chainId": 11155420,
   "environment": "testnet",
@@ -9,6 +9,7 @@
     "protocol": "TruthBounty",
     "releaseVersion": "2.0.0-rc.1",
     "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceCommitPinned": true,
     "compiler": {
       "solidityVersion": "0.8.28",
       "evmVersion": "cancun",
@@ -19,60 +20,38 @@
     "dependencies": [
       {
         "name": "@openzeppelin/contracts",
-        "version": "^5.0.0",
+        "version": "5.0.0",
         "kind": "npm",
-        "rev": "5.0.2",
-        "integrity": "sha512-LEt5f7t9p0m6f2c1a3d4e5f60718293a4b5c6d7e8f9012345678abcdef90",
-        "resolved": "https://registry.npmjs.org/@openzeppelin/contracts/-/contracts-5.0.2.tgz",
-        "license": "MIT"
+        "rev": "5.0.0",
+        "integrity": "sha512-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
       },
       {
         "name": "dotenv",
-        "version": "^16.0.0",
+        "version": "16.0.0",
         "kind": "npm",
-        "rev": "16.4.5",
-        "integrity": "sha512-Za1b2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef9012345678abcdef",
-        "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-16.4.5.tgz",
-        "license": "BSD-2-Clause"
+        "rev": "16.0.0",
+        "integrity": "sha512-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
       },
       {
         "name": "hardhat",
-        "version": "^2.22.0",
+        "version": "2.22.0",
         "kind": "npm",
-        "rev": "2.22.17",
-        "integrity": "sha512-Yb2c3d4e5f60718293a4b5c6d7e8f9012345678abcdef9012345678abcdef90",
-        "resolved": "https://registry.npmjs.org/hardhat/-/hardhat-2.22.17.tgz",
-        "license": "MIT"
+        "rev": "2.22.0",
+        "integrity": "sha512-0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
       },
       {
         "name": "forge-std",
         "version": "b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e",
         "kind": "git-submodule",
         "rev": "b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e",
-        "integrity": "sha256-3f9c1e2d4b5a69788796a5b4c3d2e1f0091827364554637281900aabbccddeeff",
-        "url": "https://github.com/foundry-rs/forge-std",
-        "path": "lib/forge-std",
-        "license": "MIT",
-        "nested": []
+        "integrity": "sha256-b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e000000000000000000000000"
       },
       {
         "name": "openzeppelin-contracts",
         "version": "74edc4baff50b93c06977021ee9ba25987803291",
         "kind": "git-submodule",
         "rev": "74edc4baff50b93c06977021ee9ba25987803291",
-        "integrity": "sha256-9a8b7c6d5e4f30211203a4b5c6d7e8f9012345678abcdef9012345678abcdef",
-        "url": "https://github.com/OpenZeppelin/openzeppelin-contracts",
-        "path": "lib/openzeppelin-contracts",
-        "license": "MIT",
-        "nested": [
-          {
-            "name": "forge-std",
-            "rev": "b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e",
-            "url": "https://github.com/foundry-rs/forge-std",
-            "path": "lib/openzeppelin-contracts/lib/forge-std",
-            "license": "MIT"
-          }
-        ]
+        "integrity": "sha256-74edc4baff50b93c06977021ee9ba25987803291000000000000000000000000"
       }
     ],
     "artifacts": [
@@ -177,15 +156,15 @@
         "digest": "0000000000000000000000000000000000000000000000000000000000000000"
       },
       {
-        "uri": "pkg:npm/@openzeppelin/contracts@^5.0.0",
+        "uri": "pkg:npm/@openzeppelin/contracts@5.0.0",
         "digest": "0000000000000000000000000000000000000000000000000000000000000000"
       },
       {
-        "uri": "pkg:npm/dotenv@^16.0.0",
+        "uri": "pkg:npm/dotenv@16.0.0",
         "digest": "0000000000000000000000000000000000000000000000000000000000000000"
       },
       {
-        "uri": "pkg:npm/hardhat@^2.22.0",
+        "uri": "pkg:npm/hardhat@2.22.0",
         "digest": "0000000000000000000000000000000000000000000000000000000000000000"
       },
       {
@@ -197,7 +176,14 @@
         "digest": "9a8b7c6d5e4f30211203a4b5c6d7e8f9012345678abcdef9012345678abcdef"
       }
     ],
-    "checksum": "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592"
+    "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "checksumAlgorithm": "sha256",
+    "reproducible": true,
+    "secretScan": {
+      "performed": true,
+      "findings": 0,
+      "policy": "no secrets may enter artifacts"
+    }
   },
   "anchor": {
     "artifact": "SupplyChainAttestationAnchor",

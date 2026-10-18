@@ -81,6 +81,8 @@ library PauseMatrix {
 
     /// @notice Marks a value exit that freezes only at protocol SHUTDOWN.
     bytes32 internal constant EXIT_SHUTDOWN_ONLY = keccak256("EXIT_SHUTDOWN_ONLY");
+    /// @notice Marks a governed-unpause operation that requires timelocked authority and full preconditions.
+    bytes32 internal constant GOVERNED_UNPAUSE = keccak256("GOVERNED_UNPAUSE");
     /// @notice Placeholder for an unused gate slot.
     bytes32 internal constant NO_GATE = bytes32(0);
 
@@ -94,7 +96,8 @@ library PauseMatrix {
     enum RiskClass {
         NEUTRAL,
         RISK_INCREASING,
-        RISK_REDUCING
+        RISK_REDUCING,
+        GOVERNED_UNPAUSE
     }
 
     /// @notice The (module, signature) pair is not part of the matrix.
@@ -176,7 +179,9 @@ library PauseMatrix {
         if (k == _key("EvidenceRegistry", "commitEvidence(uint256,bytes32,bytes32,uint256)")) return (RiskClass.RISK_INCREASING, SCOPE_EVIDENCE, NO_GATE);
         if (k == _key("EvidenceRegistry", "setEvidenceStatus(uint256,IV2Types.EvidenceStatus)")) return (RiskClass.RISK_INCREASING, SCOPE_EVIDENCE, NO_GATE);
         if (k == _key("EvidenceRegistry", "pause()")) return (RiskClass.RISK_REDUCING, NO_GATE, NO_GATE);
-        if (k == _key("EvidenceRegistry", "unpause()")) return (RiskClass.NEUTRAL, NO_GATE, NO_GATE);
+        if (k == _key("EvidenceRegistry", "unpause()")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
+        if (k == _key("EvidenceRegistry", "governedUnpause(bytes32,bytes32,address,bytes32,bytes32)")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
+        if (k == _key("EvidenceRegistry", "guardianUnpause()")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
         if (k == _key("EvidenceRegistry", "setPauseAuthority(address)")) return (RiskClass.NEUTRAL, NO_GATE, NO_GATE);
 
         // ─── FinalRewardAllocator ─────────────────────────────────────────────────────────
@@ -193,6 +198,9 @@ library PauseMatrix {
         if (k == _key("PullSettlementLedger", "withdraw(uint256)")) return (RiskClass.RISK_REDUCING, EXIT_SHUTDOWN_ONLY, NO_GATE);
         if (k == _key("PullSettlementLedger", "withdrawFromRef(bytes32,uint256)")) return (RiskClass.RISK_REDUCING, EXIT_SHUTDOWN_ONLY, NO_GATE);
         if (k == _key("PullSettlementLedger", "setPauseAuthority(address)")) return (RiskClass.NEUTRAL, NO_GATE, NO_GATE);
+        if (k == _key("PullSettlementLedger", "unpause()")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
+        if (k == _key("PullSettlementLedger", "governedUnpause(bytes32,bytes32,address,bytes32,bytes32)")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
+        if (k == _key("PullSettlementLedger", "guardianUnpause()")) return (RiskClass.GOVERNED_UNPAUSE, GOVERNED_UNPAUSE, NO_GATE);
 
         // ─── SignatureNonces ──────────────────────────────────────────────────────────────
         if (k == _key("SignatureNonces", "cancelNonce(uint256)")) return (RiskClass.RISK_REDUCING, NO_GATE, NO_GATE);
@@ -238,6 +246,13 @@ library PauseMatrix {
     function isScopeGate(bytes32 gate) internal pure returns (bool isScope) {
         return gate == SCOPE_CLAIMS || gate == SCOPE_EVIDENCE || gate == SCOPE_STAKING || gate == SCOPE_VERIFICATION
             || gate == SCOPE_SETTLEMENT || gate == SCOPE_TREASURY || gate == SCOPE_DISPUTES || gate == SCOPE_GOVERNANCE;
+    }
+
+    /// @notice True when `gate` marks a governed-unpause operation requiring full preconditions.
+    /// @param gate Gate identifier returned by `classify`.
+    /// @return isGovernedUnpause Whether the gate is the `GOVERNED_UNPAUSE` pseudo-gate.
+    function isGovernedUnpauseGate(bytes32 gate) internal pure returns (bool isGovernedUnpause) {
+        return gate == GOVERNED_UNPAUSE;
     }
 
     function _deriveOperationId(string memory moduleName, string memory signature) private pure returns (bytes32) {

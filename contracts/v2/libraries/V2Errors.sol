@@ -65,6 +65,31 @@ library V2Errors {
     /// @notice Zero claim-registry address supplied at construction.
     error ZeroClaimRegistry();
 
+    /// @notice Zero relayer address supplied for an authorized relayer change.
+    error ZeroRelayer();
+
+    /// @notice Zero timelock address supplied for a cooldown change.
+    error ZeroTimelock();
+
+    /// @notice Zero allowance target supplied for an allowance change.
+    error ZeroAllowanceTarget();
+
+    /// @notice Authorized relayer was updated.
+    /// @param previous Previous authorized relayer.
+    /// @param current New authorized relayer.
+    event RelayerUpdated(address indexed previous, address indexed current);
+
+    /// @notice Timelock cooldown was updated.
+    /// @param previous Previous cooldown duration in seconds.
+    /// @param current New cooldown duration in seconds.
+    event TimelockCooldownUpdated(uint64 previous, uint64 current);
+
+    /// @notice Allowance was updated.
+    /// @param account Account whose allowance changed.
+    /// @param previous Previous allowance amount.
+    /// @param current New allowance amount.
+    event AllowanceUpdated(address indexed account, uint256 previous, uint256 current);
+
     // =========================================================================
     // Claims
     // =========================================================================
@@ -384,11 +409,32 @@ library V2Errors {
     /// @notice Appeal bond multiplier invalid (zero).
     error InvalidAppealMultiplier(uint24 multiplierBps);
 
+    /// @notice Appeal depth exceeds the configured maximum number of rounds.
+    /// @param provided Requested appeal round.
+    /// @param max Maximum appeal rounds permitted.
+    error AppealDepthExceeded(uint256 provided, uint256 max);
+
     /// @notice Reputation bound pair invalid.
     error InvalidReputationBounds(uint16 minBps, uint16 maxBps);
 
     /// @notice Pause / unpause cooldown is zero.
     error InvalidPauseCooldown(uint48 cooldown);
+
+    /// @notice Appeal bond escalation overflowed the bounded maximum.
+    /// @param round Appeal round whose bond overflowed.
+    /// @param bond Computed bond that exceeded the cap.
+    /// @param cap Maximum bond permitted.
+    error AppealBondOverflow(uint256 round, uint256 bond, uint256 cap);
+
+    /// @notice Appeal bond is below the anti-dust floor.
+    /// @param provided Bond supplied.
+    /// @param minimum Minimum bond required.
+    error AppealBondDust(uint256 provided, uint256 minimum);
+
+    /// @notice Appeal deadline has elapsed; the round can no longer be opened.
+    /// @param deadline Unix timestamp at which the appeal window closed.
+    /// @param timestamp Current block timestamp.
+    error AppealDeadlineMissed(uint64 deadline, uint64 timestamp);
 
     /// @notice Rounding policy enum out of range.
     error InvalidRoundingPolicy(uint8 roundingPolicy);
@@ -398,6 +444,11 @@ library V2Errors {
 
     /// @notice Parameter set version not published.
     error ParameterSetNotFound(bytes32 versionId);
+
+    /// @notice Appeal counter cannot be reset once a round has been opened.
+    /// @param claimId Claim whose appeal counter reset was rejected.
+    /// @param current Current appeal round.
+    error AppealCounterResetForbidden(uint256 claimId, uint256 current);
 
     /// @notice Asset adapter already registered.
     error AssetAdapterAlreadySet(address asset);
@@ -527,6 +578,40 @@ library V2Errors {
     /// @notice A guarded module has no emergency-control dependency configured.
     /// @dev Raised instead of allowing the mutation. An unwired module is frozen, never open.
     error EmergencyControlsNotConfigured();
+
+    /// @notice Guardian attempted to unpause a scope; guardians may only pause.
+    /// @dev Enforces the V2 invariant that unpause is a governed, timelocked action.
+    /// @param caller The guardian address that attempted the unpause.
+    error GuardianCannotUnpause(address caller);
+
+    /// @notice The incident reference supplied for governed unpause is stale or unknown.
+    /// @param incidentId The incident reference that failed validation.
+    /// @param recordedAt Timestamp at which the incident was recorded.
+    error StaleIncidentReference(bytes32 incidentId, uint256 recordedAt);
+
+    /// @notice The repaired release hash does not match the approved release manifest.
+    /// @param provided The release hash supplied by the caller.
+    /// @param expected The canonical approved release hash.
+    error WrongRepairedRelease(bytes32 provided, bytes32 expected);
+
+    /// @notice Dependency health evidence for the scope is missing or failed.
+    /// @param scope The operation scope whose dependencies are unhealthy.
+    /// @param evidenceHash Commitment to the supplied dependency-health evidence.
+    error DependencyHealthUnproven(bytes32 scope, bytes32 evidenceHash);
+
+    /// @notice The scope is only partially paused; governed unpause requires a full pause.
+    /// @param scope The operation scope that is not fully paused.
+    /// @param pausedSubscopes Bitmap of currently paused subscopes.
+    error PartialPauseState(bytes32 scope, uint256 pausedSubscopes);
+
+    /// @notice The scope has already been unpaused; repeated unpause is rejected.
+    /// @param scope The operation scope that is not currently paused.
+    error AlreadyUnpaused(bytes32 scope);
+
+    /// @notice The governed unpause timelock has not elapsed yet.
+    /// @param scope The operation scope awaiting timelock expiry.
+    /// @param readyAt Earliest Unix timestamp at which unpause may execute.
+    error UnpauseTimelockNotReady(bytes32 scope, uint256 readyAt);
 
     // =========================================================================
     // Generic Validation (typed — avoid string reasons)

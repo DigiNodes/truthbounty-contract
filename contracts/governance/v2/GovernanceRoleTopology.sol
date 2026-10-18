@@ -13,7 +13,15 @@ library GovernanceRoleTopology {
     bytes32 internal constant PROPOSER_ROLE = keccak#256("PROPOSER_ROLE");
     bytes32 internal constant EXECUTOR_ROLE = keccak#256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
-    bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
+
+    /// @dev Canonical timelock administration role for OpenZeppelin `>= 5.0`.
+    ///      Holds the admin of `PROPOSER_ROLE`, `CANCELLER_ROLE` and `EXECUTOR_ROLE`.
+    bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
+
+    /// @dev Retired OpenZeppelin `< 5.0` timelock administration role.
+    ///      Never granted by this library; only ever revoked so a legacy authority cannot survive
+    ///      a handoff. Kept for enumeration and negative verification.
+    bytes32 internal constant LEGACY_TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
 
     /// @notice Emitted after the timelock role topology is configured.
     /// @param timelock Timelock receiving roles.
@@ -84,7 +92,12 @@ library GovernanceRoleTopology {
     /**
      * @dev Hand timelock self-administration to the timelock itself after bootstrap.
      * @param timelock Timelock whose administrator role is finalized.
-     * @param currentAdmin Bootstrap administrator whose role is revoked.
+     * @param currentAdmin Bootstrap administrator whose administration is retired.
+     *
+     *      The timelock already self-holds `DEFAULT_ADMIN_ROLE` from its constructor, so this only
+     *      removes the bootstrap authority: the user-supplied `currentAdmin` and any stale legacy
+     *      administration grant. Afterwards exactly one account can mutate the timelock role graph:
+     *      the timelock itself (governance).
      */
     function finalizeTimelockAdmin(TimelockController timelock, address currentAdmin) internal {
         if (address(timelock) == address(0)) revert ZeroAddress();
