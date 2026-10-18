@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @notice Test ERC20 with configurable decimals for non-18-decimal asset coverage.
+/// @notice Decimals are bounded to the ERC20 spec range [0, 255] and cannot overflow formatting/math assumptions.
 contract MockDecimalsERC20 is ERC20 {
     uint8 private immutable _decimals;
 

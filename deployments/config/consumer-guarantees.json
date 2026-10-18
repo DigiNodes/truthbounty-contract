@@ -1,7 +1,7 @@
 {
-  "manifestVersion": 1,
-  "issue": "PREWAVE-SC-047",
-  "specification": "TruthBounty Evidence Pagination Stability Across Concurrent Appends (docs/evidence-pagination.md)",
+  "manifestVersion": 2,
+  "issue": "PREWAVE-SC-053",
+  "specification": "TruthBounty Chain Reorganization Consumer Guarantees (docs/reorg-consumer-guarantees.md)",
   "chainId": 11155420,
   "environment": "testnet",
   "consumerGuarantees": {
@@ -79,6 +79,72 @@
     "validate page limits against minLimit and maxLimit and surface canonical errors",
     "treat finalized claims as append-frozen while preserving historical reads"
   ],
+  "supportedTokenBehavior": {
+    "policyVersion": 1,
+    "defaultDecision": "reject",
+    "accountingModel": "observed-delta",
+    "accepted": {
+      "feeOnTransfer": {
+        "supported": false,
+        "reason": "recipient balance delta can be lower than the requested amount; accounting must not assume exact amount delivered",
+        "enforcement": "pre-flight balance-delta probe must observe exact delta equal to the requested amount or the transfer is rejected before funds are accepted"
+      },
+      "rebasing": {
+        "supported": false,
+        "reason": "holder balances change without transfer events, invalidating stored balance assumptions and delta accounting",
+        "enforcement": "reject any token whose totalSupply or account balance observed before and after a no-op interval differs"
+      },
+      "erc777Hooks": {
+        "supported": false,
+        "reason": "transfer hooks can re-enter, block, or alter state during a transfer",
+        "enforcement": "reject tokens that expose ERC777-style transfer hooks or any callback invocation during transfer/approval"
+      },
+      "falseReturn": {
+        "supported": false,
+        "reason": "a transfer/approval that returns false must not be treated as successful",
+        "enforcement": "require return data of exactly 32 bytes equal to true; any false or non-canonical return is a reverting failure"
+      },
+      "missingReturn": {
+        "supported": false,
+        "reason": "non-standard tokens return no data, which cannot be distinguished from a failure without extra probing",
+        "enforcement": "reject tokens that do not return exactly 32 bytes of true on transfer/approval"
+      },
+      "blacklisting": {
+        "supported": false,
+        "reason": "administrative blocklists can freeze funds or block transfers after acceptance, breaking settlement guarantees",
+        "enforcement": "reject tokens that expose administrative freeze/blacklist authority over holder transfers"
+      },
+      "decimalsExtremes": {
+        "supported": false,
+        "minDecimals": 0,
+        "maxDecimals": 18,
+        "reason": "decimals below 0 or above 18 overflow formatting and fixed-point math assumptions",
+        "enforcement": "reject tokens whose decimals() is not in [0, 18] or whose scaling factor overflows uint256 arithmetic"
+      }
+    },
+    "accountingRules": [
+      "accounting uses observed balance deltas for all accepted assets",
+      "any transfer whose observed recipient delta differs from the requested amount is rejected and reverted",
+      "any transfer whose observed sender delta differs from the requested amount is rejected and reverted",
+      "decimals are validated at acceptance time and never assumed beyond the [0, 18] bound",
+      "allowance races are mitigated by requiring exact-amount approvals and consuming them within the same transaction",
+      "recovery paths revert to the last known-good accounting state without accepting funds from an unsupported asset"
+    ],
+    "unsupportedAssetPolicy": "fail before funds are accepted; no partial acceptance or silent coercion is permitted",
+    "requiredTests": [
+      "fee-on-transfer rejection and observed-delta accounting",
+      "rebasing detection and rejection",
+      "erc777-like hook rejection and re-entrancy guard",
+      "false-return rejection",
+      "missing-return rejection",
+      "blacklisting rejection",
+      "decimals extremes rejection and overflow guard",
+      "allowance race mitigation",
+      "transfer mismatch rejection",
+      "balance delta verification",
+      "recovery to last known-good state"
+    ]
+  },
   "requiredTests": [
     "append between pages returns each evidence item exactly once",
     "duplicate CID append is idempotent and surfaces DuplicateEvidenceCID on conflict",

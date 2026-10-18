@@ -3,11 +3,13 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-/// @dev ERC20 that deducts a fee on transfer to test exact-balance rejection.
+/// @dev ER20 that deducts a fee on transfer to test exact-balance rejection.
+/// @dev Fee-on-transfer assets must be rejected before funds are accepted.
 contract FeeOnTransferERC20 is ERC20 {
-    uint256 public feeBps;
+    uint256 public immutable feeBps;
 
     constructor(string memory name, string memory symbol, uint256 _feeBps) ERC20(name, symbol) {
+        require(_feeBps <= 10_000, "FeeOnTransferERC20: fee too high");
         feeBps = _feeBps;
     }
 
