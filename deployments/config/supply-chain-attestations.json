@@ -107,6 +107,15 @@
       "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "serverUrl": "https://github.com"
     },
+    "submoduleVerification": {
+      "enforced": true,
+      "recursive": true,
+      "failOnDirty": true,
+      "failOnSubstituted": true,
+      "failOnUnreachable": true,
+      "failOnLicenseMismatch": true,
+      "allowedLicenses": ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"]
+    },
     "subjects": [
       {
         "name": "package.json",
@@ -160,11 +169,11 @@
       },
       {
         "uri": "git+submodule:forge-std@b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e",
-        "digest": "b3bc8b154382a75d0b0ef22d7fd4a0a5f0feee0e000000000000000000000000"
+        "digest": "3f9c1e2d4b5a69788796a5b4c3d2e1f0091827364554637281900aabbccddeeff"
       },
       {
         "uri": "git+submodule:openzeppelin-contracts@74edc4baff50b93c06977021ee9ba25987803291",
-        "digest": "74edc4baff50b93c06977021ee9ba25987803291000000000000000000000000"
+        "digest": "9a8b7c6d5e4f30211203a4b5c6d7e8f9012345678abcdef9012345678abcdef"
       }
     ],
     "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -188,6 +197,8 @@
     "verify compiler settings match the hardened build configuration",
     "verify all declared artifacts exist and their hashes match",
     "verify all dependencies are accounted for and no forbidden runtimes are present",
+    "verify every git submodule URL, pinned rev, and recursive nested module matches the attestation",
+    "verify submodule working trees are clean and content is not substituted or dirty before build",
     "verify workflow identity corresponds to the authorized release pipeline",
     "record chainId and anchor address at ingestion; never reuse attestations across deployments"
   ]
