@@ -45,21 +45,21 @@ import {IGovernanceSnapshot} from "./IGovernanceSnapshot.sol";
  * @custom:security-contact security@truthbounty.xyz
  */
 contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
     // Roles
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     /**
      * @notice Role required to call {registerSnapshot}.
      * @dev Granted at construction to the {TruthBountyGovernor} address and can later
-     *      be granted to a successor governor by the `DEFAULT_ADMIN_ROLE` holder
+     *      be granted to a successor governor by the `DEFAULT_ADMIN_ROLE` Holder
      *      (typically a timelock).
      */
     bytes32 public constant SNAPSHOT_REGISTRAR_ROLE = keccak256("SNAPSHOT_REGISTRAR_ROLE");
 
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
     // State
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     /**
      * @dev Mapping from proposalId to the frozen `block.timestamp` at proposal creation.
@@ -68,13 +68,13 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
      */
     mapping(uint256 => uint48) private _snapshots;
 
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
     // Constructor
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     /**
      * @param admin           Address granted `DEFAULT_ADMIN_ROLE` (typically a timelock or
-     *                        deployer multisig). Cannot be `address(0)`.
+     *                         deployer multisig). Cannot be `address(0)`.
      * @param snapshotRegistrar Address granted `SNAPSHOT_REGISTRAR_ROLE` at construction.
      *                        Must be the {TruthBountyGovernor} contract. Cannot be
      *                        `address(0)`.
@@ -87,12 +87,12 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
         _grantRole(SNAPSHOT_REGISTRAR_ROLE, snapshotRegistrar);
     }
 
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
     // IGovernanceSnapshot — write surface
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     /**
-     * @inheritdoc IGovernanceSnapshot
+     * @inheritdoc {IGovernanceSnapshot}
      *
      * @dev Stores the caller-supplied `snapshotTimestamp` as the canonical voting-power
      *      reference timestamp for `proposalId`. Called by {TruthBountyGovernor._propose}
@@ -118,12 +118,12 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
         emit SnapshotRegistered(proposalId, snapshotTimestamp, msg.sender);
     }
 
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
     // IGovernanceSnapshot — read surface
-    // -------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
 
     /**
-     * @inheritdoc IGovernanceSnapshot
+     * @inheritdoc {IGovernanceSnapshot}
      *
      * @dev Reverts with {SnapshotNotFound} rather than returning zero so callers cannot
      *      silently receive a stale or default timestamp. This is the fail-closed
@@ -135,7 +135,7 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
     }
 
     /**
-     * @inheritdoc IGovernanceSnapshot
+     * @inheritdoc {IGovernanceSnapshot}
      */
     function hasSnapshot(uint256 proposalId) external view returns (bool registered) {
         registered = _snapshots[proposalId] != 0;
