@@ -11,12 +11,116 @@
       "source": "contracts/v2/interfaces/IConfiguration.sol"
     },
     {
+      "kind": "error",
+      "signature": "InvalidRecoveryRequest()",
+      "selector": "0xd6fa4fb2",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryAlreadyExists(bytes32)",
+      "selector": "0x454fabbf",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryAuthorityUnavailable()",
+      "selector": "0x548e20ac",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryExceedsUntrackedBalance(address,uint256,uint256)",
+      "selector": "0xe7648887",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryNativeTransferFailed()",
+      "selector": "0x417afa27",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryNotQueued(bytes32)",
+      "selector": "0x99d9e5c3",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryPaused()",
+      "selector": "0x9eb04e04",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryReentrancy()",
+      "selector": "0x7a74605e",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryTimelockActive(uint256)",
+      "selector": "0x9287c7d0",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "error",
+      "signature": "RecoveryTransferMismatch(address)",
+      "selector": "0x37d2a4ff",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
       "kind": "event",
       "signature": "AggregationFinalized(uint256,bool,uint256,uint256,uint64,uint16)",
       "selector": null,
       "topic0": "0x53c777f7a532d77f07808bf8a6db1a1cd09834be73c5972cf65b96d0548c833d",
       "contract": "IAggregation",
       "source": "contracts/v2/interfaces/IAggregation.sol"
+    },
+    {
+      "kind": "event",
+      "signature": "AssetRecoveryCancelledV2(bytes32,address)",
+      "selector": null,
+      "topic0": "0xc44427ec98ca2f70002f5aea6f87e6c269ed11bcd9bd1e3f1788249d3a48b4b8",
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "event",
+      "signature": "AssetRecoveryExecutedV2(bytes32,address,address,uint256,address,uint256)",
+      "selector": null,
+      "topic0": "0x32dc4a3883da013e37799d6566663ea92c758c36398c81076f6cf9b30da662e0",
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "event",
+      "signature": "AssetRecoveryQueuedV2(bytes32,address,address,uint256,address,uint256,uint256)",
+      "selector": null,
+      "topic0": "0xab14064c3dc956cc3fcc31928a6c108274e1bd1e5d9eb2a6e25d17d01d43eeab",
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
     },
     {
       "kind": "event",
@@ -348,6 +452,14 @@
     },
     {
       "kind": "function",
+      "signature": "cancelAssetRecovery(bytes32)",
+      "selector": "0xc65c26a4",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "function",
       "signature": "cancelClaim(uint256)",
       "selector": "0x9dc5e02f",
       "topic0": null,
@@ -441,6 +553,14 @@
       "topic0": null,
       "contract": "IStakeCustody",
       "source": "contracts/v2/interfaces/IStakeCustody.sol"
+    },
+    {
+      "kind": "function",
+      "signature": "executeAssetRecovery(bytes32)",
+      "selector": "0xbb7d5ca7",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
     },
     {
       "kind": "function",
@@ -660,11 +780,27 @@
     },
     {
       "kind": "function",
+      "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+      "selector": "0xda22dfc2",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
+    },
+    {
+      "kind": "function",
       "signature": "queueSettlement(uint256)",
       "selector": "0x18414edc",
       "topic0": null,
       "contract": "ISettlement",
       "source": "contracts/v2/interfaces/ISettlement.sol"
+    },
+    {
+      "kind": "function",
+      "signature": "recoverableBalance(address)",
+      "selector": "0x498e343b",
+      "topic0": null,
+      "contract": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol"
     },
     {
       "kind": "function",
