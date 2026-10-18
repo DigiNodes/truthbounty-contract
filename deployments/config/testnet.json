@@ -1,5 +1,6 @@
 {
   "environment": "testnet",
+  "network": "optimismSepolia",
   "chainId": 11155420,
   "rpcUrl": "${OPTIMISM_SEPOLIA_RPC_URL}",
   "admin": "${ADMIN_ADDRESS}",
@@ -26,5 +27,8 @@
   "minReputationScore": "100000000000000000",
   "maxReputationScore": "10000000000000000000",
   "defaultReputationScore": "1000000000000000000",
-  "stakingLockDuration": 604800
+  "stakingLockDuration": 604800,
+  "compiler": "0.8.28",
+  "solcVersion": "0.8.28",
+  "node": "22.12.0"
 }

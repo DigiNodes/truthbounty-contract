@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "issue": "V2-SC-153",
-  "policy": "TruthBounty V2 accounting is token-denominated: no canonical contract holds, forwards, or accounts for native currency. Every native-value surface must be either an explicit rejection or a documented exception, and forced native balance (SELFDESTRUCT) must never create a claimable, reserved, reward, stake, bond, or treasury balance.",
+  "policy": "TruthBounty V2 accounting is token-denominated: no canonical contract holds, forwards, or accounts for native currency. Every native-value surface must be either an explicit rejection or a documented exception, and forced native balance (SELFDESTRUCT) must never create a claimable, reserved, reward, stake, bond, or treasury balance. V2-SC-154 adds one governed exception: delayed, exact recovery of forced native balances through UntrackedAssetRecovery, without creating native liabilities or accepting attached value.",
   "nativeValueSurfaces": [
     {
       "file": "contracts/governance/v2/TruthBountyGovernor.sol",
@@ -32,6 +32,11 @@
       "file": "contracts/Lock.sol",
       "surfaces": ["payable", "nativeBalance"],
       "rationale": "Known exception, out of the canonical V2 surface: legacy standalone sample (payable constructor, withdraw() pays address(this).balance) that is not deployed by any V2 deployment script, is not a governed module, and holds no V2 accounting. Native value is therefore excluded from the V2 policy; the file is intentionally untouched to keep this change inside the governance and upgrade surface."
+    },
+    {
+      "file": "contracts/recovery/UntrackedAssetRecovery.sol",
+      "surfaces": ["nativeBalance"],
+      "rationale": "V2-SC-154 governed recovery exception: address(0) denotes forced native balance only. Nonpayable queue and execute surfaces reject attached value. Execution requires current governance authority, a fixed two-day on-chain delay, pause checks, an exact empty-calldata native transfer and an exact sender balance delta. Forced currency never creates protocol liabilities. There is no generic call or arbitrary calldata."
     }
   ]
 }

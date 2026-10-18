@@ -99,6 +99,50 @@ prints its Keccak-256 digest. The manifest records:
    CREATE addresses derived from the deployer and starting nonce; and
 - the post-deployment `REGISTRY_UPDATER_ROLE` wiring call.
 
+The canonical plan also includes the bond `StakeVault`, `ParameterVersionRegistry`,
+the appeal module's vault-operator grant, and the optional deployer-role renunciation.
+These steps consume nonces just like contract creation. Dependencies must point to
+earlier deployments; calls cannot precede their target deployment.
+
+### Ordered checkpoints and resume (#705)
+
+The TypeScript helper executes the same manifest constructor inputs with explicit,
+contiguous nonces. The CLI requires `DEPLOYMENT_STARTING_NONCE` and writes to
+`DEPLOYMENT_CHECKPOINT` (default
+`deployments/<DEPLOY_ENV>/canonical-v2-checkpoint.json`). Preserve this file and
+reuse the original starting nonce and options on every resume. Programmatic users
+enable durable execution with `{ startingNonce, checkpointFile }`; the in-memory
+default is intended for isolated tests.
+
+Before invoking the signer, the helper atomically flushes an intent. It records the
+returned transaction hash before waiting for its receipt. Before resume it checks
+the plan hash, signer and chain, every previous transaction's exact input and successful
+canonical receipt, and every deployed contract's runtime code at both its receipt
+block and the current head. Archive access is required when historical code is no
+longer available. Confirmed and pending deployer nonces must both equal the next
+planned nonce. Missing history, reorgs, code changes, and external nonce consumption
+stop execution. Use a dedicated deployer; do not share it with other transactions.
+
+A recorded hash is never automatically replaced or rebroadcast. If the RPC response
+was lost, the intent may have no hash: first investigate the deployer's nonce on
+chain and in the mempool. The programmatic `reconcile: { index, hash }` option accepts
+only a mined transaction that matches every planned field and a successful receipt.
+If no matching transaction can be proven, abandon the run and review a new plan;
+deleting the intent and blindly retrying is unsafe. A process crash leaves an
+exclusive `.lock` file: remove it only after establishing that its process has
+stopped, then resume using the intact checkpoint. Do not edit receipt or code hashes.
+
+Only a fully verified execution writes `<checkpoint>.manifest.json`. Its ordered
+transactions include the actual hashes, receipt block hashes/numbers, transaction
+positions, CREATE addresses and observed runtime hashes. Planned artifact runtime
+hashes can differ from observed hashes where Solidity embeds constructor immutables.
+This path adds no deployment authority or production-readiness attestation; #706
+and #685 remain independent release dependencies. The legacy Foundry workflow and
+direct Ignition commands do not consume this journal.
+
+Reproduce interruption, drift, reconciliation, reorg, code-change, concurrent-writer
+and manifest-ordering tests with `npm run test:deployment:resume` (Anvil on `PATH`).
+
 The manifest contains no timestamp, private key, RPC URL, or launch address. A
 fresh deployment account and the same starting nonce are required for address
 reproduction. The recorded salts identify versioned deployment steps; the
