@@ -476,6 +476,27 @@ library V2Errors {
     /// @notice Protocol is paused.
     error ProtocolPaused();
 
+    /// @notice Protocol is paused (OpenZeppelin `Pausable`-compatible selector).
+    /// @dev Canonical alias for `ProtocolPaused()` so callers and tests that
+    ///      assert the OZ `EnforcedPause()` selector observe the same failure.
+    ///      Both selectors are emitted by the emergency-control layer; the
+    ///      operation-scoped pause path reverts with `ScopePaused(bytes32)`.
+    error EnforcedPause();
+
+    /// @notice Token operation failed without a revert reason (SafeERC20-compatible selector).
+    /// @dev Canonical alias for `SafeERC20FailedOperation(address)` so custody
+    ///      paths that surface a false-return or reverting token map to one
+    ///      documented error instead of ad-hoc string reasons.
+    /// @param token Address of the token whose operation failed.
+    error SafeERC20FailedOperation(address token);
+
+    /// @notice Token operation failed with a bubbled revert reason (SafeERC20-compatible selector).
+    /// @dev Canonical alias for `SafeERC20FailedOperation(address)` carrying the
+    ///      underlying revert data so token failures cannot corrupt custody.
+    /// @param token Address of the token whose operation failed.
+    /// @param reason Raw revert data returned by the token.
+    error SafeERC20FailedOperationWithReason(address token, bytes reason);
+
     /// @notice Operation requires emergency authority.
     error EmergencyAuthorityRequired();
 
@@ -517,9 +538,55 @@ library V2Errors {
     /// @notice The caller does not hold the role required for this emergency action.
     error UnauthorizedEmergencyCaller(address caller);
 
+    /// @notice Caller is blacklisted for the requested operation.
+    /// @dev Fail-closed: a blacklisted account can never be treated as allowed.
+    /// @param account Address rejected by the blacklist.
+    error Blacklisted(address account);
+
+    /// @notice Recipient rejected an incoming token transfer.
+    /// @dev Fail-closed: a rejecting recipient must not leave custody accounting
+    ///      advanced without a matching balance movement.
+    /// @param recipient Address that rejected the transfer.
+    /// @param asset Asset address whose transfer was rejected.
+    error RecipientRejected(address recipient, address asset);
+
     /// @notice A guarded module has no emergency-control dependency configured.
     /// @dev Raised instead of allowing the mutation. An unwired module is frozen, never open.
     error EmergencyControlsNotConfigured();
+
+    /// @notice Guardian attempted to unpause a scope; guardians may only pause.
+    /// @dev Enforces the V2 invariant that unpause is a governed, timelocked action.
+    /// @param caller The guardian address that attempted the unpause.
+    error GuardianCannotUnpause(address caller);
+
+    /// @notice The incident reference supplied for governed unpause is stale or unknown.
+    /// @param incidentId The incident reference that failed validation.
+    /// @param recordedAt Timestamp at which the incident was recorded.
+    error StaleIncidentReference(bytes32 incidentId, uint256 recordedAt);
+
+    /// @notice The repaired release hash does not match the approved release manifest.
+    /// @param provided The release hash supplied by the caller.
+    /// @param expected The canonical approved release hash.
+    error WrongRepairedRelease(bytes32 provided, bytes32 expected);
+
+    /// @notice Dependency health evidence for the scope is missing or failed.
+    /// @param scope The operation scope whose dependencies are unhealthy.
+    /// @param evidenceHash Commitment to the supplied dependency-health evidence.
+    error DependencyHealthUnproven(bytes32 scope, bytes32 evidenceHash);
+
+    /// @notice The scope is only partially paused; governed unpause requires a full pause.
+    /// @param scope The operation scope that is not fully paused.
+    /// @param pausedSubscopes Bitmap of currently paused subscopes.
+    error PartialPauseState(bytes32 scope, uint256 pausedSubscopes);
+
+    /// @notice The scope has already been unpaused; repeated unpause is rejected.
+    /// @param scope The operation scope that is not currently paused.
+    error AlreadyUnpaused(bytes32 scope);
+
+    /// @notice The governed unpause timelock has not elapsed yet.
+    /// @param scope The operation scope awaiting timelock expiry.
+    /// @param readyAt Earliest Unix timestamp at which unpause may execute.
+    error UnpauseTimelockNotReady(bytes32 scope, uint256 readyAt);
 
     // =========================================================================
     // Generic Validation (typed — avoid string reasons)

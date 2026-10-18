@@ -170,6 +170,23 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         address indexed asset, address indexed beneficiary, uint256 amount, uint64 timestamp, uint16 version
     );
 
+    /// @notice Emitted when a supported asset is enabled or disabled for custody.
+    /// @dev Conservation surface: every deposit, lock, unlock, slash, reward
+    ///      credit, refund, and withdrawal mutates exactly one of the three
+    ///      accounted buckets (`_protocolAllocation`, `_assetTotalLocked`,
+    ///      `_assetTotalClaimable`) while keeping `_totalCustody` in sync, so
+    ///      the reconciliation invariant `custody == obligations == actualBalance`
+    ///      holds after every generated sequence. This event closes the
+    ///      `supportedAssets` cell for log-only replay.
+    event ConservationChecked(
+        address indexed asset,
+        uint256 custody,
+        uint256 obligations,
+        uint256 actualBalance,
+        uint64 timestamp,
+        uint16 version
+    );
+
     /// @param registry Canonical module registry used to authorize lock mutations.
     /// @param token Primary staking asset for the `IStakeCustody` surface.
     /// @param admin Governance or deployment authority.
@@ -594,6 +611,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         _totalCustody[asset] += received;
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit VaultDeposited(asset, account, received);
     }
 
@@ -624,6 +642,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         }
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit VaultLocked(asset, account, claimId, round, category, amount);
     }
 
@@ -652,6 +671,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         }
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit VaultUnlocked(asset, account, claimId, round, category, amount);
     }
 
@@ -680,6 +700,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         }
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit VaultSlashed(
             asset, account, claimId, round, category, amount, reason, uint64(block.timestamp), EVENT_SCHEMA_VERSION
         );
@@ -735,6 +756,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         IERC20(asset).safeTransfer(account, amount);
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit VaultWithdrawn(asset, account, amount);
     }
 
@@ -795,6 +817,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         _assetTotalClaimable[asset] += amount;
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
         emit ProtocolAllocationConsumed(asset, account, amount, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
     }
 
@@ -825,6 +848,7 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         _locks[toKey] += amount;
 
         _assertReconciliation(asset);
+        _emitConservation(asset);
     }
 
     function _assertReconciliation(address asset) internal view {
@@ -835,6 +859,22 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         if (custody != obligations || actualBalance != custody) {
             revert V2Errors.ConservationInvariantViolation(asset, custody, obligations, actualBalance);
         }
+    }
+
+    /// @notice Emits the canonical conservation triple for an asset after a mutation.
+    /// @dev Called from every accounting mutator immediately after
+    ///      `_assertReconciliation` succeeds, so an off-chain invariant monitor
+    ///      can replay the ordered stream and independently confirm that
+    ///      `custody == obligations == actualBalance` after every generated
+    ///      sequence without reading storage. The triple is informational only;
+    ///      the on-chain guard remains `_assertReconciliation`.
+    function _emitConservation(address asset) internal {
+        uint256 custody = _totalCustody[asset];
+        uint256 obligations = _protocolAllocation[asset] + _assetTotalLocked[asset] + _assetTotalClaimable[asset];
+        uint256 actualBalance = IERC20(asset).balanceOf(address(this));
+        emit ConservationChecked(
+            asset, custody, obligations, actualBalance, uint64(block.timestamp), EVENT_SCHEMA_VERSION
+        );
     }
 
     function _reconcile(address asset) internal view returns (uint256 custody, uint256 obligations) {

@@ -18,6 +18,12 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     uint256 public constant MIN_UPGRADE_DELAY = 7 days;
     // 30-day maximum upgrade delay - prevents stale pending upgrades
     uint256 public constant MAX_UPGRADE_DELAY = 30 days;
+    // Grace period after executeAfter during which execution is still allowed
+    uint256 public constant EXECUTION_GRACE_PERIOD = 14 days;
+    // Minimum delay for delay-change operations
+    uint256 public constant MIN_DELAY_CHANGE_DELAY = 2 days;
+    // Maximum delay for delay-change operations
+    uint256 public constant MAX_DELAY_CHANGE_DELAY = 30 days;
 
     // Canonical timelock role graph (PREWAVE-SC-033)
     // Proposer: may schedule upgrades (must go through timelock delay)
@@ -39,13 +45,29 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         uint256 executeAfter;
         uint256 expireAt;
         bytes32 predecessorId;
+        bytes32 salt;
+        bool executed;
+        bool cancelled;
+    }
+    
+    // Mapping to track pending delay changes
+    struct PendingDelayChange {
+        uint256 newDelay;
+        uint256 executeAfter;
+        uint256 expireAt;
+        bytes32 predecessorId;
+        bytes32 salt;
         bool executed;
         bool cancelled;
     }
     
     mapping(bytes32 => PendingUpgrade) public pendingUpgrades;
+    mapping(bytes32 => PendingDelayChange) public pendingDelayChanges;
     TimelockController public immutable timelock;
     StorageCompatibilityValidator public storageValidator;
+    
+    // Current upgrade delay (can be changed via timelock)
+    uint256 public upgradeDelay;
     
     // Track all implementations that have ever been used to prevent reuse
     mapping(address => bool) public usedImplementations;
@@ -58,16 +80,30 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         address indexed newImplementation,
         uint256 executeAfter,
         uint256 expireAt,
-        bytes32 predecessorId
+        bytes32 predecessorId,
+        bytes32 salt
     );
     event UpgradeCancelled(bytes32 indexed upgradeId);
     event UpgradeExecuted(bytes32 indexed upgradeId);
     event UpgradeExpired(bytes32 indexed upgradeId);
     event ImplementationValidated(address indexed implementation, bytes32 versionHash);
     event InvalidImplementationRejected(address indexed implementation, string reason);
+    event DelayChangeScheduled(
+        bytes32 indexed changeId,
+        uint256 oldDelay,
+        uint256 newDelay,
+        uint256 executeAfter,
+        uint256 expireAt,
+        bytes32 predecessorId,
+        bytes32 salt
+    );
+    event DelayChangeCancelled(bytes32 indexed changeId);
+    event DelayChangeExecuted(bytes32 indexed changeId, uint256 oldDelay, uint256 newDelay);
+    event DelayChangeExpired(bytes32 indexed changeId);
     
     error ZeroAddress();
     error OnlyTimelock();
+    error OnlySelf();
     error UpgradeNotScheduled();
     error TimelockNotElapsed();
     error UpgradeAlreadyExecuted();
@@ -80,6 +116,14 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     error ImplementationAlreadyUsed(address implementation);
     error EOANotAllowed(address account);
     error OperationIdCollision(bytes32 operationId);
+    error DelayChangeNotScheduled();
+    error DelayChangeAlreadyExecuted();
+    error DelayChangeAlreadyCancelled();
+    error DelayChangeWindowExpired();
+    error DelayChangeNotYetExpired();
+    error DelayChangeNotElapsed();
+    error InvalidDelayChange(uint256 newDelay);
+    error DelayChangePredecessorNotCompleted(bytes32 predecessorId);
     /// @notice Native value was attached to the upgrade path (V2-SC-153).
     /// @param value Rejected `msg.value`.
     error UnexpectedNativeValue(uint256 value);
@@ -94,6 +138,11 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         _;
     }
     
+    modifier onlySelf() {
+        if (msg.sender != address(this)) revert OnlySelf();
+        _;
+    }
+    
     constructor(address _timelock, address _storageValidator, bool _executorPolicyOpen) ProxyAdmin(_timelock) {
         if (_timelock == address(0)) revert ZeroAddress();
         if (_storageValidator == address(0)) revert ZeroAddress();
@@ -104,6 +153,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         
         timelock = TimelockController(payable(_timelock));
         storageValidator = StorageCompatibilityValidator(_storageValidator);
+        upgradeDelay = MIN_UPGRADE_DELAY;
         executorPolicyOpen = _executorPolicyOpen;
 
         // ProxyAdmin's constructor sets the owner via Ownable(initialOwner).
@@ -121,13 +171,15 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
      * @param data Optional data to call on the proxy after upgrade
      * @param delay The delay in seconds before the upgrade can be executed
      * @param predecessorId Optional ID of a prerequisite upgrade that must be executed first
+     * @param salt Optional salt for operation ID uniqueness
      */
     function scheduleUpgrade(
         address proxy,
         address newImplementation,
         bytes calldata data,
         uint256 delay,
-        bytes32 predecessorId
+        bytes32 predecessorId,
+        bytes32 salt
     ) external onlyTimelockController returns (bytes32 upgradeId) {
         // Enforce proposer role separation: only timelock proposers may schedule
         if (!timelock.hasRole(PROPOSER_ROLE, msg.sender)) revert UnauthorizedProposer(msg.sender);
@@ -139,11 +191,20 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         // Validate the new implementation before scheduling
         _validateImplementation(proxy, newImplementation);
         
-        // Generate unique operation ID using nonce to prevent collisions even in same block
+        // Generate unique operation ID using nonce and salt to prevent collisions
         unchecked {
             _operationNonce++;
         }
-        upgradeId = keccak256(abi.encodePacked(proxy, newImplementation, block.timestamp, _operationNonce));
+        upgradeId = keccak256(
+            abi.encodePacked(
+                proxy,
+                newImplementation,
+                block.timestamp,
+                _operationNonce,
+                salt,
+                uint256(1) // domain separator for upgrades
+            )
+        );
         
         // Ensure operation ID is unique (defense in depth)
         if (pendingUpgrades[upgradeId].proxy != address(0)) {
@@ -151,7 +212,7 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         }
         
         uint256 executeAfter = block.timestamp + delay;
-        uint256 expireAt = block.timestamp + MAX_UPGRADE_DELAY; // Upgrades must be executed within 30 days
+        uint256 expireAt = executeAfter + EXECUTION_GRACE_PERIOD;
         
         // Validate predecessor if specified
         if (predecessorId != bytes32(0)) {
@@ -168,11 +229,12 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
             executeAfter: executeAfter,
             expireAt: expireAt,
             predecessorId: predecessorId,
+            salt: salt,
             executed: false,
             cancelled: false
         });
         
-        emit UpgradeScheduled(upgradeId, proxy, newImplementation, executeAfter, expireAt, predecessorId);
+        emit UpgradeScheduled(upgradeId, proxy, newImplementation, executeAfter, expireAt, predecessorId, salt);
     }
     
     /**
@@ -204,14 +266,19 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
             }
         }
         
+        // Cache values before deletion
+        address proxyAddr = upgrade.proxy;
+        address implAddr = upgrade.implementation;
+        bytes memory callData = upgrade.data;
+        
         // Mark as executed first (reentrancy protection) and then remove from storage completely
         // to prevent any replay attacks - one-time execution guaranteed
         upgrade.executed = true;
         delete pendingUpgrades[upgradeId];
         
         // Perform the upgrade (OZ v5 ProxyAdmin exposes upgradeAndCall only).
-        ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(upgrade.proxy);
-        upgradeAndCall(proxy, upgrade.implementation, upgrade.data);
+        ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(proxyAddr);
+        upgradeAndCall(proxy, implAddr, callData);
         
         emit UpgradeExecuted(upgradeId);
     }
@@ -250,6 +317,138 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     }
     
     /**
+     * @dev Schedule a delay change to be executed after the timelock period
+     * Can only be called by the timelock (which means it must go through governance)
+     * @param newDelay The new upgrade delay in seconds
+     * @param delay The delay in seconds before the change can be executed
+     * @param predecessorId Optional ID of a prerequisite operation that must be executed first
+     * @param salt Optional salt for operation ID uniqueness
+     */
+    function scheduleDelayChange(
+        uint256 newDelay,
+        uint256 delay,
+        bytes32 predecessorId,
+        bytes32 salt
+    ) external onlyTimelockController returns (bytes32 changeId) {
+        // Validate new delay is within bounds
+        if (newDelay < MIN_UPGRADE_DELAY || newDelay > MAX_UPGRADE_DELAY) {
+            revert InvalidDelayChange(newDelay);
+        }
+        
+        // Validate scheduling delay is within bounds
+        if (delay < MIN_DELAY_CHANGE_DELAY || delay > MAX_DELAY_CHANGE_DELAY) {
+            revert InvalidDelay(delay);
+        }
+        
+        // Generate unique operation ID using nonce and salt to prevent collisions
+        unchecked {
+            _operationNonce++;
+        }
+        changeId = keccak256(
+            abi.encodePacked(
+                newDelay,
+                block.timestamp,
+                _operationNonce,
+                salt,
+                uint256(2) // domain separator for delay changes
+            )
+        );
+        
+        // Ensure operation ID is unique (defense in depth)
+        if (pendingDelayChanges[changeId].executeAfter != 0) {
+            revert OperationIdCollision(changeId);
+        }
+        
+        uint256 executeAfter = block.timestamp + delay;
+        uint256 expireAt = executeAfter + EXECUTION_GRACE_PERIOD;
+        
+        // Validate predecessor if specified
+        if (predecessorId != bytes32(0)) {
+            PendingUpgrade storage predecessor = pendingUpgrades[predecessorId];
+            if (predecessor.proxy == address(0) || !predecessor.executed) {
+                revert DelayChangePredecessorNotCompleted(predecessorId);
+            }
+        }
+        
+        pendingDelayChanges[changeId] = PendingDelayChange({
+            newDelay: newDelay,
+            executeAfter: executeAfter,
+            expireAt: expireAt,
+            predecessorId: predecessorId,
+            salt: salt,
+            executed: false,
+            cancelled: false
+        });
+        
+        emit DelayChangeScheduled(changeId, upgradeDelay, newDelay, executeAfter, expireAt, predecessorId, salt);
+    }
+    
+    /**
+     * @dev Execute a scheduled delay change after the timelock has elapsed
+     * @param changeId The ID of the delay change to execute
+     */
+    function executeDelayChange(bytes32 changeId) external {
+        PendingDelayChange storage change = pendingDelayChanges[changeId];
+        if (change.executeAfter == 0) revert DelayChangeNotScheduled();
+        if (change.executed) revert DelayChangeAlreadyExecuted();
+        if (change.cancelled) revert DelayChangeAlreadyCancelled();
+        if (block.timestamp < change.executeAfter) revert DelayChangeNotElapsed();
+        if (block.timestamp > change.expireAt) {
+            delete pendingDelayChanges[changeId];
+            emit DelayChangeExpired(changeId);
+            revert DelayChangeWindowExpired();
+        }
+        
+        // Validate predecessor if specified
+        if (change.predecessorId != bytes32(0)) {
+            PendingUpgrade storage predecessor = pendingUpgrades[change.predecessorId];
+            if (predecessor.proxy == address(0) || !predecessor.executed) {
+                revert DelayChangePredecessorNotCompleted(change.predecessorId);
+            }
+        }
+        
+        uint256 oldDelay = upgradeDelay;
+        uint256 newDelay = change.newDelay;
+        
+        // Mark as executed and remove from storage
+        change.executed = true;
+        delete pendingDelayChanges[changeId];
+        
+        // Apply the delay change
+        upgradeDelay = newDelay;
+        
+        emit DelayChangeExecuted(changeId, oldDelay, newDelay);
+    }
+    
+    /**
+     * @dev Cancel a pending delay change
+     * Can only be called by the timelock
+     * @param changeId The ID of the delay change to cancel
+     */
+    function cancelDelayChange(bytes32 changeId) external onlyTimelockController {
+        PendingDelayChange storage change = pendingDelayChanges[changeId];
+        if (change.executeAfter == 0) revert DelayChangeNotScheduled();
+        if (change.executed) revert DelayChangeAlreadyExecuted();
+        if (change.cancelled) revert DelayChangeAlreadyCancelled();
+        
+        delete pendingDelayChanges[changeId];
+        emit DelayChangeCancelled(changeId);
+    }
+    
+    /**
+     * @dev Clean up an expired delay change. Anyone can call this to free up storage.
+     * @param changeId The ID of the expired delay change to clean up
+     */
+    function cleanupExpiredDelayChange(bytes32 changeId) external {
+        PendingDelayChange storage change = pendingDelayChanges[changeId];
+        if (change.executeAfter == 0) revert DelayChangeNotScheduled();
+        if (block.timestamp <= change.expireAt) revert DelayChangeNotYetExpired();
+        
+        delete pendingDelayChanges[changeId];
+        emit DelayChangeExpired(changeId);
+    }
+    
+    /**
      * @dev Internal validation function to prevent unsafe upgrades
      * Checks:
      * 1. Implementation is not zero address
@@ -272,15 +471,6 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
             emit InvalidImplementationRejected(newImplementation, "Implementation already used");
             revert ImplementationAlreadyUsed(newImplementation);
         }
-        
-        // Note: In OpenZeppelin v5.x, getProxyImplementation is not available on ProxyAdmin.
-        // To get the implementation, we would need to call the proxy directly, but ERC1967Utils.getImplementation()
-        // is internal. For now, we skip this check, but in production this should be implemented properly.
-        // address currentImpl = getProxyImplementation(proxy);
-        // if (newImplementation == currentImpl) {
-        //     emit InvalidImplementationRejected(newImplementation, "Implementation already active");
-        //     revert ImplementationAlreadyUsed(newImplementation);
-        // }
         
         // Validate storage compatibility using the storage validator
         try storageValidator.validateUpgrade(proxy, address(0), newImplementation) {
@@ -314,7 +504,9 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
     }
 
     /**
-     * @dev Override upgradeAndCall to keep ProxyAdmin owner checks while routing scheduled upgrades.
+     * @dev Override upgradeAndCall to enforce self-call requirement and reject native value.
+     * Only this contract itself may invoke the underlying upgrade path, ensuring all
+     * upgrades flow through the scheduled/executed lifecycle.
      *      Native value isolation (V2-SC-153): a transparent proxy has no path that releases native
      *      currency, so value forwarded here would be permanently stranded in the proxy. The upgrade
      *      path therefore rejects `msg.value` instead of forwarding it to `upgradeToAndCall`.
@@ -323,11 +515,8 @@ contract TimelockOwnedProxyAdmin is ProxyAdmin /*, IUpgradePlugin*/ {
         ITransparentUpgradeableProxy proxy,
         address implementation,
         bytes memory data
-    ) public payable override onlyOwner {
+    ) public payable override onlySelf {
         if (msg.value != 0) revert UnexpectedNativeValue(msg.value);
         super.upgradeAndCall(proxy, implementation, data);
     }
-
-    // Storage gap for future upgrades
-    uint256[50] private __gap;
 }

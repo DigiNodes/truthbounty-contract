@@ -16,6 +16,7 @@ The protocol enforces strict separation of powers across distinct administrative
 | **DAO_GOVERNANCE** | Governor + Timelock | Levels 1, 2 (or any V2 scope) | **Full lifting authority** | Formal governance consensus required to lift any pause |
 | **TIMELOCK_CONTROLLER** | Governance Timelock contract | Level 1 only (HighRisk) | **NONE** | Subject to mandatory `timelockCooldown` (default 1 hour) |
 | **RECOVERY_EXECUTOR** | Designated operational role | None (execution only) | Stepwise recovery | Must execute post-lift verification steps (1 → 2 → 3) |
+| **GUARDIAN** | Emergency guardian key | Scoped pause only | **NONE (Cannot unpause)** | May only tighten control; unpause always requires governed authority |
 
 ---
 
@@ -129,6 +130,33 @@ The protocol supports four tiered operational levels:
 
 ---
 
+## Governed-Unpause Preconditions (PREWAVE-SC-035)
+
+An unpause (`EmergencyGatekeeper.unpause(scope)`) is only accepted when **all**
+of the following machine-verifiable preconditions hold. Any failure reverts and
+leaves the scope paused:
+
+1. **Governed authority** — the caller holds `PAUSE_RESOLVER`, which is granted
+   only through the governance timelock. The guardian and `PAUSE_INITIATOR`
+   roles can never unpause.
+2. **Timelock ready** — `block.timestamp >= unpauseReadyAt(scope)`, where
+   `unpauseReadyAt` is set at pause time to `pausedAt + emergencyUnpauseDelay`.
+3. **Incident reference** — a non-zero `incidentRef` (e.g.
+   `keccak256("INCIDENT-YYYY-MM-DD-001")`) must be supplied and must match the
+   reference recorded at pause time.
+4. **Repaired release** — `releaseHash` must equal the currently approved
+   release hash; unpausing against a stale or unapproved release reverts.
+5. **Dependency health** — the wired `EmergencyController` must be reachable
+   and report a level at or below the scope's tolerance.
+6. **Current pause state** — `locallyPaused(scope)` must be `true`; a repeated
+   unpause of an already-resolved scope reverts with `ScopeNotPaused`.
+
+Unpause affects only the targeted `scope`. Sibling scopes remain paused until
+individually resolved, and each resolution emits `EmergencyUnpaused` linked to
+the originating `EmergencyPaused` record via the shared `incidentRef`.
+
+---
+
 ### A. Multi-Level Controller Verification (`$EMERGENCY_CONTROLLER`)
 
 1. **Verify On-Chain Pause Level:**
@@ -238,6 +266,9 @@ Every pause action emits an immutable audit event
 4. **Resolve scoped pauses**: `PAUSE_RESOLVER` calls
    `EmergencyGatekeeper.unpause(scope)` for each scope. Resolution is
    rejected while the protocol level exceeds the scope's tolerance.
+   The call must carry the incident reference and repaired release hash and
+   must satisfy every governed-unpause precondition listed above; the guardian
+   role cannot perform this step under any circumstance.
 5. **Verify resumption**: `paused(scope)` returns `false` and a canary
    gated mutation succeeds. Escrowed balances must be unchanged across
    the pause window.
@@ -257,6 +288,7 @@ against the canonical contracts:
 |---|---|
 | Configuration | Invalid admin/initiator/resolver, delay bounds, hostile dependency surface, scope-tolerance bounds — all fail closed |
 | Compromised roles | Unprivileged callers cannot pause/unpause; the initiator can never unpause |
+| Governed unpause | Guardian attempt, stale incident, wrong release, timelock-not-ready, partial pause, repeated unpause, and successful governed unpause |
 | Selective pause | Pausing one scope freezes it while sibling scopes stay operational; escrow survives |
 | Full pause | Protocol levels 1–3 contain scopes per tolerance; shutdown contains everything and blocks resolution |
 | Dependency failure | Reverting, short-returndata, and corrupt-returndata dependencies fail closed; recovery requires a healthy dependency |

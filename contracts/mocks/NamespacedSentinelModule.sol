@@ -5,7 +5,7 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 // Sentinel values written before an upgrade and read back after it (V2-SC-159).
-// `linear*` fields live in the linear (slot 0..n) region, `namespaced*` fields live in the
+// `linear*` fields live in the linear (slot 0..n) region, ``namespaced*` fields live in the
 // ERC-7201 namespace `truthbounty.storage.mocks.SentinelModule`.
 struct SentinelValues {
     uint256 linearValue;
@@ -34,7 +34,7 @@ abstract contract SentinelModuleNamespace {
         mapping(uint256 => uint256) values;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("truthbounty.storage.mocks.SentinelModule")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak-256(abi.encode(uint256(keccak-256("truthbounty.storage.mocks.SentinelModule")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant SENTINEL_MODULE_STORAGE_LOCATION =
         0x0eab85e4f8b66098f0fe3e32d0f8534f99289b249fd05f879f59cda00bcdc900;
 
@@ -57,7 +57,7 @@ abstract contract SentinelModuleExtensionNamespace {
         bytes32 appendedTag;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("truthbounty.storage.mocks.SentinelModuleExtension")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak-256(abi.encode(uint256(keccak-256("truthbounty.storage.mocks.SentinelModuleExtension")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant SENTINEL_MODULE_EXTENSION_STORAGE_LOCATION =
         0xd4e6ecf0182150744c92978296b1ae82a4e18debf43f77e205c22d1a5f902400;
 

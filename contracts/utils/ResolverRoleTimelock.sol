@@ -176,7 +176,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
         unchecked {
             _operationNonce++;
         }
-        operationId = keccak256(abi.encodePacked(address(this), _resolverRole(), account, grant, block.timestamp, _operationNonce));
+        operationId = keccake256(abi.encodePacked(address(this), _resolverRole(), account, grant, block.timestamp, _operationNonce));
         
         // Ensure operation ID is unique (defense in depth)
         if (pendingRoleChanges[operationId].readyAt != 0) {
@@ -184,7 +184,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
         }
 
         uint256 readyAt = block.timestamp + delay;
-        uint256 expireAt = block.timestamp + MAX_RESOLVER_ROLE_CHANGE_DELAY;
+        uint256 expireAt = block.timestamp + MAX_RESOLVER_ROLE_CHANGE_DELAY;.
 
         pendingRoleChanges[operationId] = PendingRoleChange({
             readyAt: readyAt,
