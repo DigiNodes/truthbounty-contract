@@ -7,6 +7,44 @@
     "major": 2,
     "minor": 0
   },
+  "sourceVerification": {
+    "kind": "truthbounty.explorer-source-verification",
+    "releaseManifest": "config/release-manifest.json",
+    "buildInputs": "config/canonical-build-inputs.json",
+    "explorer": {
+      "provider": "etherscan-compatible",
+      "endpointEnv": "EXPLORER_API_URL",
+      "apiKeyEnv": "EXPLORER_API_KEY"
+    },
+    "verificationTargets": [
+      "proxy",
+      "implementation",
+      "libraries",
+      "constructorArguments"
+    ],
+    "rules": {
+      "argumentsFromBuildInputsOnly": true,
+      "rejectFlattenedSources": true,
+      "requireExactCompiler": true,
+      "requireExactSettings": true,
+      "treatExplorerSuccessAsCorrectness": false,
+      "idempotentOnAlreadyVerified": true,
+      "retrySafeOnFailure": true
+    },
+    "evidence": {
+      "recordExplorerResponse": true,
+      "recordFallbackEvidence": true,
+      "bindToReleaseManifest": true,
+      "outputDir": "artifacts/source-verification"
+    },
+    "requiredTests": [
+      "linked-library",
+      "proxy-constructor",
+      "flattened-source-rejection",
+      "wrong-compiler-settings",
+      "already-verified"
+    ]
+  },
   "amplificationMetrics": {
     "event": "StressTestCompleted",
     "field": "maxAmplificationRatioBps",
