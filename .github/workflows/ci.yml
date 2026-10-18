@@ -109,6 +109,24 @@ jobs:
         run: |
           node scripts/check-release-reproducibility.mjs
           node --test test/scripts/check-release-reproducibility.test.mjs
+      # PREWAVE-SC-058: inventory npm, Foundry submodules, compiler, actions,
+      # scripts, source hashes, licenses, and build artifact digests into a
+      # release attestation. Disallowed/unpinned inputs fail the gate.
+      - name: Generate Contract Release SBOM and provenance attestation
+        run: node scripts/generate-release-sbom.mjs
+      - name: Verify SBOM/attestation reproduces on clean checkout
+        run: node scripts/check-release-sbom.mjs
+      - name: SBOM/attestation self-tests (PREWAVE-SC-058)
+        run: node --test test/scripts/generate-release-sbom.test.mjs test/scripts/check-release-sbom.test.mjs
+      - name: Upload SBOM and attestation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-release-sbom
+          path: |
+            artifacts/sbom/*
+            artifacts/attestation/*
+          if-no-files-found: error
+          retention-days: 90
       # PREWAVE-SC-062: per-contract and proxy deployment size budgets — oversized
       # contracts must not be broadcast.  Growth is attributed per contract in the
       # release report written to deployments/releases/deployment-size-report.json.
@@ -261,7 +279,7 @@ jobs:
           COVERAGE_FILE: contracts/v2/StakeVault.sol
           MIN_BRANCH_PCT: "54.83"
         run: |
-          awk -v file="$COVERAGE_FILE" -v min="$MIN_BRANCH_PCT" '
+          awk -v file="$COVERAGE_FILE" -v min="$MIN_BRANCH_PCT"' '
             open && /^SF:/ { open = 0; broken = 1 }
             $0 == ("SF:" file) { open = 1; seen++; next }
             open && /^BRF:/ { found = substr($0, 5); brf++ }

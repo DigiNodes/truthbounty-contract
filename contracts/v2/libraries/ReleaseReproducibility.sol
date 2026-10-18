@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -32,6 +31,18 @@ library ReleaseReproducibility {
     /// @notice Approved solc version packed as major * 1_000_000 + minor * 1_000 + patch.
     uint256 internal constant EXPECTED_SOLC_VERSION_CODE = 8028;
 
+    /// @notice Approved SPDX license identifier hash for release inputs.
+    /// @dev keccak256("MIT") — release inputs must declare an approved license.
+    bytes32 internal constant EXPECTED_LICENSE_HASH = keccak256("MIT");
+
+    /// @notice Maximum permitted length for a pinned source identifier.
+    /// @dev Bounds the preimage space so attestation inputs stay canonical.
+    uint256 internal constant MAX_SOURCE_IDENTIFIER_LENGTH = 256;
+
+    /// @notice Maximum permitted length for a pinned artifact identifier.
+    /// @dev Bounds the preimage space so attestation inputs stay canonical.
+    uint256 internal constant MAX_ARTIFACT_IDENTIFIER_LENGTH = 256;
+
     /// @notice Compiler settings did not match the approved release toolchain.
     /// @param expectedSolcVersionCode Packed expected solc version.
     /// @param actualSolcVersionCode Packed actual solc version.
@@ -64,6 +75,29 @@ library ReleaseReproducibility {
 
     /// @notice Recomputed release digest did not match the approved manifest digest.
     error DigestMismatch(bytes32 expectedDigest, uint256 actualDigest);
+
+    /// @notice A release input declared a disallowed or missing license.
+    /// @param source Identifier of the offending release input.
+    /// @param actualLicenseHash Hash of the declared license identifier.
+    error DisallowedLicense(string source, bytes32 actualLicenseHash);
+
+    /// @notice A release input was not pinned to an immutable revision.
+    /// @param source Identifier of the offending release input.
+    error UnpinnedSource(string source);
+
+    /// @notice A release input identifier exceeded the canonical length bound.
+    /// @param source Identifier of the offending release input.
+    /// @param length Observed identifier length.
+    error SourceIdentifierTooLong(string source, uint256 length);
+
+    /// @notice An artifact identifier exceeded the canonical length bound.
+    /// @param artifact Identifier of the offending artifact.
+    /// @param length Observed identifier length.
+    error ArtifactIdentifierTooLong(string artifact, uint256 length);
+
+    /// @notice A release input carried a secret-like marker and must not enter artifacts.
+    /// @param source Identifier of the offending release input.
+    error SecretInArtifact(string source);
 
     /// @notice A pinned submodule URL did not match the approved provenance URL.
     error SubmoduleUrlMismatch(string module, bytes32 expectedHash, bytes32 actualHash);
@@ -155,6 +189,56 @@ library ReleaseReproducibility {
     /// @notice Require a pinned bytecode hash to be nonzero (fail-closed on empty pins).
     function requireBytecodeHash(string memory artifact, bytes32 bytecodeHash) internal pure {
         if (bytecodeHash == bytes32(0)) revert EmptyBytecodeHash(artifact);
+    }
+
+    /// @notice Require a release input to declare an approved license.
+    /// @dev Fail-closed: missing or disallowed licenses revert with a typed error.
+    function requireApprovedLicense(string memory source, bytes32 licenseHash) internal pure {
+        if (licenseHash != EXPECTED_LICENSE_HASH) revert DisallowedLicense(source, licenseHash);
+    }
+
+    /// @notice Require a release input to be pinned to an immutable revision.
+    /// @dev A zero revision hash indicates an unpinned (mutable) input and reverts.
+    function requirePinnedSource(string memory source, bytes32 revisionHash) internal pure {
+        if (revisionHash == bytes32(0)) revert UnpinnedSource(source);
+    }
+
+    /// @notice Require a source identifier to stay within the canonical length bound.
+    function requireSourceIdentifier(string memory source) internal pure {
+        uint256 length = bytes(source).length;
+        if (length == 0 || length > MAX_SOURCE_IDENTIFIER_LENGTH) {
+            revert SourceIdentifierTooLong(source, length);
+        }
+    }
+
+    /// @notice Require an artifact identifier to stay within the canonical length bound.
+    function requireArtifactIdentifier(string memory artifact) internal pure {
+        uint256 length = bytes(artifact).length;
+        if (length == 0 || length > MAX_ARTIFACT_IDENTIFIER_LENGTH) {
+            revert ArtifactIdentifierTooLong(artifact, length);
+        }
+    }
+
+    /// @notice Reject release inputs that carry secret-like markers.
+    /// @dev Fail-closed guard so no secret material can enter published artifacts.
+    function requireNoSecret(string memory source, bool secretDetected) internal pure {
+        if (secretDetected) revert SecretInArtifact(source);
+    }
+
+    /// @notice Validate a full release input record fail-closed.
+    /// @dev Composes the individual checks so callers cannot skip any pin.
+    function validateReleaseInput(
+        string memory source,
+        bytes32 revisionHash,
+        bytes32 licenseHash,
+        bytes32 sourceHash,
+        bool secretDetected
+    ) internal pure {
+        requireSourceIdentifier(source);
+        requirePinnedSource(source, revisionHash);
+        requireApprovedLicense(source, licenseHash);
+        requireSourceHash(source, sourceHash);
+        requireNoSecret(source, secretDetected);
     }
 
     /// @notice Compute the deterministic release digest over toolchain pins,
