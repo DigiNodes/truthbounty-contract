@@ -50,6 +50,15 @@
         "TruthBounty",
         "VerificationRoundManager"
       ]
+    },
+    {
+      "id": "truthbounty.storage.UntrackedAssetRecovery",
+      "slot": "0x8abeb0ad347321658a4d7cc2487ac49bf93a4796020f063a988a3b2e73a14900",
+      "definedBy": "UntrackedAssetRecovery",
+      "modules": [
+        "StakeVault",
+        "TreasuryManagement"
+      ]
     }
   ],
   "modules": {
@@ -415,6 +424,7 @@
       "sourcePath": "contracts/StakeVault.sol",
       "linearization": [
         "StakeVault",
+        "UntrackedAssetRecovery",
         "AccessControl",
         "ERC165",
         "Pausable",
@@ -449,6 +459,11 @@
           "id": "openzeppelin.storage.ReentrancyGuard",
           "slot": "0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00",
           "definedBy": "ReentrancyGuard"
+        },
+        {
+          "id": "truthbounty.storage.UntrackedAssetRecovery",
+          "slot": "0x8abeb0ad347321658a4d7cc2487ac49bf93a4796020f063a988a3b2e73a14900",
+          "definedBy": "UntrackedAssetRecovery"
         }
       ],
       "unstructuredSlots": [],
@@ -457,7 +472,7 @@
         "ADMIN_SLOT",
         "BEACON_SLOT"
       ],
-      "digest": "0xf35bade99b2d3c8bc01cf27b0e37f3b71bf427df09f5cdef3ac935b42f5c870e"
+      "digest": "0xac46e8b6005dc0607b0466c652c4cc8c41bf8d9f6e927b0a7a21beae3284ef3c"
     },
     "TimelockOwnedProxyAdmin": {
       "sourcePath": "contracts/upgrade/TimelockOwnedProxyAdmin.sol",
@@ -562,6 +577,7 @@
       "sourcePath": "contracts/treasury/TreasuryManagement.sol",
       "linearization": [
         "TreasuryManagement",
+        "UntrackedAssetRecovery",
         "GovernanceOwnable",
         "Pausable",
         "ReentrancyGuard",
@@ -615,6 +631,11 @@
           "id": "openzeppelin.storage.ReentrancyGuard",
           "slot": "0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00",
           "definedBy": "ReentrancyGuard"
+        },
+        {
+          "id": "truthbounty.storage.UntrackedAssetRecovery",
+          "slot": "0x8abeb0ad347321658a4d7cc2487ac49bf93a4796020f063a988a3b2e73a14900",
+          "definedBy": "UntrackedAssetRecovery"
         }
       ],
       "unstructuredSlots": [],
@@ -623,7 +644,7 @@
         "ADMIN_SLOT",
         "BEACON_SLOT"
       ],
-      "digest": "0xc8c8211d5e039b0acc1060f5fa04508ed3d80d54dd359857716548fc17f35f9d"
+      "digest": "0xae372100cb6638cc7ff1d1bbebff1485dc5dbba73213d8657a90ae5cd1abfddd"
     },
     "TruthBounty": {
       "sourcePath": "contracts/TruthBounty.sol",

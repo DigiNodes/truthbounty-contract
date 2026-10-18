@@ -92,6 +92,8 @@ export function validateManifest(manifest: DeploymentManifest): void {
   }
 
   const contractNames = new Set(manifest.contracts.map((contract) => contract.name));
+  if (contractNames.size !== manifest.contracts.length) throw new Error("Manifest contract names must be unique");
+  const deployed = new Set<string>();
   for (const transaction of manifest.transactions) {
     if (!contractNames.has(transaction.contract)) {
       throw new Error(`Manifest transaction references unknown contract: ${transaction.contract}`);
@@ -100,6 +102,14 @@ export function validateManifest(manifest: DeploymentManifest): void {
       if (!contractNames.has(dependency)) {
         throw new Error(`Manifest transaction references unknown dependency: ${dependency}`);
       }
+      if (!deployed.has(dependency)) throw new Error(`Manifest dependency must be deployed earlier: ${dependency}`);
     }
+    if (transaction.action === "deploy") {
+      if (deployed.has(transaction.contract)) throw new Error(`Duplicate deployment: ${transaction.contract}`);
+      const contract = manifest.contracts.find(contract => contract.name === transaction.contract)!;
+      if (contract.nonce !== transaction.nonce) throw new Error("Contract nonce must match its deployment transaction");
+      deployed.add(transaction.contract);
+    } else if (!deployed.has(transaction.contract)) throw new Error("Call target must be deployed earlier");
   }
+  if (deployed.size !== contractNames.size) throw new Error("Every manifest contract must have a deployment transaction");
 }
