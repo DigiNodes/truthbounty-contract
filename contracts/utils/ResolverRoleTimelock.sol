@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
  *      - Proposer: any account holding the role's admin role can schedule and cancel.
  *      - Executor: any address can execute a matured operation (open executor policy).
  *      - Canceller: the role's admin role is the only authority that can cancel.
-      - Admin: the role admin is explicitly self-administered by the timelock itself.
+ *      - Admin: the role admin is explicitly self-administered by the timelock itself.
  */
 abstract contract ResolverRoleTimelock is AccessControl {
     uint256 public constant MIN_RESOLVER_ROLE_CHANGE_DELAY = 2 days;
@@ -41,7 +41,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     event ResolverRoleChangeExecuted(bytes32 indexed operationId, address indexed account, bool grant);
     event ResolverRoleChangeExpired(bytes32 indexed operationId, address indexed account, bool grant);
 
-    error ResolverRoleChangeRequiresTimelock8);
+    error ResolverRoleChangeRequiresTimelock();
     error ResolverRoleChangeAlreadyPending();
     error ResolverRoleChangeNotPending();
     error ResolverRoleChangeNotReady(uint256 readyAt);

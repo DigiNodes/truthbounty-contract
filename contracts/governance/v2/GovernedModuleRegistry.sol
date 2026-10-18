@@ -16,6 +16,7 @@ contract GovernedModuleRegistry is IGovernedModuleRegistry, AccessControl {
     mapping(address => bool) private _isRegistered;
     mapping(bytes32 => address) private _moduleByKey;
     address[] private _modules;
+    mapping(address => uint256) private _moduleIndex;
 
     /// @param admin Bootstrap administrator receiving the default admin and registry admin roles.
     constructor(address admin) {
@@ -28,9 +29,11 @@ contract GovernedModuleRegistry is IGovernedModuleRegistry, AccessControl {
     function registerModule(bytes32 moduleKey, address module) external onlyRole(REGISTRY_ADMIN_ROLE) {
         if (module == address(0)) revert ZeroModuleAddress();
         if (_isRegistered[module]) revert ModuleAlreadyRegistered(module);
+        if (_moduleByKey[moduleKey] != address(0)) revert ModuleAlreadyRegistered(module);
 
         _isRegistered[module] = true;
         _moduleByKey[moduleKey] = module;
+        _moduleIndex[module] = _modules.length;
         _modules.push(module);
 
         emit GovernedModuleRegistered(module, moduleKey);
@@ -45,14 +48,15 @@ contract GovernedModuleRegistry is IGovernedModuleRegistry, AccessControl {
         _isRegistered[module] = false;
         delete _moduleByKey[moduleKey];
 
-        uint256 length = _modules.length;
-        for (uint256 i = 0; i < length; ++i) {
-            if (_modules[i] == module) {
-                _modules[i] = _modules[length - 1];
-                _modules.pop();
-                break;
-            }
+        uint256 index = _moduleIndex[module];
+        uint256 lastIndex = _modules.length - 1;
+        if (index != lastIndex) {
+            address lastModule = _modules[lastIndex];
+            _modules[index] = lastModule;
+            _moduleIndex[lastModule] = index;
         }
+        _modules.pop();
+        delete _moduleIndex[module];
 
         emit GovernedModuleRemoved(module, moduleKey);
     }
@@ -75,5 +79,96 @@ contract GovernedModuleRegistry is IGovernedModuleRegistry, AccessControl {
     /// @inheritdoc IGovernedModuleRegistry
     function moduleAt(uint256 index) external view returns (address) {
         return _modules[index];
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function modulesPage(uint256 offset, uint256 limit) external view returns (address[] memory page) {
+        uint256 length = _modules.length;
+        if (offset >= length) return new address[](0);
+        uint256 end = offset + limit;
+        if (end > length) end = length;
+        uint256 count = end - offset;
+        page = new address[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            page[i] = _modules[offset + i];
+        }
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function moduleIndexOf(address module) external view returns (uint256) {
+        if (!_isRegistered[module]) return type(uint256).max;
+        return _moduleIndex[module];
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function getModules() external view returns (address[] memory) {
+        return _modules;
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function getRoleMemberCount(bytes32 role) external view returns (uint256) {
+        return getRoleMembers(role).length;
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function getRoleMembers(bytes32 role) public view returns (address[] memory) {
+        return _getRoleMembers(role);
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function getRoleMembersPaged(bytes32 role, uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory page)
+    {
+        address[] memory members = _getRoleMembers(role);
+        uint256 length = members.length;
+        if (offset >= length) return new address[](0);
+        uint256 end = offset + limit;
+        if (end > length) end = length;
+        uint256 count = end - offset;
+        page = new address[](count);
+        for (uint256 i = 0; i < count; ++i) {
+            page[i] = members[offset + i];
+        }
+    }
+
+    /// @inheritdoc IGovernedModuleRegistry
+    function hasRole(bytes32 role, address account) public view override returns (bool) {
+        return super.hasRole(role, account);
+    }
+
+    /// @inheritdoc AccessControl
+    function grantRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (!hasRole(role, account)) {
+            super.grantRole(role, account);
+        }
+    }
+
+    /// @inheritdoc AccessControl
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (hasRole(role, account)) {
+            super.revokeRole(role, account);
+        }
+    }
+
+    /// @inheritdoc AccessControl
+    function renounceRole(bytes32 role, address account) public override {
+        if (account != _msgSender() && !(hasRole(getRoleAdmin(role), _msgSender()))) {
+            revert AccessControlUnauthorizedAccount(_msgSender());
+        }
+        if (hasRole(role, account)) {
+            super.renounceRole(role, account);
+        }
+    }
+
+    /// @inheritdoc AccessControl
+    function _grantRole(bytes32 role, address account) internal override {
+        super._grantRole(role, account);
+    }
+
+    /// @inheritdoc AccessControl
+    function _revokeRole(bytes32 role, address account) internal override {
+        super._revokeRole(role, account);
     }
 }

@@ -67,6 +67,9 @@ library PostDeploymentRoleCheck {
     // Migration
     bytes32 internal constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
 
+    // Enumeration consistency
+    bytes32 internal constant ENUMERATION_ROLE = keccak256("ENUMERATION_ROLE");
+
     // Minting (ERC20 extensions)
     bytes32 internal constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
@@ -74,7 +77,7 @@ library PostDeploymentRoleCheck {
     bytes32 internal constant REGISTRY_ROLE = keccak256("REGISTRY_ROLE");
 
     /// @dev Total distinct roles checked (used for static array sizing).
-    uint256 internal constant ROLE_CATALOG_SIZE = 27;
+    uint256 internal constant ROLE_CATALOG_SIZE = 28;
 
     // ────────────────────────────────────────────────────────────────────
     //  Timelock role graph policy (PREWAVE-SC-033)
@@ -183,6 +186,7 @@ library PostDeploymentRoleCheck {
         roles[i++] = CONFIG_ADMIN_ROLE;
         roles[i++] = VALIDATOR_ROLE;
         roles[i++] = MIGRATOR_ROLE;
+        roles[i++] = ENUMERATION_ROLE;
         roles[i++] = MINTER_ROLE;
         roles[i++] = REGISTRY_ROLE;
     }
@@ -234,6 +238,44 @@ library PostDeploymentRoleCheck {
     }
 
     /**
+     * @notice Enumerate the members of a role on a target and verify consistency.
+     * @dev Ensures enumeration equals authorization membership by checking each
+     *      candidate account against `hasRole` and rejecting duplicates.
+     */
+    function enumerateRoleMembers(
+        address target,
+        bytes32 role,
+        address[] memory candidates
+    ) internal view returns (address[] memory members) {
+        if (target.code.length == 0) return members;
+
+        address[] memory buffer = new address[](candidates.length);
+        uint256 count;
+
+        for (uint256 i; i < candidates.length; ++i) {
+            address account = candidates[i];
+            if (account == address(0)) continue;
+            if (!_safeHasRole(target, role, account)) continue;
+
+            bool duplicate;
+            for (uint256 j; j < count; ++j) {
+                if (buffer[j] == account) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            buffer[count++] = account;
+        }
+
+        members = new address[](count);
+        for (uint256 k; k < count; ++k) {
+            members[k] = buffer[k];
+        }
+    }
+
+    /**
      * @notice Check all roles and emit events for each violation. Reverts if any violations found.
      * @param deployer The deployer/script address to check.
      * @param targets  Array of AccessControl-compatible contract addresses.
@@ -257,6 +299,39 @@ library PostDeploymentRoleCheck {
 
         bytes32[] memory roles = roleCatalog();
         emit RoleRenunciationCheckPassed(deployer, targets.length, roles.length);
+    }
+
+    /**
+     * @notice Verify that enumeration equals authorization membership for a role.
+     * @dev Returns true when the enumerated set matches the set of candidates
+     *      that actually hold the role, with no stale or duplicate members.
+     */
+    function verifyEnumerationConsistency(
+        address target,
+        bytes32 role,
+        address[] memory candidates
+    ) internal view returns (bool consistent) {
+        if (target.code.length == 0) return candidates.length == 0;
+
+        address[] memory members = enumerateRoleMembers(target, role, candidates);
+
+        uint256 expected;
+        for (uint256 i; i < candidates.length; ++i) {
+            address account = candidates[i];
+            if (account == address(0)) continue;
+            if (!_safeHasRole(target, role, account)) continue;
+
+            bool duplicate;
+            for (uint256 j; j < i; ++j) {
+                if (candidates[j] == account) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) ++expected;
+        }
+
+        return members.length == expected;
     }
 
     // ────────────────────────────────────────────────────────────────────

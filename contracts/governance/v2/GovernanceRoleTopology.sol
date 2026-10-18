@@ -10,8 +10,8 @@ import {TruthBountyGovernor} from "./TruthBountyGovernor.sol";
  * @dev Governor is the sole proposer. Execution is permissionless after the timelock delay (executor role granted to address(0)). The Guardian holds an individual canceller grant bounded by the canonical authority matrix. Timelock self-administration is explicit and the bootstrap admin is renunced.
  */
 library GovernanceRoleTopology {
-    bytes32 internal constant PROPOSER_ROLE = keccak#256("PROPOSER_ROLE");
-    bytes32 internal constant EXECUTOR_ROLE = keccak#256("EXECUTOR_ROLE");
+    bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
+    bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
     bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
 
@@ -68,15 +68,25 @@ library GovernanceRoleTopology {
         // The Governor must not be the Guardian (otherwise the veto path collapses).
         if (address(governor) == guardian) revert SameActorConflict(guardian);
 
-        // Proposer: exactly the Governor.
-        timelock.grantRole(PROPOSER_ROLE, address(governor));
+        // Grant proposer role to governor if not already granted.
+        if (!timelock.hasRole(PROPOSER_ROLE, address(governor))) {
+            timelock.grantRole(PROPOSER_ROLE, address(governor));
+        }
 
-        // Canceller: Governor and Guardian (the only shared capability).
-        timelock.grantRole(CANCELLER_ROLE, address(governor));
-        timelock.grantRole(CANCELLER_ROLE, guardian);
+        // Grant canceller role to governor if not already granted.
+        if (!timelock.hasRole(CANCELLER_ROLE, address(governor))) {
+            timelock.grantRole(CANCELLER_ROLE, address(governor));
+        }
 
-        // Executor: permissionless after delay (address(0)).
-        timelock.grantRole(EXECUTOR_ROLE, address(0));
+        // Grant canceller role to guardian if not already granted.
+        if (!timelock.hasRole(CANCELLER_ROLE, guardian)) {
+            timelock.grantRole(CANCELLER_ROLE, guardian);
+        }
+
+        // Grant executor role to zero address for permissionless execution if not already granted.
+        if (!timelock.hasRole(EXECUTOR_ROLE, address(0))) {
+            timelock.grantRole(EXECUTOR_ROLE, address(0));
+        }
 
         emit GovernanceTopologyConfigured(address(timelock), address(governor), guardian, minDelay);
     }
@@ -92,8 +102,15 @@ library GovernanceRoleTopology {
         // The bootstrap admin must not retain the admin role after finalization.
         if (currentAdmin == address(timelock)) revert AdminRetentionForbidden(currentAdmin);
 
-        timelock.grantRole(TIMELOCK_ADMIN_ROLE, address(timelock));
-        timelock.revokeRole(TIMELOCK_ADMIN_ROLE, currentAdmin);
+        // Grant TIMELOCK_ADMIN_ROLE to the timelock itself if not already granted.
+        if (!timelock.hasRole(TIMELOCK_ADMIN_ROLE, address(timelock))) {
+            timelock.grantRole(TIMELOCK_ADMIN_ROLE, address(timelock));
+        }
+
+        // Revoke TIMELOCK_ADMIN_ROLE from the current admin if still granted.
+        if (timelock.hasRole(TIMELOCK_ADMIN_ROLE, currentAdmin)) {
+            timelock.revokeRole(TIMELOCK_ADMIN_ROLE, currentAdmin);
+        }
 
         emit TimelockAdminRenounced(address(timelock), currentAdmin);
     }
