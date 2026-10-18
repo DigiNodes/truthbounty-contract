@@ -155,6 +155,7 @@ npx hardhat test test/StakeVault.test.ts
 # Foundry tests
 forge test --match-path "test/StakeVault.t.sol"
 forge test --match-path "test/v2/UpgradeNamespaceCollision.t.sol"
+forge test --match-path "test/v2/EvidencePagination.t.sol"
 ```
 
 ---

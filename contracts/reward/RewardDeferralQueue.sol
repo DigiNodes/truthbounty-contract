@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./IRewardDeferralQueue.sol";
@@ -25,7 +27,7 @@ import "./RewardEngine.sol";
  * DEFAULT_ADMIN_ROLE  – can cancel entries and grant / revoke all roles.
  * ENQUEUE_ROLE        – can add entries to the queue.
  */
-contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyGuard {
+contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyGuard, UntrackedAssetRecovery {
     // =========================================================================
     // Constants
     // =========================================================================
@@ -189,11 +191,47 @@ contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyG
                 continue;
             }
 
-            // Perform the actual fulfillment.
-            _fulfillStorageEntry(id, entry);
+            // Perform the actual fulfillment in isolation. A hostile or
+            // false-returning recipient must not revert the whole batch and block
+            // every other entry (SC-051).
+            address recipient = entry.recipient;
+            uint256 amount = entry.amount;
+            uint256 claimId = entry.claimId;
+            bytes32 settlementId = entry.settlementId;
+            bytes32 calculationId = entry.calculationId;
+
+            // CEI: mark before the external call so reentrancy cannot double-fulfill.
+            entry.status = QueueStatus.FULFILLED;
+            unchecked {
+                ++totalFulfilled;
+            }
+
+            try engine.allocateReward(
+                recipient,
+                claimId,
+                settlementId,
+                calculationId,
+                amount,
+                true
+            ) {
+                emit RewardFulfilled(id, recipient, amount);
+                unchecked {
+                    ++processed;
+                }
+            } catch {
+                // Delivery failed. Restore PENDING so the entitlement is preserved
+                // (owed exactly once) and can be retried by anyone once the recipient
+                // can receive tokens. The engine call is atomic: a reverted attempt
+                // leaves no on-chain record, so the retry cannot double-pay.
+                entry.status = QueueStatus.PENDING;
+                unchecked {
+                    --totalFulfilled;
+                    ++failed;
+                }
+                emit RewardFulfillmentDeferred(id, recipient, amount);
+            }
 
             unchecked {
-                ++processed;
                 ++i;
             }
         }
@@ -332,5 +370,21 @@ contract RewardDeferralQueue is IRewardDeferralQueue, AccessControl, ReentrancyG
         );
 
         emit RewardFulfilled(queueId, recipient, amount);
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!engine.hasRole(engine.GOVERNANCE_ROLE(), msg.sender) || !engine.governanceEnabled()) {
+            revert RecoveryAuthorityUnavailable();
+        }
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        if (engine.paused()) revert RecoveryPaused();
+    }
+
+    function _reservedAssetBalance(address) internal pure override returns (uint256) {
+        // This queue holds metadata only. Every deferred entitlement is reserved at the engine.
+        return 0;
     }
 }
