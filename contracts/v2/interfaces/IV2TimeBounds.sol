@@ -71,6 +71,42 @@ interface IV2TimeBounds {
     /// @param maxDelay Maximum permissible timelock delay.
     error TimelockOutOfBounds(uint64 delay, uint64 minDelay, uint64 maxDelay);
 
+    /// @notice Thrown when a proposed timelock delay change is scheduled without a mandatory
+    ///         delay-increase or with an immediate decrease attempt.
+    /// @param currentDelay Currently active timelock delay in seconds.
+    /// @param proposedDelay Proposed new timelock delay in seconds.
+    error TimelockDelayDecreaseProhibited(uint64 currentDelay, uint64 proposedDelay);
+
+    /// @notice Thrown when a timelock delay change is scheduled while another change is pending.
+    /// @param pendingReadyAt Timestamp at which the pending delay change becomes executable.
+    error TimelockDelayChangeAlreadyPending(uint64 pendingReadyAt);
+
+    /// @notice Thrown when a timelock delay change is executed before its scheduled readiness.
+    /// @param currentTimestamp Current block timestamp.
+    /// @param readyAt Earliest timestamp at which the delay change is executable.
+    error TimelockDelayChangeNotMatured(uint64 currentTimestamp, uint64 readyAt);
+
+    /// @notice Thrown when a scheduled timelock delay change has expired past its grace window.
+    /// @param currentTimestamp Current block timestamp.
+    /// @param expiry Timestamp at which the scheduled change expired.
+    error TimelockDelayChangeExpired(uint64 currentTimestamp, uint64 expiry);
+
+    /// @notice Thrown when a timelock operation is scheduled with a duplicate operation identifier.
+    /// @param operationId Collision-safe operation identifier derived from target, value, data,
+    ///        predecessor, and salt.
+    error TimelockOperationAlreadyScheduled(bytes32 operationId);
+
+    /// @notice Thrown when a timelock operation references a predecessor that is not yet done.
+    /// @param operationId Operation identifier being executed.
+    /// @param predecessor Required predecessor operation identifier.
+    error TimelockPredecessorNotDone(bytes32 operationId, bytes32 predecessor);
+
+    /// @notice Thrown when a timelock operation is executed without satisfying the self-call
+    ///         requirement for delay-changing administration.
+    /// @param caller Address that attempted the administrative call.
+    /// @param requiredSelf Address that must be the caller (the timelock itself).
+    error TimelockSelfCallRequired(address caller, address requiredSelf);
+
     /// @notice Thrown when block timestamp moves backwards (violating monotonicity).
     /// @param previousTimestamp Previous recorded block timestamp.
     /// @param currentTimestamp Current block timestamp.
