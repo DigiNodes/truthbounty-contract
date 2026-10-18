@@ -27,7 +27,7 @@ const functionShape = (entry, signature = canonicalSignature(entry)) =>
 export function findAbiCollisions(bundle, allowlist = { functions: {}, errors: {} }) {
   const problems = [];
   const entries = [];
-  for (const module of bundle.modules ?? []) {
+  for (const module of [...(bundle.modules ?? []), ...(bundle.extensions ?? [])]) {
     for (const entry of module.functions ?? []) entries.push({
       kind: "function", signature: entry.signature, selector: entry.selector, module: module.name,
       shape: `${entry.signature}->(${(entry.outputs ?? []).join(",")})|${entry.stateMutability ?? "nonpayable"}`,
@@ -84,7 +84,7 @@ export function findAbiCollisions(bundle, allowlist = { functions: {}, errors: {
 
 export function buildCollisionReport(bundle) {
   const entries = [];
-  for (const module of bundle.modules ?? []) {
+  for (const module of [...(bundle.modules ?? []), ...(bundle.extensions ?? [])]) {
     for (const kind of ["function", "error", "event"]) {
       for (const entry of module[kind === "function" ? "functions" : `${kind}s`] ?? []) {
         entries.push({ kind, signature: entry.signature, selector: kind === "event" ? null : entry.selector,
@@ -98,12 +98,13 @@ export function buildCollisionReport(bundle) {
 
 function eventLayout(bundle) {
   const events = [];
-  for (const event of (bundle.canonicalAbi ?? []).filter((entry) => entry.type === "event")) {
+  const abi = [...(bundle.canonicalAbi ?? []), ...(bundle.extensions ?? []).flatMap(extension => extension.abi ?? [])];
+  for (const event of abi.filter((entry) => entry.type === "event")) {
     const signature = event.signature ?? canonicalSignature(event);
     events.push({
-      module: event.source ?? "canonical ABI",
+      module: event.source ?? (bundle.extensions ?? []).find(extension => extension.abi?.includes(event))?.name ?? "canonical ABI",
       signature,
-      topic0: event.anonymous ? null : (event.topic0 ?? event.topic ?? (bundle.modules ?? []).flatMap((module) => module.events ?? []).find((candidate) => candidate.signature === signature)?.topic0),
+      topic0: event.anonymous ? null : (event.topic0 ?? event.topic ?? [...(bundle.modules ?? []), ...(bundle.extensions ?? [])].flatMap((module) => module.events ?? []).find((candidate) => candidate.signature === signature)?.topic0),
       anonymous: Boolean(event.anonymous),
       fields: (event.inputs ?? []).map((input, index) => ({ index, name: input.name ?? "", type: canonicalType(input), indexed: Boolean(input.indexed) })),
     });

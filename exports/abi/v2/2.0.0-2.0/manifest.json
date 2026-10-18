@@ -3442,5 +3442,456 @@
       }
     ]
   },
-  "checksum": "0x24a6231541b6e72384bacffcc2fdde57e49ffe340ffb52e71414152461319031"
+  "extensions": [
+    {
+      "name": "IUntrackedAssetRecovery",
+      "source": "contracts/interfaces/IUntrackedAssetRecovery.sol",
+      "interfaceId": "0xee8d91fa",
+      "inherits": [],
+      "functions": [
+        {
+          "signature": "cancelAssetRecovery(bytes32)",
+          "selector": "0xc65c26a4",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "executeAssetRecovery(bytes32)",
+          "selector": "0xbb7d5ca7",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "selector": "0xda22dfc2",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "recoverableBalance(address)",
+          "selector": "0x498e343b",
+          "declaredIn": "IUntrackedAssetRecovery"
+        }
+      ],
+      "errors": [
+        {
+          "signature": "InvalidRecoveryRequest()",
+          "selector": "0xd6fa4fb2",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryAlreadyExists(bytes32)",
+          "selector": "0x454fabbf",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryAuthorityUnavailable()",
+          "selector": "0x548e20ac",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryExceedsUntrackedBalance(address,uint256,uint256)",
+          "selector": "0xe7648887",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryNativeTransferFailed()",
+          "selector": "0x417afa27",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryNotQueued(bytes32)",
+          "selector": "0x99d9e5c3",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryPaused()",
+          "selector": "0x9eb04e04",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryReentrancy()",
+          "selector": "0x7a74605e",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryTimelockActive(uint256)",
+          "selector": "0x9287c7d0",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "RecoveryTransferMismatch(address)",
+          "selector": "0x37d2a4ff",
+          "declaredIn": "IUntrackedAssetRecovery"
+        }
+      ],
+      "events": [
+        {
+          "signature": "AssetRecoveryCancelledV2(bytes32,address)",
+          "topic0": "0xc44427ec98ca2f70002f5aea6f87e6c269ed11bcd9bd1e3f1788249d3a48b4b8",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "AssetRecoveryExecutedV2(bytes32,address,address,uint256,address,uint256)",
+          "topic0": "0x32dc4a3883da013e37799d6566663ea92c758c36398c81076f6cf9b30da662e0",
+          "declaredIn": "IUntrackedAssetRecovery"
+        },
+        {
+          "signature": "AssetRecoveryQueuedV2(bytes32,address,address,uint256,address,uint256,uint256)",
+          "topic0": "0xab14064c3dc956cc3fcc31928a6c108274e1bd1e5d9eb2a6e25d17d01d43eeab",
+          "declaredIn": "IUntrackedAssetRecovery"
+        }
+      ],
+      "structs": [
+        "RecoveryRequest"
+      ],
+      "enums": [
+        "RecoveryStatus"
+      ],
+      "digest": "0x66e549f811f0efa33b7adf0c435e13b726c647aa07e0faf433529386e4cbf348",
+      "abi": [
+        {
+          "type": "function",
+          "name": "cancelAssetRecovery",
+          "signature": "cancelAssetRecovery(bytes32)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "executeAssetRecovery",
+          "signature": "executeAssetRecovery(bytes32)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "queueAssetRecovery",
+          "signature": "queueAssetRecovery(address,address,uint256,bytes32)",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address"
+            },
+            {
+              "name": "recipient",
+              "type": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "name": "salt",
+              "type": "bytes32"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32"
+            }
+          ],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "recoverableBalance",
+          "signature": "recoverableBalance(address)",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view"
+        },
+        {
+          "type": "error",
+          "name": "InvalidRecoveryRequest",
+          "signature": "InvalidRecoveryRequest()",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "RecoveryAlreadyExists",
+          "signature": "RecoveryAlreadyExists(bytes32)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RecoveryAuthorityUnavailable",
+          "signature": "RecoveryAuthorityUnavailable()",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "RecoveryExceedsUntrackedBalance",
+          "signature": "RecoveryExceedsUntrackedBalance(address,uint256,uint256)",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address"
+            },
+            {
+              "name": "requested",
+              "type": "uint256"
+            },
+            {
+              "name": "available",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RecoveryNativeTransferFailed",
+          "signature": "RecoveryNativeTransferFailed()",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "RecoveryNotQueued",
+          "signature": "RecoveryNotQueued(bytes32)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RecoveryPaused",
+          "signature": "RecoveryPaused()",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "RecoveryReentrancy",
+          "signature": "RecoveryReentrancy()",
+          "inputs": []
+        },
+        {
+          "type": "error",
+          "name": "RecoveryTimelockActive",
+          "signature": "RecoveryTimelockActive(uint256)",
+          "inputs": [
+            {
+              "name": "executableAt",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "error",
+          "name": "RecoveryTransferMismatch",
+          "signature": "RecoveryTransferMismatch(address)",
+          "inputs": [
+            {
+              "name": "asset",
+              "type": "address"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "AssetRecoveryCancelledV2",
+          "signature": "AssetRecoveryCancelledV2(bytes32,address)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "authority",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "AssetRecoveryExecutedV2",
+          "signature": "AssetRecoveryExecutedV2(bytes32,address,address,uint256,address,uint256)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "asset",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "name": "authority",
+              "type": "address"
+            },
+            {
+              "name": "availableBalance",
+              "type": "uint256"
+            }
+          ]
+        },
+        {
+          "type": "event",
+          "name": "AssetRecoveryQueuedV2",
+          "signature": "AssetRecoveryQueuedV2(bytes32,address,address,uint256,address,uint256,uint256)",
+          "inputs": [
+            {
+              "name": "operationId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "asset",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "recipient",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "name": "authority",
+              "type": "address"
+            },
+            {
+              "name": "executableAt",
+              "type": "uint256"
+            },
+            {
+              "name": "availableBalance",
+              "type": "uint256"
+            }
+          ]
+        }
+      ],
+      "policy": {
+        "schemaVersion": 1,
+        "issue": 633,
+        "extension": "IUntrackedAssetRecovery",
+        "source": "contracts/interfaces/IUntrackedAssetRecovery.sol",
+        "implementation": "contracts/recovery/UntrackedAssetRecovery.sol",
+        "nativeAsset": "0x0000000000000000000000000000000000000000",
+        "mandatoryDelaySeconds": "172800",
+        "governance": "Existing roles only. Every request and execution must be authorized. Bootstrap administrators cannot shorten or bypass the local delay. There is no emergency bypass, new authority role or arbitrary calldata.",
+        "balanceRule": "max(on-chain balance minus every asset-specific protocol reserve, zero). Native balance is forced currency only and creates no liability. Queries never depend on pause state.",
+        "executionRule": "Exact queued asset, recipient and amount. Recheck current authority, pause, timelock and reserves, mark executed before transfer, reject reentrancy and any sender/recipient transfer delta mismatch. Reverting, false-returning, fee-on-transfer and rebasing transfers fail atomically; no-return exact transfers are supported.",
+        "operationId": "keccak256(abi.encode(address(this), block.chainid, asset, recipient, amount, salt)); cancelled and executed IDs cannot be reused",
+        "storage": {
+          "namespace": "truthbounty.storage.UntrackedAssetRecovery",
+          "slot": "0x8abeb0ad347321658a4d7cc2487ac49bf93a4796020f063a988a3b2e73a14900",
+          "linearLayout": "unchanged"
+        },
+        "deploymentBoundary": "New constructor deployments only. This does not authorize an in-place upgrade of existing custody contracts: supplemental reserve aggregates require full historical reconciliation before any separately reviewed migration. No deployment or activation is performed by this change.",
+        "consumerHandoff": {
+          "abi": "exports/abi/v2/2.0.0-2.0/manifest.json extensions[IUntrackedAssetRecovery]",
+          "existingInterfaces": "Ownership interface selectors and ERC-165 IDs remain unchanged; recovery is an additive ABI extension, not a new module.",
+          "replay": "Reduce AssetRecoveryQueuedV2 by operationId into QUEUED plus executableAt; AssetRecoveryExecutedV2 and AssetRecoveryCancelledV2 close that operation exactly once. Execution event authority is the actual current governance caller. Execution availableBalance is the post-transfer recoverable balance.",
+          "untrackedQueries": "Call recoverableBalance(asset) before queueing and again before execution; queueing does not reserve or freeze funds. Competing requests can exceed aggregate availability, but each execution independently checks live reserves and remaining balance."
+        },
+        "hosts": [
+          {
+            "source": "contracts/v2/StakeVault.sol",
+            "authority": "ADMIN_ROLE",
+            "reservedBalance": "max(total custody, protocol allocation + all locks + claimable withdrawals)",
+            "pause": "GOVERNANCE and TREASURY scopes, configured registry pause authority, and no shutdown"
+          },
+          {
+            "source": "contracts/StakeVault.sol",
+            "authority": "DEFAULT_ADMIN_ROLE",
+            "reservedBalance": "sum of unreleased bonds per token, independent of current bondToken",
+            "pause": "local pause"
+          },
+          {
+            "source": "contracts/v2/Claims.sol",
+            "authority": "DEFAULT_ADMIN_ROLE",
+            "reservedBalance": "all received bounties less actual cancellation refunds; terminal status alone releases nothing",
+            "pause": "GOVERNANCE and TREASURY scopes, configured pause authority, and no shutdown"
+          },
+          {
+            "source": "contracts/v2/FinalRewardAllocator.sol",
+            "authority": "module registry GOVERNANCE_ROLE",
+            "reservedBalance": "all funded reward pools less actual claims; allocations are a subset and are not counted twice",
+            "pause": "GOVERNANCE and TREASURY scopes, configured registry pause authority, and no shutdown"
+          },
+          {
+            "source": "contracts/performance/PullSettlementLedger.sol",
+            "authority": "DEFAULT_ADMIN_ROLE",
+            "reservedBalance": "sum of single and batch credits less both aggregate and per-reference withdrawals",
+            "pause": "GOVERNANCE and TREASURY scopes, configured pause authority, and no shutdown"
+          },
+          {
+            "source": "contracts/treasury/TreasuryManagement.sol",
+            "authority": "GOVERNANCE_ROLE with governance enabled",
+            "reservedBalance": "sum of every one of the seven treasury pools",
+            "pause": "local pause"
+          },
+          {
+            "source": "contracts/treasury/TreasuryAccounting.sol",
+            "authority": "GOVERNANCE_ROLE with governance enabled",
+            "reservedBalance": "sum of every one of the six accounting reserves",
+            "pause": "local pause"
+          },
+          {
+            "source": "contracts/insurance/InsuranceFund.sol",
+            "authority": "GOVERNANCE_ROLE with governance enabled",
+            "reservedBalance": "entire reserveToken balance is the balance-backed insurance reserve",
+            "pause": "local pause"
+          },
+          {
+            "source": "contracts/reward/RewardEngine.sol",
+            "authority": "GOVERNANCE_ROLE with governance enabled",
+            "reservedBalance": "entire balance of every current or historical configured reward token, including unallocated funding and deferred claims",
+            "pause": "local pause"
+          },
+          {
+            "source": "contracts/reward/RewardDeferralQueue.sol",
+            "authority": "attached engine GOVERNANCE_ROLE with governance enabled",
+            "reservedBalance": "zero local token liabilities; deferred entitlements remain protected at the engine",
+            "pause": "attached engine pause"
+          }
+        ]
+      }
+    }
+  ],
+  "checksum": "0x1cd58861a8f79bfeb15f1c01120c35ee2f847f2084ab33084d79323a2e4b28db"
 }

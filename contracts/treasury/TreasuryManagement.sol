@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
@@ -35,7 +37,8 @@ contract TreasuryManagement is
     ITreasuryManagement,
     AccessControl,
     ReentrancyGuard,
-    GovernanceOwnable
+    GovernanceOwnable,
+    UntrackedAssetRecovery
 {
     using SafeERC20 for IERC20;
 
@@ -914,5 +917,18 @@ contract TreasuryManagement is
         // Nothing single-pool covers it; return total as available so caller sees InsufficientPoolBalance
         uint256 totalPoolBalance = getTotalAssets();
         return (bestPool, totalPoolBalance);
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender) || !governanceEnabled) revert RecoveryAuthorityUnavailable();
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        if (paused()) revert RecoveryPaused();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        return asset == address(protocolToken) ? getTotalAssets() : 0;
     }
 }
