@@ -368,11 +368,7 @@ contract TokenomicsEngine is
     }
 
     function _allocateToTreasury(ITreasuryAccounting.TreasuryAccount account, uint256 amount) internal {
-        uint256 currentAllowance = protocolToken.allowance(address(this), address(treasuryAccounting));
-        if (currentAllowance > 0) {
-            SafeERC20.safeDecreaseAllowance(protocolToken, address(treasuryAccounting), currentAllowance);
-        }
-        SafeERC20.safeIncreaseAllowance(protocolToken, address(treasuryAccounting), amount);
+        SafeERC20.safeForceApprove(protocolToken, address(treasuryAccounting), amount);
         treasuryAccounting.depositToAccount(account, amount);
     }
 
