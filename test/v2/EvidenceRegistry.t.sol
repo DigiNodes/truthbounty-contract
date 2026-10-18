@@ -2,14 +2,90 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
+import "forge-std/StdInvariant.sol";
 import "../../contracts/v2/EvidenceRegistry.sol";
 import "../../contracts/v2/interfaces/IEvidence.sol";
 import "../../contracts/v2/interfaces/IV2Types.sol";
 import "../../contracts/mocks/MockEvidenceClaimRegistry.sol";
 
-contract EvidenceRegistryTest is Test {
+/// @title EvidenceRegistryHandler
+/// @notice Stateful invariant handler for EvidenceRegistry (PREWAVE-SC-015).
+/// @dev Mediates stateful operations during invariant campaigns. Reverted operations
+///      are caught and excluded from ghost accounting, preserving invariant consistency.
+contract EvidenceRegistryHandler is Test {
+    EvidenceRegistry public registry;
+    MockEvidenceClaimRegistry public claimRegistry;
+
+    address public admin;
+    address public contributor;
+    address public contributor2;
+
+    uint256 public ghostContributorSubmissions;
+    uint256 public ghostContributor2Submissions;
+    uint256 public ghostTotalSuccessfulSubmissions;
+    uint256 public ghostRevertedSubmissions;
+
+    uint256[] internal _committedIds;
+
+    constructor(
+        EvidenceRegistry _registry,
+        MockEvidenceClaimRegistry _claimRegistry,
+        address _admin,
+        address _contributor,
+        address _contributor2
+    ) {
+        registry = _registry;
+        claimRegistry = _claimRegistry;
+        admin = _admin;
+        contributor = _contributor;
+        contributor2 = _contributor2;
+    }
+
+    function committedIds() external view returns (uint256[] memory) {
+        return _committedIds;
+    }
+
+    function commitEvidence(uint256 claimSeed, uint256 actorSeed, uint256 salt) external {
+        address actor = (actorSeed % 2 == 0) ? contributor : contributor2;
+        uint256 claimId = bound(claimSeed, 1, 4);
+        uint256 nonce = registry.nextContributorNonce(actor);
+        bytes32 content = keccak256(abi.encode(actor, nonce, salt, block.timestamp));
+        bytes32 meta = keccak256(abi.encode("meta", actor, nonce, salt));
+
+        vm.prank(actor);
+        try registry.commitEvidence(claimId, content, meta, nonce) returns (uint256 eid) {
+            if (actor == contributor) {
+                ghostContributorSubmissions++;
+            } else {
+                ghostContributor2Submissions++;
+            }
+            ghostTotalSuccessfulSubmissions++;
+            _committedIds.push(eid);
+        } catch {
+            ghostRevertedSubmissions++;
+        }
+    }
+
+    function pause() external {
+        vm.prank(admin);
+        try registry.pause() {} catch {}
+    }
+
+    function unpause() external {
+        vm.prank(admin);
+        try registry.unpause() {} catch {}
+    }
+
+    function warpForward(uint256 secondsSeed) external {
+        uint256 delta = bound(secondsSeed, 1, 1 days);
+        vm.warp(block.timestamp + delta);
+    }
+}
+
+contract EvidenceRegistryTest is StdInvariant, Test {
     EvidenceRegistry internal registry;
     MockEvidenceClaimRegistry internal claimRegistry;
+    EvidenceRegistryHandler internal handler;
 
     address internal admin = address(this);
     address internal contributor = address(0xBEEF);
@@ -43,6 +119,9 @@ contract EvidenceRegistryTest is Test {
         vm.label(address(claimRegistry), "ClaimRegistry");
         vm.label(contributor, "contributor");
         vm.label(contributor2, "contributor2");
+
+        handler = new EvidenceRegistryHandler(registry, claimRegistry, admin, contributor, contributor2);
+        targetContract(address(handler));
     }
 
     // =============================================================
@@ -424,28 +503,189 @@ contract EvidenceRegistryTest is Test {
     function invariant_nonceEqualsContributorSubmissions() public view {
         uint256 expected = 0;
         uint256 totalClaims = 5;
+        uint256 maxPage = registry.MAX_PAGE_SIZE();
         for (uint256 cid = 1; cid <= totalClaims; ) {
+            if (!claimRegistry.claimExists(cid)) {
+                unchecked { ++cid; }
+                continue;
+            }
             uint256 cnt = registry.evidenceCount(cid);
-            (uint256[] memory ids, ) = registry.claimEvidence(cid, 0, cnt);
-            for (uint256 j = 0; j < ids.length; ) {
-                EvidenceRegistry.EvidenceCommitment memory ec = registry.getEvidenceCommitment(ids[j]);
-                if (ec.contributor == contributor) expected++;
-                unchecked { ++j; }
+            if (cnt == 0) {
+                unchecked { ++cid; }
+                continue;
+            }
+            uint256 cursor = 0;
+            uint256 read = 0;
+            while (read < cnt) {
+                uint256 limit = cnt - read;
+                if (limit > maxPage) limit = maxPage;
+                (uint256[] memory ids, uint256 nextCursor) = registry.claimEvidence(cid, cursor, limit);
+                for (uint256 j = 0; j < ids.length; ) {
+                    EvidenceRegistry.EvidenceCommitment memory ec = registry.getEvidenceCommitment(ids[j]);
+                    if (ec.contributor == contributor) expected++;
+                    unchecked { ++j; }
+                }
+                read += ids.length;
+                if (nextCursor == cursor || ids.length == 0) break;
+                cursor = nextCursor;
             }
             unchecked { ++cid; }
         }
         assertEq(registry.nextContributorNonce(contributor), expected);
+        if (address(handler) != address(0)) {
+            assertEq(registry.nextContributorNonce(contributor), handler.ghostContributorSubmissions());
+        }
     }
 
     function invariant_evidenceIdIsDeterministic() public {
-        bytes32 md = keccak256(META_A);
-        if (registry.evidenceCount(CLAIM_A) < registry.MAX_EVIDENCE_PER_CLAIM()) {
-            uint256 nonce = registry.nextContributorNonce(contributor);
-            uint256 preId = registry.computeEvidenceId(CLAIM_A, contributor, CONTENT_B, md, nonce);
-            vm.prank(contributor);
-            uint256 postId = registry.commitEvidence(CLAIM_A, CONTENT_B, md, nonce);
-            assertEq(preId, postId);
+        // 1. All existing commitments stored in the registry match computeEvidenceId deterministically
+        uint256 totalClaims = 5;
+        uint256 maxPage = registry.MAX_PAGE_SIZE();
+        for (uint256 cid = 1; cid <= totalClaims; ) {
+            if (!claimRegistry.claimExists(cid)) {
+                unchecked { ++cid; }
+                continue;
+            }
+            uint256 cnt = registry.evidenceCount(cid);
+            if (cnt == 0) {
+                unchecked { ++cid; }
+                continue;
+            }
+            uint256 cursor = 0;
+            uint256 read = 0;
+            while (read < cnt) {
+                uint256 limit = cnt - read;
+                if (limit > maxPage) limit = maxPage;
+                (uint256[] memory ids, uint256 nextCursor) = registry.claimEvidence(cid, cursor, limit);
+                for (uint256 j = 0; j < ids.length; ) {
+                    uint256 eid = ids[j];
+                    EvidenceRegistry.EvidenceCommitment memory ec = registry.getEvidenceCommitment(eid);
+                    uint256 expectedId = registry.computeEvidenceId(
+                        ec.claimId, ec.contributor, ec.contentDigest, ec.metadataDigest, ec.nonce
+                    );
+                    assertEq(eid, expectedId, "Stored evidenceId must match deterministic computation");
+                    assertTrue(
+                        registry.verifyEvidenceCommitment(
+                            eid, ec.claimId, ec.contributor, ec.contentDigest, ec.metadataDigest, ec.nonce
+                        ),
+                        "Stored evidence must verify against computeEvidenceId"
+                    );
+                    unchecked { ++j; }
+                }
+                read += ids.length;
+                if (nextCursor == cursor || ids.length == 0) break;
+                cursor = nextCursor;
+            }
+            unchecked { ++cid; }
         }
+
+        // 2. Pre-computed ID equals post-committed ID for new unique submissions when active
+        if (!registry.paused() && registry.evidenceCount(CLAIM_A) < registry.MAX_EVIDENCE_PER_CLAIM()) {
+            uint256 nonce = registry.nextContributorNonce(contributor);
+            bytes32 uniqueContent = keccak256(abi.encode(CONTENT_B, nonce));
+            bytes32 md = keccak256(META_A);
+            uint256 preId = registry.computeEvidenceId(CLAIM_A, contributor, uniqueContent, md, nonce);
+            vm.prank(contributor);
+            uint256 postId = registry.commitEvidence(CLAIM_A, uniqueContent, md, nonce);
+            assertEq(preId, postId, "Pre-computed ID must match post-commit ID");
+            assertTrue(
+                registry.verifyEvidenceCommitment(postId, CLAIM_A, contributor, uniqueContent, md, nonce),
+                "Post-commitment verification failed"
+            );
+        }
+    }
+
+    // =============================================================
+    // PREWAVE-SC-015 REGRESSION TESTS & COUNTEREXAMPLE REPRODUCTIONS
+    // =============================================================
+
+    /// @notice Reproduces the duplicate evidence counterexample that broke invariant_evidenceIdIsDeterministic
+    ///         when static content was reused across consecutive nonce submissions.
+    function test_regression_persistedCounterexample_evidenceIdDuplicate_reproducedAndHandled() public {
+        bytes32 md = keccak256(META_A);
+        uint256 nonce0 = registry.nextContributorNonce(contributor);
+        vm.prank(contributor);
+        uint256 id0 = registry.commitEvidence(CLAIM_A, CONTENT_B, md, nonce0);
+        assertTrue(id0 != 0);
+
+        // Counterexample behavior: Submitting identical (CLAIM_A, contributor, CONTENT_B, md) with nonce1 reverts
+        uint256 nonce1 = registry.nextContributorNonce(contributor);
+        bytes32 dedupKey = keccak256(abi.encode(CLAIM_A, contributor, CONTENT_B, md));
+        vm.prank(contributor);
+        vm.expectRevert(abi.encodeWithSelector(EvidenceRegistry.DuplicateEvidence.selector, dedupKey));
+        registry.commitEvidence(CLAIM_A, CONTENT_B, md, nonce1);
+
+        // Correct behavior: Unique content per nonce derives deterministic, non-colliding evidence IDs
+        bytes32 uniqueContent1 = keccak256(abi.encode(CONTENT_B, nonce1));
+        uint256 preId1 = registry.computeEvidenceId(CLAIM_A, contributor, uniqueContent1, md, nonce1);
+        vm.prank(contributor);
+        uint256 postId1 = registry.commitEvidence(CLAIM_A, uniqueContent1, md, nonce1);
+        assertEq(preId1, postId1);
+        assertTrue(registry.verifyEvidenceCommitment(postId1, CLAIM_A, contributor, uniqueContent1, md, nonce1));
+    }
+
+    /// @notice Reproduces the zero-limit and non-existent claim counterexample that broke
+    ///         invariant_nonceEqualsContributorSubmissions.
+    function test_regression_persistedCounterexample_nonceZeroLimitAndUncreatedClaim() public {
+        // Counterexample 1: Calling claimEvidence with limit = 0 reverts with InvalidPageLimit(0)
+        vm.expectRevert(abi.encodeWithSelector(EvidenceRegistry.InvalidPageLimit.selector, 0));
+        registry.claimEvidence(CLAIM_A, 0, 0);
+
+        // Counterexample 2: Calling claimEvidence on non-existent claim 5 reverts with InvalidClaim(5)
+        assertFalse(claimRegistry.claimExists(5));
+        vm.expectRevert(abi.encodeWithSelector(EvidenceRegistry.InvalidClaim.selector, 5));
+        registry.claimEvidence(5, 0, 1);
+
+        // Safe accounting: When count is 0, invariant loops skip zero-limit queries, preserving accurate nonce accounting
+        assertEq(registry.evidenceCount(CLAIM_A), 0);
+        assertEq(registry.nextContributorNonce(contributor), 0);
+    }
+
+    /// @notice Regression test: Finalized claims reject new evidence submissions fail-closed,
+    ///         reverted operations do not increment contributor nonces, and historical pages remain readable.
+    function test_regression_finalizedClaimRejectsEvidenceAndPreservesHistoricalReads() public {
+        // Commit evidence on CLAIM_B before finalization
+        bytes32 md = keccak256(META_A);
+        vm.prank(contributor);
+        uint256 eid = registry.commitEvidence(CLAIM_B, CONTENT_A, md, 0);
+        assertEq(registry.nextContributorNonce(contributor), 1);
+
+        // Finalize CLAIM_B
+        claimRegistry.setClaimStatus(CLAIM_B, IClaimRegistry.ClaimStatus.VerifiedTrue);
+
+        // Attempt submission to finalized claim reverts
+        vm.prank(contributor);
+        vm.expectRevert(abi.encodeWithSelector(
+            EvidenceRegistry.ClaimFinalized.selector,
+            CLAIM_B,
+            IClaimRegistry.ClaimStatus.VerifiedTrue
+        ));
+        registry.commitEvidence(CLAIM_B, CONTENT_B, md, 1);
+
+        // Contributor nonce is untouched after revert
+        assertEq(registry.nextContributorNonce(contributor), 1);
+
+        // Historical evidence remains readable
+        (uint256[] memory page, ) = registry.claimEvidence(CLAIM_B, 0, 10);
+        assertEq(page.length, 1);
+        assertEq(page[0], eid);
+    }
+
+    /// @notice Regression test: Page limits enforce strict bounds [1, MAX_PAGE_SIZE].
+    function test_regression_invalidPageLimits_failClosed() public {
+        vm.expectRevert(abi.encodeWithSelector(EvidenceRegistry.InvalidPageLimit.selector, 0));
+        registry.claimEvidence(CLAIM_A, 0, 0);
+
+        uint256 max = registry.MAX_PAGE_SIZE();
+        vm.expectRevert(abi.encodeWithSelector(EvidenceRegistry.InvalidPageLimit.selector, max + 1));
+        registry.claimEvidence(CLAIM_A, 0, max + 1);
+
+        // Boundaries 1 and MAX_PAGE_SIZE are accepted without revert
+        (uint256[] memory pageMin, ) = registry.claimEvidence(CLAIM_A, 0, 1);
+        assertEq(pageMin.length, 0);
+
+        (uint256[] memory pageMax, ) = registry.claimEvidence(CLAIM_A, 0, max);
+        assertEq(pageMax.length, 0);
     }
 }
 
