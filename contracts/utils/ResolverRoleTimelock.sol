@@ -41,7 +41,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     event ResolverRoleChangeExecuted(bytes32 indexed operationId, address indexed account, bool grant);
     event ResolverRoleChangeExpired(bytes32 indexed operationId, address indexed account, bool grant);
 
-    error ResolverRoleChangeRequiresTimelock8);
+    error ResolverRoleChangeRequiresTimelock();
     error ResolverRoleChangeAlreadyPending();
     error ResolverRoleChangeNotPending();
     error ResolverRoleChangeNotReady(uint256 readyAt);

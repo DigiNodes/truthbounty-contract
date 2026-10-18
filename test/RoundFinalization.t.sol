@@ -294,7 +294,7 @@ contract RoundFinalizationTest is Test {
     // 8. Provisional guard -- pure assertFinal()
     // =========================================================================
 
-    function test_assertFinal_revertsOnProvisional() public view {
+    function test_assertFinal_revertsOnProvisional() public {
         RoundFinalization.FinalizationRecord memory r = _finalize(700 ether, 300 ether, 3, false);
         assertTrue(r.isProvisional);
         vm.expectRevert(RoundFinalization.ProvisionalNotFinal.selector);

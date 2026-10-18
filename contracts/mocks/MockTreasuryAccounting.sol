@@ -87,7 +87,7 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
         return stakingReserve + slashedTreasury;
     }
 
-    function getTrackedCustody() external view returns (uint256) {
+    function getTrackedCustody() public view returns (uint256) {
         return stakingReserve + slashedTreasury;
     }
 
@@ -98,5 +98,34 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
 
     function reconcile(uint256 observedBalance) external view returns (int256 delta) {
         delta = int256(observedBalance) - int256(getTrackedCustody());
+    }
+
+    function recordDonation(TreasuryAccount /*targetAccount*/, uint256 amount) external {
+        totalDonationRecorded += amount;
+    }
+
+    function recordUnexplainedDelta(
+        int256 /*delta*/,
+        TreasuryAccount /*recoveryAccount*/,
+        string calldata /*reason*/
+    ) external {}
+
+    function getConservationComponents() external view returns (ConservationComponents memory) {
+        return ConservationComponents({
+            trackedPrincipal: stakingReserve,
+            trackedRewards: 0,
+            trackedFees: totalFeeRecorded,
+            trackedDonations: 0,
+            unexplainedDelta: 0,
+            totalTrackedCustody: stakingReserve + slashedTreasury
+        });
+    }
+
+    function getTotalTrackedCustody() external view returns (uint256) {
+        return stakingReserve + slashedTreasury;
+    }
+
+    function getUnexplainedDelta() external pure returns (int256) {
+        return 0;
     }
 }

@@ -36,21 +36,21 @@ interface IDisputes is IV2Module {
     /// @param reasonHash Digest of the reason; raw reason data remains off-chain.
     /// @param evidence Opaque evidence commitment or reference bytes.
     /// @return disputeId Newly assigned dispute identifier.
-    function openDispute(uint256 claimId, bytes32 reasonHash, bytes caldata evidence) external returns (uint256 disputeId);
+    function openDispute(uint256 claimId, bytes32 reasonHash, bytes calldata evidence) external returns (uint256 disputeId);
 
     /// @notice Resolves or escalates a dispute under the resolver authority.
     /// @dev Must enforce the configured transition graph, resolver role, and evidence/decision validation; invalid decisions leave state unchanged.
     /// @param disputeId Dispute to update.
     /// @param status New permitted status.
     /// @param decision Opaque decision payload or commitment; the EVM does not infer its meaning.
-    function resolveDispute(uint256 disputeId, IV2Types.DisputeStatus status, bytes caldata decision) external;
+    function resolveDispute(uint256 disputeId, IV2Types.DisputeStatus status, bytes calldata decision) external;
 
     /// @notice Rolls an appeal into the next round, preserving principal and custody.
     /// @dev The appeal window closes inclusively at the round's deadline. Rollover inputs are bounded; an appeal at `block.timestamp > deadline` fails with the canonical expired error. Principal carried into the next round must equal the principal of the closed round, and custody must remain with the dispute contract.
     /// @param disputeId Dispute to appeal.
     /// @param evidence Opaque evidence commitment or reference bytes for the new round.
     /// @return newRound Newly opened appeal round identifier.
-    function appeal(uint256 disputeId, bytes caldata evidence) external returns (uint256 newRound);
+    function appeal(uint256 disputeId, bytes calldata evidence) external returns (uint256 newRound);
 
     /// @notice Reads a dispute record.
     /// @param disputeId Dispute to inspect.

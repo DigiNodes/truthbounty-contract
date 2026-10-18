@@ -85,7 +85,7 @@ contract V2SC133EventOrderingTest is Test {
         governance.execute(correlationId, 1, 0);
 
         vm.expectRevert(abi.encodeWithSelector(CorrelatedFixtureModule.UnauthorizedCaller.selector, address(this)));
-        claims.finalize(correlationId, 1, false);
+        claims.finalize(correlationId, 1, 0);
         assertFalse(governance.consumed(correlationId));
     }
 

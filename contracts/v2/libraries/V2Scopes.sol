@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {V2OperationIds} from "./V2OperationIds.sol";
-
 /// @title V2Scopes
 /// @notice Canonical emergency-control scope manifest for the TruthBounty V2 protocol.
 /// @dev Every protected canonical mutation declares exactly one scope from this library and

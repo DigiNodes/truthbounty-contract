@@ -177,7 +177,7 @@ library PauseMatrix {
     function operationId(string memory moduleName, string memory signature)
         internal
         pure
-        returns (bytes32 operationId_)
+        returns (bytes32 operationId)
     {
         // Fail closed: unknown operations must not receive an ID.
         classify(moduleName, signature);

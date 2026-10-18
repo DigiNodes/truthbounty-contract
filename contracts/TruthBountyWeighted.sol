@@ -336,6 +336,10 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
         ResolverRoleTimelock.revokeRole(role, account);
     }
 
+    function renounceRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.renounceRole(role, account);
+    }
+
     // ============ Core Functions ============
 
     /**

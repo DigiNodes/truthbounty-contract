@@ -682,7 +682,7 @@ struct FrozenVerificationRecord {
     uint256 effectiveWeight;
 }
 
-interface IVerificationRoundManager {
+interface IFrozenVerificationRoundManager {
     /// @notice Returns the number of frozen verification records for a round/claim.
     function frozenRecordCount(
         uint256 roundId,
@@ -764,7 +764,7 @@ contract DeterministicAggregationEngine {
     uint256 public constant MAX_PARTICIPANTS = 256;
 
     /// @notice Immutable round manager used to get frozen records.
-    IVerificationRoundManager public immutable roundManager;
+    IFrozenVerificationRoundManager public immutable roundManager;
 
     mapping(
         uint256 => mapping(uint256 => AggregationRecord)
@@ -777,7 +777,7 @@ contract DeterministicAggregationEngine {
         private _aggregated;
 
     constructor(
-        IVerificationRoundManager roundManager_
+        IFrozenVerificationRoundManager roundManager_
     ) {
         if (address(roundManager_) == address(0)) {
             revert InvalidRoundManager();

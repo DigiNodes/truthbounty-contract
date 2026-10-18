@@ -52,7 +52,7 @@ library ProtocolExecutionBounds {
     uint256 internal constant MAX_OPEN_CLAIMS_PER_CREATOR = 25;
 
     /// @notice Default minimum verifier stake to reject dust griefing (V2-SC-105).
-    uint256 internal constant DEFAULT_MIN_STKE_AMOUNT = 1 ether;
+    uint256 internal constant DEFAULT_MIN_STAKE_AMOUNT = 1 ether;
 
     /// @notice Default minimum claim bounty / reward (V2-SC-105).
     uint256 internal constant DEFAULT_MIN_BOUNTY_AMOUNT = 1 ether;
@@ -67,7 +67,7 @@ library ProtocolExecutionBounds {
     /// @notice Maximum amplification ratio in BPS that may be emitted.
     ///          Chosen so that `totalOperationsExecuted * MAX_AMP' fits in uint64
     ///          without overflow for any realistic stress run.
-    uint64 internal constant MAX_AMP' = 10000000; // 100000.00x ceiling
+    uint64 internal constant MAX_AMP_BPS = 10000000; // 100000.00x ceiling
 
     /// @notice Numerator denominator for the amplification ratio in BPS.
     ///          ratio_bps = (observed * 10000) / baseline
@@ -77,23 +77,19 @@ library ProtocolExecutionBounds {
     ///          Bounds the numerator of the amplification ratio: observed <= MAX_OPS.
     uint64 internal constant MAX_STRESS_OPS = 1_000_000_000;
 
-    /// @notice Maximum value of the `uint64` x-axis of the amplification metric.
-    ///          This is the largest value that may be emitted as `maxAmplificationRatioBps`.
-    uint64 internal constant MAX_AMP'_BPS = MAX_AMP';
-
     /// @notice Returns true if `value` is a valid amplification ratio in BPS.
     function isValidAmpBps(uint64 value) internal pure returns (bool) {
-        return value <= MAX_AMP'_BPS;
+        return value <= MAX_AMP_BPS;
     }
 
     /// @notice Computes the amplification ratio in BPS from observed and baseline counts.
-    ///          Reverts if the result would exceed `MAX_AMP'_BPS` or if `baseline` is zero.
+    ///          Reverts if the result would exceed `MAX_AMP_BPS` or if `baseline` is zero.
     function computeAmpBps(uint64 observed, uint64 baseline) internal pure returns (uint64) {
         require(baseline > 0, "PROTOCOL: baseline zero");
         require(observed <= MAX_STRESS_OPS, "PROTOCOL: observed out of bounds");
         // uint256 intermediate avoids overflow on `observed * AMP_BPS_DENOMINATOR`.
         uint256 raw = (uint256(observed) * uint256(AMP_BPS_DENOMINATOR)) / uint256(baseline);
-        require(raw <= uint256(MAX_AMP'_BPS), "PROTOCOL: amp exceeds max");
+        require(raw <= uint256(MAX_AMP_BPS), "PROTOCOL: amp exceeds max");
         return uint64(raw);
     }
 }

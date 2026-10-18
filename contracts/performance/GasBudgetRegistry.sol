@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ICriticalPathGasBudgets} from "./ICriticalPathGasBudgets.sol";
+import {ICriticalPathGasBudgets, MAX_AMPLIFICATION_RATIO_BPS} from "./ICriticalPathGasBudgets.sol";
 import {ProtocolExecutionBounds} from "./ProtocolExecutionBounds.sol";
 
 /**
@@ -135,5 +135,11 @@ contract GasBudgetRegistry is ICriticalPathGasBudgets, AccessControl {
         string calldata boundDescription
     ) external onlyRole(BUDGET_ADMIN_ROLE) {
         _set(operation, maxGasAtMaxConfig, boundDescription);
+    }
+
+    /// @inheritdoc ICriticalPathGasBudgets
+    function validateAmplificationRatioBps(uint256 ratioBps) external pure override returns (uint256 normalizedBps) {
+        if (ratioBps > MAX_AMPLIFICATION_RATIO_BPS) revert("Amplification ratio exceeds maximum");
+        return ratioBps;
     }
 }

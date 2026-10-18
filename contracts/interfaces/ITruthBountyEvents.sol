@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// Upper bound for StressTestCompleted.maxAmplificationRatioBps (100_000 bps == 1000x amplification).
+uint256 constant MAX_AMPLIFICATION_RATIO_BPS = 100_000;
+
 /// @title ITruthBountyEvents
 /// @notice Canonical, versioned event surface for TruthBounty protocol indexers (Specification §20).
 /// @dev Events are public protocol APIs. Implementations should emit events only
@@ -22,10 +25,6 @@ interface ITruthBountyEvents {
         uint64 timestamp,
         uint16 version
     );
-
-    /// @notice Upper bound for `StressTestCompleted.maxAmplificationRatioBps`.
-    /// @dev 100_000 bps == 1000x amplification. Chosen to fit uint256 with no overflow.
-    uint256 constant MAX_AMPLIFICATION_RATIO_BPS = 100_000;
 
     // -------------------------------------------------------------------------
     // 1. Claims

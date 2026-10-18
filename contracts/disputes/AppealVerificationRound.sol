@@ -94,15 +94,6 @@ contract AppealVerificationRound is
     error AppealRoundNotOpen(uint256 claimId);
     error AppealRoundExpired(uint256 claimId, uint256 currentTimestamp, uint256 deadline);
     error AppealRoundNotExpired(uint256 claimId, uint256 currentTimestamp, uint256 deadline);
-    error InvalidMaxAppealRounds(uint256 maxAppealRounds);
-    error InvalidAppealBond(uint256 appealBond);
-    error InvalidBondEscalation(uint256 escalationBps);
-    error InvalidMaxAppealBond(uint256 maxAppealBond, uint256 appealBond);
-    error InvalidMaxVotersPerRound(uint256 maxVotersPerRound);
-    error AppealPathTerminal(uint256 claimId);
-    error MaxAppealRoundsExceeded(uint256 claimId, uint256 nextRound, uint256 maxAppealRounds);
-    error BondNotConfigured();
-    error InsufficientBondAllowance();
     error InsufficientStake(uint256 provided, uint256 requiredStake);
     error AlreadyVotedInAppeal(uint256 claimId, address verifier);
     error IndexOutOfBounds();
@@ -704,32 +695,15 @@ contract AppealVerificationRound is
         return vault.getLock(_rounds[claimId].bondLockId);
     }
 
-    // =========================================================================
-    // Internal Bond Math
-    // =========================================================================
-
-    /**
-     * @dev Computes the escalating bond for a 1-based round index using overflow-safe
-     *      mulDiv. `requiredBond = min(maxAppealBond, appealBond * esc^(roundIndex-1) / 1e4)`.
-     *      Escalation is flat-safe (10000 bps) and capped by `maxAppealBond`.
-     */
-    function _requiredBondForRound(AppealRoundConfig memory cfg, uint256 roundIndex) internal pure returns (uint256) {
-        if (roundIndex == 0) return 0;
-        uint256 bond = cfg.appealBond;
-        if (bond >= cfg.maxAppealBond) return cfg.maxAppealBond;
-        for (uint256 i = 1; i < roundIndex; i++) {
-            bond = Math.mulDiv(bond, cfg.appealBondEscalationBps, BPS_DENOMINATOR);
-            if (bond >= cfg.maxAppealBond) return cfg.maxAppealBond;
-        }
-        return bond;
+    function isAppealOpenAt(uint256 claimId, uint256 timestamp) external view override returns (bool) {
+        AppealRound storage r = _rounds[claimId];
+        return r.status == AppealRoundStatus.OPEN && timestamp < r.deadline;
     }
 
-    /**
-     * @dev Namespaced, collision-free vault lock id: unique per (claimId, roundIndex) and
-     *      disjoint from {DisputeResolution}'s dispute-id locks in the same vault.
-     */
-    function _appealLockId(uint256 claimId, uint256 roundIndex) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked("V2_APPEAL_BOND", claimId, roundIndex)));
+    function appealDeadline(uint256 claimId) external view override returns (uint256) {
+        AppealRound storage r = _rounds[claimId];
+        if (r.openedAt == 0) revert ClaimDoesNotExist(claimId);
+        return r.deadline;
     }
 
     // =========================================================================

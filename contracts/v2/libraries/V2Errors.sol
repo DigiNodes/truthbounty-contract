@@ -187,8 +187,7 @@ library V2Errors {
     /// @param custody Tracked principal + rewards + fees + donations (accounted custody).
     /// @param obligations Sum of recorded obligations (principal owed to claimants/stakers).
     /// @param balance Raw on-chain token balance observed by the vault.
-    /// @param unexplainedDeltas Non-negative residual not attributable to any tracked bucket.
-    error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance, uint256 unexplainedDeltas);
+    error ConservationInvariantViolation(address asset, uint256 custody, uint256 obligations, uint256 balance);
 
     /// @notice Settlement outcome already recorded for this claim-round.
     /// @param claimId Settlement claim.
@@ -279,9 +278,7 @@ library V2Errors {
     /// @param asset Asset whose accounting failed reconciliation.
     /// @param custody Accounted custody.
     /// @param obligations Sum of recorded obligations.
-    /// @param balance Raw on-chain token balance observed by the vault.
-    /// @param unexplainedDeltas Non-negative residual not attributable to any tracked bucket.
-    error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations, uint256 balance, uint256 unexplainedDeltas);
+    error ObligationsExceedCustody(address asset, uint256 custody, uint256 obligations);
 
     /// @notice On-chain balance exceeds tracked custody by an unexplained, non-governed delta.
     /// @dev Raised when a direct transfer, rebase, or hostile token inflates the raw balance
@@ -597,6 +594,9 @@ library V2Errors {
     /// @dev Delimiter-joined records are only unambiguous when no field can contain the
     ///      delimiter; otherwise field boundaries shift on read-back.
     error AttestationFieldContainsDelimiter();
+
+    /// @notice Submodule provenance validation failed (PREWAVE-SC-067).
+    error InvalidSubmoduleProvenance();
 
     // =========================================================================
     // Precision & Arithmetic Errors (V2-SC-100)

@@ -33,7 +33,7 @@ contract LegacyEventExclusionTest is Test {
         "VoteCast(uint256,address,bool,uint256)",  // Legacy TruthBounty.sol
         "ClaimSettled(uint256,bool,uint256,uint256,uint256,uint256)",  // Legacy settlement
         "RewardsDistributed(uint256,address,uint256)",  // Legacy rewards
-        "RewardsClaimed(address,uint256)",  // Without proper correlation ID
+        "RewardsClaimed(address,uint256)"  // Without proper correlation ID
     ];
     
     // =========================================================================
@@ -54,7 +54,7 @@ contract LegacyEventExclusionTest is Test {
         "StakeCustody",
         "GovernanceOwnable",
         "GovernanceHooks",
-        "EmergencyControls",
+        "EmergencyControls"
     ];
     
     // =========================================================================
@@ -77,7 +77,7 @@ contract LegacyEventExclusionTest is Test {
         }
     }
     
-    function test_NoEventsFromDeprecatedContracts() public view {
+    function test_NoEventsFromDeprecatedContracts() public {
         // Ensure deprecated contracts are not in deployment
         
         string[] memory deprecatedContracts = new string[](3);
@@ -131,15 +131,21 @@ contract LegacyEventExclusionTest is Test {
         
         // Correct: RoleGrantedV1(role, account, sender, timestamp, version)
         // Banned: RoleGranted(role, account)  // Who granted it?
-        
+        string[] memory fields = new string[](5);
+        fields[0] = "role";
+        fields[1] = "account";
+        fields[2] = "sender";
+        fields[3] = "timestamp";
+        fields[4] = "version";
+
         _verifyEventHasFields(
             "RoleGrantedV1",
-            ["role", "account", "sender", "timestamp", "version"]
+            fields
         );
         
         _verifyEventHasFields(
             "RoleRevokedV1",
-            ["role", "account", "sender", "timestamp", "version"]
+            fields
         );
     }
     
@@ -171,7 +177,7 @@ contract LegacyEventExclusionTest is Test {
         _requireVersionSuffix("EmergencyPauseRecoveredV1");
     }
     
-    function test_ModuleEventsWithoutVersionAllowed() public view {
+    function test_ModuleEventsWithoutVersionAllowed() public {
         // Module-specific events don't need version suffix if not canonical
         
         // Allowed without version:
@@ -304,18 +310,18 @@ contract LegacyEventExclusionTest is Test {
     // Internal Helpers
     // =========================================================================
     
-    function _searchForEventInV2Contracts(string memory signature) internal view returns (bool) {
+    function _searchForEventInV2Contracts(string memory signature) internal returns (bool) {
         // In production, scan compiled artifacts for event signature
         emit log_named_string("Searching for banned event", signature);
         return false;  // Placeholder
     }
     
-    function _verifyEventHasActor(string memory eventName, string memory actorField) internal view {
+    function _verifyEventHasActor(string memory eventName, string memory actorField) internal {
         emit log_named_string("Verifying actor field", actorField);
         emit log_named_string("In event", eventName);
     }
     
-    function _verifyEventHasFields(string memory eventName, string[] memory fields) internal view {
+    function _verifyEventHasFields(string memory eventName, string[] memory fields) internal {
         emit log_named_string("Verifying fields in event", eventName);
         for (uint256 i = 0; i < fields.length; i++) {
             emit log_named_string("Field", fields[i]);
@@ -330,7 +336,7 @@ contract LegacyEventExclusionTest is Test {
         // Would check last chars match pattern V[0-9]+
     }
     
-    function _verifyEventHasField(string memory eventName, string memory fieldName) internal view {
+    function _verifyEventHasField(string memory eventName, string memory fieldName) internal {
         emit log_named_string("Verifying field", fieldName);
         emit log_named_string("In event", eventName);
     }
@@ -347,13 +353,13 @@ contract LegacyEventExclusionTest is Test {
         return events;
     }
     
-    function _getIndexedFieldCount(string memory eventName) internal pure returns (uint256) {
+    function _getIndexedFieldCount(string memory eventName) internal returns (uint256) {
         // Extract indexed field count from event signature
         emit log_named_string("Checking indexed count", eventName);
         return 2;  // Placeholder
     }
     
-    function _verifyFieldIndexed(string memory eventName, string memory fieldName) internal view {
+    function _verifyFieldIndexed(string memory eventName, string memory fieldName) internal {
         emit log_named_string("Verifying indexed field", fieldName);
         emit log_named_string("In event", eventName);
     }

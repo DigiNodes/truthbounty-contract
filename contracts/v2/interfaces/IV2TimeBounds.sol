@@ -96,4 +96,9 @@ interface IV2TimeBounds {
     /// @param account The address restricted to single mutation per block.
     /// @param blockNumber The current block number where an action already executed.
     error SameBlockActionBlocked(address account, uint256 blockNumber);
+
+    /// @notice Thrown when appeal rollover skew exceeds the maximum allowable threshold.
+    /// @param skew The observed rollover skew in seconds.
+    /// @param maxSkew The maximum permissible rollover skew in seconds.
+    error RolloverSkewExceeded(uint64 skew, uint64 maxSkew);
 }

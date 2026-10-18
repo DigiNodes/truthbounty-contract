@@ -371,6 +371,10 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
         ResolverRoleTimelock.revokeRole(role, account);
     }
 
+    function renounceRole(bytes32 role, address account) public override(AccessControl, ResolverRoleTimelock) {
+        ResolverRoleTimelock.renounceRole(role, account);
+    }
+
     function _initializeDefaultOffences() internal {
         // Verification Misconduct (base 20% slash, 10% rep, 1 day suspension)
         offenceConfigs[OFFENCE_VERIFICATION_FRAUD] = OffenceConfig(50, 30, 7 days, false, true);

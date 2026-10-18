@@ -26,11 +26,11 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
 
     // ============= ROLES =============
 
-    bytes32 public constant ADMIN_ROLE = keccak(256("ADMIN_ROLE"));
-    bytes32 public constant TREASURY_MANAGER_ROLE = keccak(256("TREASURY_MANAGER_ROLE"));
-    bytes32 public constant STAKING_CONTRACT_ROLE = keccak(256("STAKING_CONTRACT_ROLE"));
-    bytes32 public constant REWARD_ENGINE_ROLE = keccak(256("REWARD_ENGINE_ROLE"));
-    bytes32 public constant SLASHING_CONTRACT_ROLE = keccak(256("SLASHING_CONTRACT_ROLE"));
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
+    bytes32 public constant STAKING_CONTRACT_ROLE = keccak256("STAKING_CONTRACT_ROLE");
+    bytes32 public constant REWARD_ENGINE_ROLE = keccak256("REWARD_ENGINE_ROLE");
+    bytes32 public constant SLASHING_CONTRACT_ROLE = keccak256("SLASHING_CONTRACT_ROLE");
 
     // ============= ACCOUNTING CATEGORIES =============
 
@@ -219,7 +219,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
      * @param targetAccount The treasury account to credit
      * @param amount Amount of tokens to deposit
      */
-    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external nonRentrant {
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external nonReentrant {
         if (amount == 0) revert InsufficientAccountBalance(targetAccount, 0, 0);
         if (targetAccount == TreasuryAccount.EXTERNAL) revert InvalidAccountTransfer(TreasuryAccount.EXTERNAL, targetAccount);
 
@@ -320,7 +320,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
         TreasuryAccount sourceAccount,
         address recipient,
         uint256 amount
-    ) external nonRentrant onlyRole(TREASURY_MANAGER_ROLE) {
+    ) external nonReentrant onlyRole(TREASURY_MANAGER_ROLE) {
         if (recipient == address(0)) revert InvalidAddress(recipient);
         if (sourceAccount == TreasuryAccount.EXTERNAL) revert InvalidAccountTransfer(sourceAccount, TreasuryAccount.EXTERNAL);
         if (amount == 0) revert InsufficientAccountBalance(sourceAccount, 0, _accountBalances[uint256(sourceAccount)]);
@@ -743,7 +743,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
     }
 
     /**
-     * @dv Sync the tracked unexplained delta from the live balance. Called at
+     * @dev Sync the tracked unexplained delta from the live balance. Called at
      *      every accounting boundary to keep the conservation equation exact.
      */
     function _syncUnexplainedDelta() internal {
@@ -771,7 +771,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
      * @dev Generate a unique transaction ID
      */
     function _generateTransactionId() internal view returns (bytes32) {
-        return keccak(abi.encodePacked(block.timestamp, block.number, transactionCount++, msg.sender));
+        return keccak256(abi.encodePacked(block.timestamp, block.number, transactionCount, msg.sender));
     }
 
     /**
@@ -829,7 +829,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
     /**
      * @dev Hook called after governance actions to re-validate invariants
      */
-    function _afterGovernanceAction() internal override {
+    function _afterGovernanceAction() internal {
         _syncUnexplainedDelta();
     }
 

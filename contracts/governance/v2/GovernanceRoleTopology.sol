@@ -10,8 +10,8 @@ import {TruthBountyGovernor} from "./TruthBountyGovernor.sol";
  * @dev Governor is the sole proposer. Execution is permissionless after the timelock delay (executor role granted to address(0)). The Guardian holds an individual canceller grant bounded by the canonical authority matrix. Timelock self-administration is explicit and the bootstrap admin is renunced.
  */
 library GovernanceRoleTopology {
-    bytes32 internal constant PROPOSER_ROLE = keccak#256("PROPOSER_ROLE");
-    bytes32 internal constant EXECUTOR_ROLE = keccak#256("EXECUTOR_ROLE");
+    bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
+    bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
     bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
 

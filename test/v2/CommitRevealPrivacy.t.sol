@@ -30,7 +30,7 @@ contract CommitRevealPrivacyTest is Test {
 
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
-    address internal eve = address(0xEvE);
+    address internal eve = address(0xEFE);
 
     bytes32 internal constant CANONICAL_RELEASE = V2CommitRevealReplayDomain.CANONICAL_RELEASE_VERSION;
     uint256 internal constant CANONICAL_CHAIN_ID = 10; // Optimism Mainnet
@@ -145,216 +145,218 @@ contract CommitRevealPrivacyTest is Test {
         assertEq(harness.typehash(), expected, "Typehash definition mismatch");
     }
 
-    function testFuzz_InjectivityAcrossAllTenDimensions(
-        uint256 chainId1,
-        uint256 chainId2,
-        bytes32 release1,
-        bytes32 release2,
-        address contract1,
-        address contract2,
-        uint256 claimId1,
-        uint256 claimId2,
-        uint256 roundId1,
-        uint256 roundId2,
-        address voter1,
-        address voter2,
-        uint8 decision1,
-        uint8 decision2,
-        bytes32 rationale1,
-        bytes32 rationale2,
-        bytes32 salt1,
-        bytes32 salt2,
-        uint64 deadline1,
-        uint64 deadline2
-    ) public view {
-        vm.assume(chainId1 != 0 && chainId2 != 0);
-        vm.assume(release1 != bytes32(0) && release2 != bytes32(0));
-        vm.assume(contract1 != address(0) && contract2 != address(0));
-        vm.assume(claimId1 != 0 && claimId2 != 0);
-        vm.assume(roundId1 != 0 && roundId2 != 0);
-        vm.assume(voter1 != address(0) && voter2 != address(0));
-        vm.assume(salt1 != bytes32(0) && salt2 != bytes32(0));
-        vm.assume(deadline1 != 0 && deadline2 != 0);
+    struct FuzzInjectivityParams {
+        uint256 chainId1;
+        uint256 chainId2;
+        bytes32 release1;
+        bytes32 release2;
+        address contract1;
+        address contract2;
+        uint256 claimId1;
+        uint256 claimId2;
+        uint256 roundId1;
+        uint256 roundId2;
+        address voter1;
+        address voter2;
+        uint8 decision1;
+        uint8 decision2;
+        bytes32 rationale1;
+        bytes32 rationale2;
+        bytes32 salt1;
+        bytes32 salt2;
+        uint64 deadline1;
+        uint64 deadline2;
+    }
+
+    function testFuzz_InjectivityAcrossAllTenDimensions(FuzzInjectivityParams memory p) public view {
+        vm.assume(p.chainId1 != 0 && p.chainId2 != 0);
+        vm.assume(p.release1 != bytes32(0) && p.release2 != bytes32(0));
+        vm.assume(p.contract1 != address(0) && p.contract2 != address(0));
+        vm.assume(p.claimId1 != 0 && p.claimId2 != 0);
+        vm.assume(p.roundId1 != 0 && p.roundId2 != 0);
+        vm.assume(p.voter1 != address(0) && p.voter2 != address(0));
+        vm.assume(p.salt1 != bytes32(0) && p.salt2 != bytes32(0));
+        vm.assume(p.deadline1 != 0 && p.deadline2 != 0);
 
         bytes32 digest1 = harness.computeCommitment(
-            chainId1,
-            release1,
-            contract1,
-            claimId1,
-            roundId1,
-            voter1,
-            decision1,
-            rationale1,
-            salt1,
-            deadline1
+            p.chainId1,
+            p.release1,
+            p.contract1,
+            p.claimId1,
+            p.roundId1,
+            p.voter1,
+            p.decision1,
+            p.rationale1,
+            p.salt1,
+            p.deadline1
         );
 
         // Mutate only chainId
-        if (chainId1 != chainId2) {
+        if (p.chainId1 != p.chainId2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId2,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId2,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on chainId mutation");
         }
 
         // Mutate only releaseVersion
-        if (release1 != release2) {
+        if (p.release1 != p.release2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release2,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release2,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on releaseVersion mutation");
         }
 
         // Mutate only verifyingContract
-        if (contract1 != contract2) {
+        if (p.contract1 != p.contract2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract2,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract2,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on verifyingContract mutation");
         }
 
         // Mutate only claimId
-        if (claimId1 != claimId2) {
+        if (p.claimId1 != p.claimId2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId2,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId2,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on claimId mutation");
         }
 
         // Mutate only roundId
-        if (roundId1 != roundId2) {
+        if (p.roundId1 != p.roundId2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId2,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId2,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on roundId mutation");
         }
 
         // Mutate only voter
-        if (voter1 != voter2) {
+        if (p.voter1 != p.voter2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter2,
-                decision1,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter2,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on voter mutation");
         }
 
         // Mutate only decision
-        if (decision1 != decision2) {
+        if (p.decision1 != p.decision2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision2,
-                rationale1,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision2,
+                p.rationale1,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on decision mutation");
         }
 
         // Mutate only rationaleHash
-        if (rationale1 != rationale2) {
+        if (p.rationale1 != p.rationale2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale2,
-                salt1,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale2,
+                p.salt1,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on rationaleHash mutation");
         }
 
         // Mutate only salt
-        if (salt1 != salt2) {
+        if (p.salt1 != p.salt2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt2,
-                deadline1
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt2,
+                p.deadline1
             );
             assertTrue(digest1 != digest2, "Collision on salt mutation");
         }
 
         // Mutate only deadline
-        if (deadline1 != deadline2) {
+        if (p.deadline1 != p.deadline2) {
             bytes32 digest2 = harness.computeCommitment(
-                chainId1,
-                release1,
-                contract1,
-                claimId1,
-                roundId1,
-                voter1,
-                decision1,
-                rationale1,
-                salt1,
-                deadline2
+                p.chainId1,
+                p.release1,
+                p.contract1,
+                p.claimId1,
+                p.roundId1,
+                p.voter1,
+                p.decision1,
+                p.rationale1,
+                p.salt1,
+                p.deadline2
             );
             assertTrue(digest1 != digest2, "Collision on deadline mutation");
         }

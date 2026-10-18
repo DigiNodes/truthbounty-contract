@@ -635,7 +635,7 @@ contract EmergencyGatekeeperReentrancyTest is Test {
     address internal resolver  = address(0x2222);
 
     function setUp() public {
-        gatekeeper  = new EmergencyGatekeeper(address(this));
+        gatekeeper  = new EmergencyGatekeeper(address(this), initiator, resolver, 1 hours);
         controller  = new StubEmergencyController();
 
         // Wire the controller (no timelockable delay needed in a fresh deploy that
@@ -649,7 +649,7 @@ contract EmergencyGatekeeperReentrancyTest is Test {
 
         // Register SCOPE_STAKING with the controller.
         bytes32 scope = keccak256("STAKING");
-        gatekeeper.configureScope(scope, 2);
+        gatekeeper.setScopeMaxPauseLevel(scope, 2);
     }
 
     // ── B. Same-function: pause → reentrant pause is blocked ───────────────
@@ -707,9 +707,9 @@ contract EmergencyGatekeeperReentrancyTest is Test {
     /// @dev AC-4: invalid maxPauseLevel triggers a revert; scope state unchanged.
     function test_nestedFailure_configureScope_outOfRange_reverts() public {
         bytes32 scope = keccak256("NEW_SCOPE");
-        // maxPauseLevel = 0 is invalid (must be 1–3).
+        // maxPauseLevel > MAX_PROTOCOL_PAUSE_LEVEL (3) is invalid.
         vm.expectRevert();
-        gatekeeper.configureScope(scope, 0);
+        gatekeeper.setScopeMaxPauseLevel(scope, 4);
     }
 
     // ── C. Read-only: paused() does not mutate state ─────────────────────────
@@ -860,7 +860,7 @@ contract UpgradeControllerReentrancyTest is Test {
 
     function setUp() public {
         versionReg  = new VersionRegistry(address(this));
-        storageVal  = new StorageCompatibilityValidator(address(this));
+        storageVal  = new StorageCompatibilityValidator();
         upgradeCtrl = new UpgradeController(address(this), address(versionReg), address(storageVal));
         proxy       = new UpgradeStub();
 
@@ -882,7 +882,7 @@ contract UpgradeControllerReentrancyTest is Test {
             address(newImpl),
             "1.0.0",
             IUpgradeController.UpgradeType.STANDARD,
-            new bytes(0)
+            bytes32(0)
         );
 
         // Schedule (advances past standard delay).
@@ -915,7 +915,7 @@ contract UpgradeControllerReentrancyTest is Test {
             address(newImpl),
             "2.0.0",
             IUpgradeController.UpgradeType.STANDARD,
-            new bytes(0)
+            bytes32(0)
         );
         vm.prank(upgrader);
         upgradeCtrl.scheduleUpgrade(proposalId);
@@ -938,7 +938,7 @@ contract UpgradeControllerReentrancyTest is Test {
             address(newImpl),
             "3.0.0",
             IUpgradeController.UpgradeType.STANDARD,
-            new bytes(0)
+            bytes32(0)
         );
         IUpgradeController.UpgradeProposal memory p1 = upgradeCtrl.getProposal(proposalId);
         IUpgradeController.UpgradeProposal memory p2 = upgradeCtrl.getProposal(proposalId);
@@ -978,21 +978,19 @@ contract InsuranceFundReentrancyTest is Test {
     InsuranceFund internal fund;
     InsurancePayoutReentrant internal recipient;
 
-    address internal admin   = address(this);
-    address internal manager = address(0xBEEF01);
+    address internal admin      = address(this);
+    address internal governance = address(0xBEEF01);
 
     function setUp() public {
         token = new CallbackERC20();
-        fund  = new InsuranceFund(address(token), admin, admin, admin);
-
-        fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), manager);
+        fund  = new InsuranceFund(address(token), admin, governance);
 
         recipient = new InsurancePayoutReentrant(address(fund));
 
         // Fund the insurance pool.
         token.mint(admin, 1000);
         token.approve(address(fund), 1000);
-        fund.fund(500, IInsuranceFund.FundingSource.PROTOCOL_FEES, "initial funding");
+        fund.fundReserve(IInsuranceFund.FundingSource.GOVERNANCE, 500);
     }
 
     // ── E. Recipient-callback: executePayout → reentrant executePayout ───────
@@ -1002,23 +1000,20 @@ contract InsuranceFundReentrancyTest is Test {
     ///      claim state machine (state != APPROVED) — even without nonReentrant,
     ///      the idempotent PAID state prevents the duplicate transfer.
     function test_recipientCallback_reentrantExecutePayout_blockedByStateMachine() public {
-        // Submit claim.
-        vm.prank(manager);
-        fund.submitClaim(
-            address(recipient),   // beneficiary
-            100,                  // amount
-            "Test incident",
-            "ipfs://evidence",
-            IInsuranceFund.IncidentType.SMART_CONTRACT_BUG,
-            IInsuranceFund.FundingSource.PROTOCOL_FEES
+        // Submit claim as recipient so recipient is claimant.
+        vm.prank(address(recipient));
+        uint256 claimId = fund.submitClaim(
+            IInsuranceFund.CoverageCategory.SMART_CONTRACT_FAILURE,
+            100,
+            "ipfs://evidence"
         );
-        uint256 claimId = fund.claimCounter();
 
-        // Approve claim (moves it to APPROVED + sets executeAfter).
-        fund.approveClaim(claimId);
+        // Approve claim (moves it to APPROVED).
+        vm.prank(governance);
+        fund.reviewAndApproveClaim(claimId, 100, "ipfs://audit");
 
         // Advance past payout timelock.
-        vm.warp(block.timestamp + fund.payoutTimelock() + 1);
+        vm.warp(block.timestamp + fund.getPayoutTimelock() + 1);
 
         // Arm callback: on token receipt, recipient tries to re-execute same claimId.
         recipient.setTargetClaimId(claimId);
@@ -1032,15 +1027,15 @@ contract InsuranceFundReentrancyTest is Test {
 
     // ── B. Same-function: fund → reentrant fund is blocked by nonReentrant ──
 
-    /// @dev AC-2: nonReentrant on fund() prevents a callback from re-entering fund.
+    /// @dev AC-2: nonReentrant on fundReserve() prevents a callback from re-entering fundReserve.
     ///      We verify that the fund balance equals exactly the single funded amount.
     function test_sameFunction_fundNotDoubleAccounted() public {
         // Already funded 500 in setUp. Fund 10 more; ensure no callback doubling.
         token.mint(admin, 10);
         token.approve(address(fund), 10);
-        fund.fund(10, IInsuranceFund.FundingSource.ECOSYSTEM, "extra funding");
-        // Total funded: 500 + 10 = 510.  reserveBalance = 510 - payouts.
-        assertEq(fund.reserveBalance(), 510, "fund balance mismatch after second fund");
+        fund.fundReserve(IInsuranceFund.FundingSource.EXTERNAL_DONATION, 10);
+        // Total funded: 500 + 10 = 510.
+        assertEq(fund.getReserveBalance(), 510, "fund balance mismatch after second fund");
     }
 
     // ── F. Nested failure: executePayout before timelock reverts atomically ──
@@ -1048,35 +1043,32 @@ contract InsuranceFundReentrancyTest is Test {
     /// @dev AC-4: executing a payout before the timelock elapses reverts;
     ///      claimId state stays APPROVED, reserve balance unchanged.
     function test_nestedFailure_payoutBeforeTimelockReverts() public {
-        vm.prank(manager);
-        fund.submitClaim(
-            address(0xDEAD),
+        vm.prank(address(0xDEAD));
+        uint256 claimId = fund.submitClaim(
+            IInsuranceFund.CoverageCategory.SMART_CONTRACT_FAILURE,
             50,
-            "Revert test",
-            "ipfs://evidence2",
-            IInsuranceFund.IncidentType.SMART_CONTRACT_BUG,
-            IInsuranceFund.FundingSource.PROTOCOL_FEES
+            "ipfs://evidence2"
         );
-        uint256 claimId = fund.claimCounter();
-        fund.approveClaim(claimId);
+        vm.prank(governance);
+        fund.reviewAndApproveClaim(claimId, 50, "ipfs://audit2");
 
-        uint256 reserveBefore = fund.reserveBalance();
+        uint256 reserveBefore = fund.getReserveBalance();
 
         // Do NOT advance past timelock — immediate execute should revert.
         vm.expectRevert();
         fund.executePayout(claimId);
 
-        assertEq(fund.reserveBalance(), reserveBefore, "reserve changed after reverted payout");
-        (, IInsuranceFund.ClaimStatus status, , , , ) = fund.getClaimDetails(claimId);
-        assertEq(uint8(status), uint8(IInsuranceFund.ClaimStatus.APPROVED), "claim status must remain APPROVED");
+        assertEq(fund.getReserveBalance(), reserveBefore, "reserve changed after reverted payout");
+        IInsuranceFund.Claim memory claim = fund.getClaim(claimId);
+        assertEq(uint8(claim.state), uint8(IInsuranceFund.ClaimState.APPROVED), "claim status must remain APPROVED");
     }
 
-    // ── C. Read-only: reserveBalance does not mutate state ───────────────────
+    // ── C. Read-only: getReserveBalance does not mutate state ─────────────────
 
-    /// @dev AC-3: reading reserveBalance() multiple times yields the same value.
+    /// @dev AC-3: reading getReserveBalance() multiple times yields the same value.
     function test_readOnly_reserveBalance_noSideEffect() public view {
-        uint256 a = fund.reserveBalance();
-        uint256 b = fund.reserveBalance();
+        uint256 a = fund.getReserveBalance();
+        uint256 b = fund.getReserveBalance();
         assertEq(a, b);
     }
 }

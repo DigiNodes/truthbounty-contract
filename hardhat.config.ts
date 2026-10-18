@@ -5,10 +5,28 @@ import hardhatUpgrades from "@openzeppelin/hardhat-upgrades";
 import * as dotenv from "dotenv";
 
 import {
-  COMPILER_SETTINGS,
   NETWORKS,
   RESOLVE_NETWORK_ALIAS,
 } from "./config/networks";
+
+export const COMPILER_SETTINGS = {
+  version: "0.8.28",
+  settings: {
+    evmVersion: "cancun",
+    viaIR: true,
+    optimizer: {
+      enabled: true,
+      runs: 200,
+    },
+    // Required so `scripts/validateStorageLayouts.ts` (V2-SC-046) can read
+    // each contract's storage layout from the build-info output.
+    outputSelection: {
+      "*": {
+        "*": ["storageLayout"],
+      },
+    },
+  },
+};
 
 for (const key of Object.keys(NETWORKS)) {
   const network = NETWORKS[key];
@@ -21,7 +39,22 @@ dotenv.config();
 
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxMochaEthers, hardhatIgnitionEthers, hardhatUpgrades],
-  solidity: COMPILER_SETTINGS,
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      evmVersion: "cancun",
+      viaIR: true,
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
+      outputSelection: {
+        "*": {
+          "*": ["storageLayout"],
+        },
+      },
+    },
+  },
   networks: {
     hardhat:{
       type: "edr-simulated",

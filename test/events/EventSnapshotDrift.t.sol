@@ -165,7 +165,7 @@ contract EventSnapshotDriftTest is Test {
         }
     }
     
-    function test_VersionedEventNaming() public view {
+    function test_VersionedEventNaming() public {
         // All canonical events should follow naming convention
         
         // V1 events must have V1 suffix for versioned families
@@ -195,7 +195,7 @@ contract EventSnapshotDriftTest is Test {
         string memory eventName,
         string memory expectedSignature,
         string memory contractName
-    ) internal view {
+    ) internal {
         // In production, load from artifact and compare
         // For now, document expected signatures
         
@@ -210,7 +210,7 @@ contract EventSnapshotDriftTest is Test {
     function _verifyIndexedCount(
         string memory eventName,
         uint256 expectedCount
-    ) internal view {
+    ) internal {
         // In production, extract from ABI and verify
         emit log_named_string("Verifying indexed count", eventName);
         emit log_named_uint("Expected indexed fields", expectedCount);
@@ -222,7 +222,7 @@ contract EventSnapshotDriftTest is Test {
         return canonicalEventCount;
     }
     
-    function _requireVersionSuffix(string memory eventName) internal pure {
+    function _requireVersionSuffix(string memory eventName) internal {
         // Check that event name ends with V<number>
         // Simplified check for test purposes
         emit log_named_string("Checking version suffix", eventName);
