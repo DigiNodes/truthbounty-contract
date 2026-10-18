@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import {IERC256} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -46,7 +49,7 @@ import {V2PauseGuard} from "./libraries/V2PauseGuard.sol";
 ///      `moduleRegistry` under `EMERGENCY_CONTROLS`. `fund` and `finalizeRewards` fail closed under
 ///      `SLOPE_SETTLEMENT`; `claim` of an already-final entitlement is a RISK_REDUCING exit that is
 ///      never scope-gated and freezes only at protocol SHUTDOWN.
-contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard {
+contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
 
     bytes32 public constant MODULE_SETTLEMENT = keccak256("SETTLEMENT");
@@ -97,6 +100,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard {
         // break the funded/allocated/claimable reconciliation.
         IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
         _funded[asset] += amount;
+        _increaseRecoveryReserve(asset, amount);
         _settlementFunded[settlementId][asset] += amount;
         emit RewardPoolFunded(asset, amount, settlementId);
     }
@@ -150,6 +154,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard {
         uint256 available = _claimable[asset][msg.sender];
         if (amount == 0 || amount > available) revert InsufficientClaimable(amount, available);
         _claimable[asset][msg.sender] = available - amount;
+        _decreaseRecoveryReserve(asset, amount);
         IERC20(asset).safeTransfer(msg.sender, amount);
         emit RewardClaimed(asset, msg.sender, amount);
     }
@@ -246,5 +251,25 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard {
             _claimable[asset][allocation.remainderRecipient] += remainder;
             emit RewardAllocated(settlementId, allocation.category, asset, allocation.remainderRecipient, remainder);
         }
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        if (!IAccessControl(address(moduleRegistry)).hasRole(keccak256("GOVERNANCE_ROLE"), msg.sender)) {
+            revert RecoveryAuthorityUnavailable();
+        }
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) revert RecoveryAuthorityUnavailable();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_TREASURY);
+        _requireExitsNotShutdown();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        // Allocation is a subset of funding, not an additional reserve. Unallocated funding is protected too.
+        return _recoveryReserved(asset);
     }
 }

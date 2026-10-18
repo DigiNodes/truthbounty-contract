@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -31,7 +33,7 @@ import {ProtocolExecutionBounds} from "../performance/ProtocolExecutionBounds.so
 ///      governance mutations fail closed under `SCOPE_GOVERNANCE`. `withdraw` of an already-claimable
 ///      balance is never scope-gated and never depends on registry or authority health; it freezes only
 ///      at protocol SHUTDOWN.
-contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2PauseGuard, EmergencyGuarded {
+contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2PauseGuard, EmergencyGuarded, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
 
     /// @notice Administrative role allowed to configure supported assets and explicit lock mutators.
@@ -878,5 +880,24 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
     function _reconcile(address asset) internal view returns (uint256 custody, uint256 obligations) {
         custody = _totalCustody[asset];
         obligations = _protocolAllocation[asset] + _assetTotalLocked[asset] + _assetTotalClaimable[asset];
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        _checkRole(ADMIN_ROLE, msg.sender);
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) revert RecoveryAuthorityUnavailable();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_TREASURY);
+        _requireExitsNotShutdown();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        uint256 custody = _totalCustody[asset];
+        uint256 obligations = _protocolAllocation[asset] + _assetTotalLocked[asset] + _assetTotalClaimable[asset];
+        return custody > obligations ? custody : obligations;
     }
 }
