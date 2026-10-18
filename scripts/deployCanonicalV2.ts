@@ -1,8 +1,16 @@
-import { network } from "hardhat";
+import { artifacts, network } from "hardhat";
+import "@nomicfoundation/hardhat-ethers";
 import type { Signer } from "ethers";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateCanonicalV2Parameters } from "./validateDeploymentConfig";
+import { validateCanonicalV2Parameters } from "./validateDeploymentConfig.js";
+
+import { buildCanonicalV2Manifest } from "./canonicalV2Manifest.js";
+import { canonicalManifestValue } from "./deploymentManifest.js";
+import type { ManifestValue } from "./deploymentManifest.js";
+import { fileCheckpointStore, memoryCheckpointStore, runDeployment } from "./resumableDeployment.js";
+import type { DeploymentPlan, DeploymentCheckpoint, CheckpointStore } from "./resumableDeployment.js";
+import { writeFile, rename } from "node:fs/promises";
 
 export type DeploymentSigner = Signer & {
   address: string;
@@ -18,9 +26,15 @@ export interface CanonicalV2Suite {
   provisionalSettlementEngine: any;
   appealVerificationRound: any;
   bondVault: any;
+  deployment: { plan: DeploymentPlan; checkpoint: DeploymentCheckpoint };
 }
 
 export interface DeploymentOptions {
+  /** A persistent deployment must keep the same explicit starting nonce on every resume. */
+  startingNonce?: number;
+  checkpointFile?: string;
+  checkpointStore?: CheckpointStore;
+  reconcile?: { index: number; hash: string };
   initialSupply?: bigint;
   minVerificationCount?: bigint;
   minTotalWeight?: bigint;
@@ -77,128 +91,85 @@ export async function deployCanonicalV2(
   });
   console.log("Deployment config validated:", deployer.address);
 
-  // 1. Governance Controller
-  const GovFactory = await ethers.getContractFactory("GovernanceController", deployer);
-  const governanceController = await GovFactory.deploy(deployer.address);
-  await governanceController.waitForDeployment();
-
-  // 2. Token
-  const TokenFactory = await ethers.getContractFactory("RewardToken", deployer);
-  const token = await TokenFactory.deploy(deployer.address, initialSupply);
-  await token.waitForDeployment();
-
-  // 2b. Bond-Custody StakeVault (V2-SC-016/059 appeal bonds live here, never in the module)
-  const StakeVaultFactory = await ethers.getContractFactory(
-    "contracts/StakeVault.sol:StakeVault",
-    deployer,
-  );
-  const bondVault = await StakeVaultFactory.deploy(deployer.address, await token.getAddress());
-  await bondVault.waitForDeployment();
-
-  // 3. Reputation Oracle
-  const OracleFactory = await ethers.getContractFactory(
-    "contracts/MockReputationOracle.sol:MockReputationOracle",
-    deployer,
-  );
-  const oracle = await OracleFactory.deploy();
-  await oracle.waitForDeployment();
-
-  // 4. ClaimRegistry
-  const ParamFactory = await ethers.getContractFactory("ParameterVersionRegistry", deployer);
-  const parameterVersionRegistry = await ParamFactory.deploy(deployer.address, deployer.address);
-  await parameterVersionRegistry.waitForDeployment();
-
-  const RegistryFactory = await ethers.getContractFactory("ClaimRegistry", deployer);
-  const claimRegistry = await RegistryFactory.deploy(
-    deployer.address,
-    await parameterVersionRegistry.getAddress()
-  );
-  await claimRegistry.waitForDeployment();
-
-  // 5. Verification Source (TruthBountyWeighted)
-  const TBFactory = await ethers.getContractFactory("TruthBountyWeighted", deployer);
-  const truthBountyWeighted = await TBFactory.deploy(
-    await token.getAddress(),
-    await oracle.getAddress(),
-    deployer.address,
-    await governanceController.getAddress()
-  );
-  await truthBountyWeighted.waitForDeployment();
-
-  // 6. Deterministic Verification Aggregator
-  const AggFactory = await ethers.getContractFactory("VerificationAggregator", deployer);
-  const aggregator = await AggFactory.deploy(
-    await truthBountyWeighted.getAddress(),
-    deployer.address,
-    minVerificationCount,
-    minTotalWeight,
-    minConfidenceBps
-  );
-  await aggregator.waitForDeployment();
-
-  // 7. Provisional Settlement Engine
-  const SettlementFactory = await ethers.getContractFactory("ProvisionalSettlementEngine", deployer);
-  const provisionalSettlementEngine = await SettlementFactory.deploy(
-    await claimRegistry.getAddress(),
-    await aggregator.getAddress(),
-    challengeWindowDuration,
-    await governanceController.getAddress(),
-    deployer.address
-  );
-  await provisionalSettlementEngine.waitForDeployment();
-
-  // 8. Appeal Verification Round
-  const AppealFactory = await ethers.getContractFactory("AppealVerificationRound", deployer);
-  const initialAppealConfig = {
-    roundDuration: appealDuration,
-    minStakeAmount: minAppealStake,
-    stakeMultiplierBps: appealMultiplierBps,
-    maxWeightCap: maxWeightCap,
-    parameterVersion: 1n,
-    maxAppealRounds: maxAppealRounds,
-    appealBond: appealBond,
-    appealBondEscalationBps: appealBondEscalationBps,
-    maxAppealBond: maxAppealBond,
-    maxVotersPerRound: maxVotersPerRound,
-  };
-  const appealVerificationRound = await AppealFactory.deploy(
-    await token.getAddress(),
-    await claimRegistry.getAddress(),
-    await oracle.getAddress(),
-    await bondVault.getAddress(),
-    initialAppealConfig,
-    await governanceController.getAddress(),
-    deployer.address
-  );
-  await appealVerificationRound.waitForDeployment();
-
-  // 9. Wire Roles & Permissions
-  const REGISTRY_UPDATER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRY_UPDATER_ROLE"));
-  await claimRegistry.grantRole(REGISTRY_UPDATER_ROLE, await provisionalSettlementEngine.getAddress());
-
-  // Authorise the appeal module to lock appeal bonds in the vault
-  const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
-  await bondVault.grantRole(OPERATOR_ROLE, await appealVerificationRound.getAddress());
-
-  // 10. Role finalization if requested
-  if (finalizeDeployerRoles) {
-    // Renounce deployer's REGISTRY_UPDATER_ROLE if held
-    if (await claimRegistry.hasRole(REGISTRY_UPDATER_ROLE, deployer.address)) {
-      await claimRegistry.renounceRole(REGISTRY_UPDATER_ROLE, deployer.address);
-    }
+  if ((options.checkpointFile || options.checkpointStore) && options.startingNonce === undefined) {
+    throw new Error("Resumable deployment requires an explicit startingNonce for safe resume");
   }
-
+  if (options.checkpointFile && options.checkpointStore) throw new Error("Choose one checkpoint store");
+  const startingNonce = options.startingNonce ?? await ethers.provider.getTransactionCount(deployer.address, "pending");
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const manifest = await buildCanonicalV2Manifest(artifacts, {
+    chainId, protocolVersion: "2.0.0", deployer: deployer.address, startingNonce, libraries: {},
+    initialSupply: initialSupply.toString(), minVerificationCount: minVerificationCount.toString(),
+    minTotalWeight: minTotalWeight.toString(), minConfidenceBps: minConfidenceBps.toString(),
+    challengeWindowDuration, appealDuration, minAppealStake: minAppealStake.toString(),
+    appealMultiplierBps, maxWeightCap: maxWeightCap.toString(),
+    maxAppealRounds: maxAppealRounds.toString(), appealBond: appealBond.toString(),
+    appealBondEscalationBps: appealBondEscalationBps.toString(), maxAppealBond: maxAppealBond.toString(),
+    maxVotersPerRound: maxVotersPerRound.toString(), finalizeDeployerRoles,
+  });
+  const aliases: Record<string, string> = {
+    governanceController: "GovernanceController", token: "RewardToken", bondVault: "StakeVault",
+    reputationOracle: "MockReputationOracle", parameterVersionRegistry: "ParameterVersionRegistry",
+    claimRegistry: "ClaimRegistry", truthBountyWeighted: "TruthBountyWeighted",
+    verificationAggregator: "VerificationAggregator", provisionalSettlementEngine: "ProvisionalSettlementEngine",
+    appealVerificationRound: "AppealVerificationRound",
+  };
+  const addresses = Object.fromEntries(manifest.contracts.map(contract => [contract.name, contract.address]));
+  const resolve = (value: ManifestValue): any => {
+    if (Array.isArray(value)) return value.map(resolve);
+    if (value !== null && typeof value === "object") {
+      if ("$ref" in value) {
+        const reference = value["$ref"] as string;
+        const address = reference === "deployer" ? deployer.address : addresses[aliases[reference]];
+        if (!address) throw new Error(`Unknown deployment reference: ${reference}`);
+        return address;
+      }
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolve(item)]));
+    }
+    return value;
+  };
+  const factories = Object.fromEntries(await Promise.all(manifest.contracts.map(async contract => [
+    contract.name, await ethers.getContractFactory(contract.artifact, deployer),
+  ])));
+  const plan: DeploymentPlan = { chainId: chainId.toString(), deployer: deployer.address, startingNonce, steps: [] };
+  for (const transaction of manifest.transactions) {
+    const contract = manifest.contracts.find(contract => contract.name === transaction.contract)!;
+    let data: string;
+    if (transaction.action === "deploy") {
+      data = (await factories[contract.name].getDeployTransaction(...contract.constructorArgs.map(resolve))).data;
+    } else {
+      const role = ethers.id(contract.name === "StakeVault" ? "OPERATOR_ROLE" : "REGISTRY_UPDATER_ROLE");
+      const account = transaction.action === "call:renounceRole" ? deployer.address :
+        addresses[contract.name === "StakeVault" ? "AppealVerificationRound" : "ProvisionalSettlementEngine"];
+      data = factories[contract.name].interface.encodeFunctionData(transaction.action.slice(5), [role, account]);
+    }
+    plan.steps.push({
+      index: transaction.index, nonce: transaction.nonce, contract: contract.name,
+      action: transaction.action === "deploy" ? "deploy" : "call",
+      dependsOn: transaction.dependsOn.map(name => manifest.transactions.findIndex(
+        prior => prior.action === "deploy" && prior.contract === name,
+      )),
+      to: transaction.action === "deploy" ? null : contract.address, data, value: "0",
+    });
+  }
+  const store = options.checkpointStore ?? (options.checkpointFile ? fileCheckpointStore(options.checkpointFile) : memoryCheckpointStore());
+  const checkpoint = await runDeployment(plan, deployer, store, options.reconcile);
+  if (options.checkpointFile) {
+    const file = `${options.checkpointFile}.manifest.json`;
+    const result = {
+      ...manifest, executionPlanHash: checkpoint.planHash,
+      transactions: manifest.transactions.map((transaction, index) => ({ ...transaction, ...checkpoint.transactions[index] })),
+    };
+    await writeFile(`${file}.tmp`, `${canonicalManifestValue(result as any)}\n`, { mode: 0o600 });
+    await rename(`${file}.tmp`, file);
+  }
+  const attach = (name: string) => factories[name].attach(addresses[name]);
   return {
-    deployer,
-    governanceController,
-    token,
-    oracle,
-    claimRegistry,
-    truthBountyWeighted,
-    aggregator,
-    provisionalSettlementEngine,
-    appealVerificationRound,
-    bondVault,
+    deployer, governanceController: attach("GovernanceController"), token: attach("RewardToken"),
+    oracle: attach("MockReputationOracle"), claimRegistry: attach("ClaimRegistry"),
+    truthBountyWeighted: attach("TruthBountyWeighted"), aggregator: attach("VerificationAggregator"),
+    provisionalSettlementEngine: attach("ProvisionalSettlementEngine"), appealVerificationRound: attach("AppealVerificationRound"),
+    bondVault: attach("StakeVault"), deployment: { plan, checkpoint },
   };
 }
 
@@ -206,7 +177,11 @@ async function main() {
   const { ethers } = await network.connect();
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Canonical V2 Suite with deployer:", deployer.address);
-  const suite = await deployCanonicalV2(deployer);
+  if (!process.env.DEPLOYMENT_STARTING_NONCE) throw new Error("DEPLOYMENT_STARTING_NONCE is required");
+  const suite = await deployCanonicalV2(deployer, {
+    startingNonce: Number(process.env.DEPLOYMENT_STARTING_NONCE),
+    checkpointFile: process.env.DEPLOYMENT_CHECKPOINT ?? `deployments/${process.env.DEPLOY_ENV ?? "local"}/canonical-v2-checkpoint.json`,
+  });
   console.log("Canonical V2 Suite deployed successfully:");
   console.log("- GovernanceController:", await suite.governanceController.getAddress());
   console.log("- Token:", await suite.token.getAddress());
