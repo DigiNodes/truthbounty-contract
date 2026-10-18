@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
+
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -39,7 +41,7 @@ import {V2WiredPauseGuard} from "../v2/libraries/V2PauseGuard.sol";
  * Both withdrawal paths are RISK_REDUCING exits of already-credited value: they
  * are never scope-gated and freeze only at protocol SHUTDOWN.
  */
-contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGuard {
+contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGuard, UntrackedAssetRecovery {
     using SafeERC20 for IERC20;
 
     // -------------------------------------------------------------------------
@@ -146,6 +148,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGua
         // Mark ref as consumed before writing any balance (fail-closed on invalid config).
         _processedRefs[settlementRef] = true;
 
+        _increaseRecoveryReserve(address(token), amount);
         credited[beneficiary] += amount;
         _refCredited[beneficiary][settlementRef] += amount;
 
@@ -184,6 +187,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGua
             if (beneficiary == address(0)) revert ZeroAddress();
             if (amount == 0) revert ZeroAmount();
 
+            _increaseRecoveryReserve(address(token), amount);
             credited[beneficiary] += amount;
             _refCredited[beneficiary][settlementRef] += amount;
 
@@ -214,6 +218,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGua
 
         // CEI — update state before external call.
         withdrawn[msg.sender] += amount;
+        _decreaseRecoveryReserve(address(token), amount);
 
         token.safeTransfer(msg.sender, amount);
         emit SettlementWithdrawn(msg.sender, amount);
@@ -250,6 +255,7 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGua
         // CEI — update BOTH counters before external call.
         _refWithdrawn[msg.sender][settlementRef] += amount;
         withdrawn[msg.sender] += amount;
+        _decreaseRecoveryReserve(address(token), amount);
 
         token.safeTransfer(msg.sender, amount);
         emit SettlementRefWithdrawn(msg.sender, settlementRef, amount);
@@ -309,5 +315,22 @@ contract PullSettlementLedger is AccessControl, ReentrancyGuard, V2WiredPauseGua
             emit SettlementRefRejected(settlementRef, msg.sender);
             revert SettlementRefAlreadyProcessed(settlementRef);
         }
+    }
+
+    // V2-SC-154: additive recovery only; existing liability and authority paths remain authoritative.
+    function _checkAssetRecoveryAuthority() internal view override {
+        _checkRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    function _requireAssetRecoveryAllowed() internal view override {
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) revert RecoveryAuthorityUnavailable();
+        _requireScopeNotPaused(PauseMatrix.SCOPE_GOVERNANCE);
+        _requireScopeNotPaused(PauseMatrix.SCOPE_TREASURY);
+        _requireExitsNotShutdown();
+    }
+
+    function _reservedAssetBalance(address asset) internal view override returns (uint256) {
+        return asset == address(token) ? _recoveryReserved(asset) : 0;
     }
 }
