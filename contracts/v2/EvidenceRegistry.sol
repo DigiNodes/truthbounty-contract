@@ -390,12 +390,153 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         _claimRelease[claimId] = newRelease;
     }
 
-    /// @notice Returns the evidence commitment for a given id.
-    /// @param evidenceId Evidence identifier.
-    /// @return commitment Stored evidence commitment.
-    function getEvidence(uint256 evidenceId) external view returns (EvidenceCommitment memory commitment) {
-        commitment = _evidenceById[evidenceId];
-        if (commitment.status == IV2Types.EvidenceStatus.NONE) revert V2Errors.EvidenceNotFound(evidenceId);
+    /// @inheritdoc IEvidence
+    function getEvidence(uint256 evidenceId) external view override returns (IV2Types.Evidence memory) {
+        EvidenceCommitment storage evidence = _existingEvidence(evidenceId);
+        return IV2Types.Evidence({
+            id: evidence.id,
+            claimId: evidence.claimId,
+            submitter: evidence.contributor,
+            contentHash: evidence.contentDigest,
+            submittedAt: evidence.committedAt,
+            status: evidence.status
+        });
+    }
+
+    /// @notice Returns the full digest commitment for an evidence ID.
+    /// @param evidenceId Evidence identifier to read.
+    /// @return commitment Full commitment including metadata digest and contributor nonce.
+    function getEvidenceCommitment(uint256 evidenceId) external view returns (EvidenceCommitment memory commitment) {
+        return _existingEvidence(evidenceId);
+    }
+
+    /// @notice Verifies that a caller-supplied commitment tuple matches the stored record
+    ///         and that the stored evidenceId matches the domain-separated derivation.
+    /// @dev Fails closed unless every field matches and the deterministic ID check passes.
+    /// @param evidenceId Evidence identifier to verify.
+    /// @param claimId Expected claim identifier.
+    /// @param contributor Expected contributor.
+    /// @param contentDigest Expected content digest.
+    /// @param metadataDigest Expected metadata digest.
+    /// @param nonce Expected contributor nonce.
+    /// @return ok True only if the record exists and all fields match the derivation.
+    function verifyEvidenceCommitment(
+        uint256 evidenceId,
+        uint256 claimId,
+        address contributor,
+        bytes32 contentDigest,
+        bytes32 metadataDigest,
+        uint256 nonce
+    ) external view returns (bool ok) {
+        EvidenceCommitment storage evidence = _existingEvidence(evidenceId);
+        if (
+            evidence.claimId != claimId ||
+            evidence.contributor != contributor ||
+            evidence.contentDigest != contentDigest ||
+            evidence.metadataDigest != metadataDigest ||
+            evidence.nonce != nonce
+        ) {
+            revert CommitmentVerificationFailed(evidenceId);
+        }
+        uint256 expectedId = computeEvidenceId(claimId, contributor, contentDigest, metadataDigest, nonce);
+        if (expectedId != evidenceId) revert CommitmentVerificationFailed(evidenceId);
+        return true;
+    }
+
+    /// @inheritdoc IEvidence
+    function claimEvidence(uint256 claimId, uint256 cursor, uint256 limit)
+        external
+        view
+        override
+        returns (uint256[] memory evidenceIds, uint256 nextCursor)
+    {
+        if (limit == 0 || limit > MAX_PAGE_SIZE) revert V2Errors.InvalidPageLimit(limit);
+
+        uint256[] storage ids = _claimEvidenceIds[claimId];
+        uint256 length = ids.length;
+        if (cursor >= length) return (new uint256[](0), length);
+
+        uint256 end = cursor + limit;
+        if (end > length) end = length;
+
+        evidenceIds = new uint256[](end - cursor);
+        for (uint256 i = cursor; i < end;) {
+            evidenceIds[i - cursor] = ids[i];
+            unchecked {
+                ++i;
+            }
+        }
+
+        return (evidenceIds, end);
+    }
+
+    /// @inheritdoc IEvidence
+    function evidenceOrderKey(uint256 evidenceId) external view override returns (uint256 orderKey) {
+        uint256 idx = _claimEvidenceIndex[evidenceId];
+        if (idx == 0) revert V2Errors.EvidenceNotFound(evidenceId);
+        return idx;
+    }
+
+    /// @inheritdoc IEvidence
+    function claimEvidenceTerminalCursor(uint256 claimId) external view override returns (uint256 cursor) {
+        return _claimEvidenceIds[claimId].length;
+    }
+
+    /// @notice Returns the next required nonce for a contributor.
+    /// @param contributor Contributor address.
+    /// @return nonce Next nonce accepted for that contributor.
+    function nextContributorNonce(address contributor) external view returns (uint256 nonce) {
+        return _nextContributorNonce[contributor];
+    }
+
+    /// @notice Sets the evidence acceptance status under the evidence administrator authority.
+    function setEvidenceStatus(uint256 evidenceId, IV2Types.EvidenceStatus status)
+        external
+        onlyRole(EVIDENCE_ADMIN_ROLE)
+        whenOperationAllowed(V2Scopes.EVIDENCE_STATUS)
+    {
+        _requireScopeNotPaused(PauseMatrix.SCOPE_EVIDENCE);
+        EvidenceCommitment storage evidence = _existingEvidence(evidenceId);
+
+        IV2Types.EvidenceStatus previous = evidence.status;
+        if (!_isAllowedStatusTransition(previous, status)) {
+            revert InvalidEvidenceStatusTransition(evidenceId, previous, status);
+        }
+        evidence.status = status;
+        emit EvidenceStatusChanged(evidenceId, previous, status, msg.sender);
+    }
+
+    /// @notice Pauses evidence submission; existing evidence remains readable.
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+        emit EmergencyPauseActivatedV1(msg.sender, ADMIN_PAUSE_REASON, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+    }
+
+    /// @notice Resumes evidence submission after the pauser restores the registry.
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+        emit EmergencyPauseRecoveredV1(msg.sender, uint64(block.timestamp), EVENT_SCHEMA_VERSION);
+    }
+
+    /// @notice Wires the V2 pause authority exactly once (V2-SC-162).
+    function setPauseAuthority(address authority) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _wirePauseAuthority(authority);
+    }
+
+    function _existingEvidence(uint256 evidenceId) private view returns (EvidenceCommitment storage evidence) {
+        evidence = _evidenceById[evidenceId];
+        if (evidence.status == IV2Types.EvidenceStatus.NONE) revert V2Errors.EvidenceNotFound(evidenceId);
+    }
+
+    function _isAllowedStatusTransition(IV2Types.EvidenceStatus from, IV2Types.EvidenceStatus to)
+        private
+        pure
+        returns (bool)
+    {
+        if (to == IV2Types.EvidenceStatus.NONE) return false;
+        if (from == IV2Types.EvidenceStatus.SUBMITTED) return true;
+        if (from == to) return true;
+        return false;
     }
 
     /// @notice Computes the deterministic evidence ID for a commitment tuple.
@@ -415,7 +556,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
         return uint256(
             keccak256(
                 abi.encode(
-                    block.chained,
+                    block.chainid,
                     address(this),
                     claimId,
                     contributor,
@@ -429,7 +570,7 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
 
     /// @notice Returns true when the claim status accepts new evidence.
     function _acceptsEvidence(IClaimRegistry.ClaimStatus status) internal pure returns (bool) {
-        return status == IClaimRegistry.ClaimStatus.ACTIVE || status == IClaimRegistry.ClaimStatus.UNDER_REVIEW;
+        return status == IClaimRegistry.ClaimStatus.Pending || status == IClaimRegistry.ClaimStatus.UnderVerification;
     }
 
     /// @notice Encodes a cursor struct into an opaque bytes32 token.

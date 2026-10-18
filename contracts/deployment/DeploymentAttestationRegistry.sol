@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
@@ -11,6 +12,11 @@ pragma solidity ^0.8.24;
  *      The registry allows indexers and other contracts to independently
  *      verify deployment metadata without trusting an off-chain API or
  *      deployer database.
+ *
+ *      V2 safety boundary: deployment configuration is bound to chain ID,
+ *      release ID, configuration checksum, broadcaster, nonce plan, and
+ *      expiry. Reused or wrong-environment configuration is rejected before
+ *      the first transaction is broadcast. Errors reveal no secret material.
  */
 contract DeploymentAttestationRegistry {
     uint256 public constant MAX_MODULES = 32;
@@ -20,6 +26,10 @@ contract DeploymentAttestationRegistry {
         uint256 chainId;
         bytes32 artifactDigest;
         uint64 configurationVersion;
+        bytes32 configurationChecksum;
+        address broadcaster;
+        uint64 noncePlan;
+        uint64 expiresAt;
         bytes32[] moduleIds;
         address[] moduleAddresses;
         uint64 recordedAt;
@@ -31,6 +41,9 @@ contract DeploymentAttestationRegistry {
     /// @notice Number of attestations successfully recorded.
     uint256 public attestationCount;
 
+    /// @notice Tracks consumed configuration checksums to prevent replay.
+    mapping(bytes32 => bool) public consumedConfigurationChecksum;
+
     mapping(bytes32 => Attestation) private _attestations;
     mapping(bytes32 => bool) public hasAttestation;
 
@@ -40,6 +53,13 @@ contract DeploymentAttestationRegistry {
     error InvalidArtifactDigest();
     error InvalidChainId(uint256 expected, uint256 supplied);
     error InvalidConfigurationVersion();
+    error InvalidConfigurationChecksum();
+    error InvalidBroadcaster();
+    error InvalidNoncePlan();
+    error ConfigurationExpired(uint64 expiresAt, uint64 currentTime);
+    error ConfigurationChecksumReused(bytes32 configurationChecksum);
+    error BroadcasterMismatch(address expected, address supplied);
+    error NoncePlanMismatch(uint64 expected, uint64 supplied);
     error ModuleArrayLengthMismatch();
     error TooManyModules(uint256 supplied, uint256 maximum);
     error ZeroModuleId(uint256 index);
@@ -57,6 +77,10 @@ contract DeploymentAttestationRegistry {
         uint256 indexed chainId,
         bytes32 indexed artifactDigest,
         uint64 configurationVersion,
+        bytes32 configurationChecksum,
+        address indexed broadcaster,
+        uint64 noncePlan,
+        uint64 expiresAt,
         bytes32[] moduleIds,
         address[] moduleAddresses,
         address governanceAuthority,
@@ -86,6 +110,10 @@ contract DeploymentAttestationRegistry {
         uint256 chainId,
         bytes32 artifactDigest,
         uint64 configurationVersion,
+        bytes32 configurationChecksum,
+        address broadcaster,
+        uint64 noncePlan,
+        uint64 expiresAt,
         bytes32[] calldata moduleIds,
         address[] calldata moduleAddresses
     ) external {
@@ -107,6 +135,26 @@ contract DeploymentAttestationRegistry {
 
         if (configurationVersion == 0) {
             revert InvalidConfigurationVersion();
+        }
+
+        if (configurationChecksum == bytes32(0)) {
+            revert InvalidConfigurationChecksum();
+        }
+
+        if (broadcaster == address(0)) {
+            revert InvalidBroadcaster();
+        }
+
+        if (noncePlan == 0) {
+            revert InvalidNoncePlan();
+        }
+
+        if (expiresAt <= uint64(block.timestamp)) {
+            revert ConfigurationExpired(expiresAt, uint64(block.timestamp));
+        }
+
+        if (consumedConfigurationChecksum[configurationChecksum]) {
+            revert ConfigurationChecksumReused(configurationChecksum);
         }
 
         if (moduleIds.length != moduleAddresses.length) {
@@ -148,6 +196,10 @@ contract DeploymentAttestationRegistry {
         attestation.chainId = chainId;
         attestation.artifactDigest = artifactDigest;
         attestation.configurationVersion = configurationVersion;
+        attestation.configurationChecksum = configurationChecksum;
+        attestation.broadcaster = broadcaster;
+        attestation.noncePlan = noncePlan;
+        attestation.expiresAt = expiresAt;
         attestation.recordedAt = uint64(block.timestamp);
 
         for (uint256 i; i < length; ++i) {
@@ -156,6 +208,7 @@ contract DeploymentAttestationRegistry {
         }
 
         hasAttestation[releaseId] = true;
+        consumedConfigurationChecksum[configurationChecksum] = true;
         ++attestationCount;
 
         emit DeploymentAttested(
@@ -163,6 +216,10 @@ contract DeploymentAttestationRegistry {
             chainId,
             artifactDigest,
             configurationVersion,
+            configurationChecksum,
+            broadcaster,
+            noncePlan,
+            expiresAt,
             moduleIds,
             moduleAddresses,
             governanceAuthority,
@@ -227,6 +284,35 @@ contract DeploymentAttestationRegistry {
      */
     function getGovernanceAuthority() external view returns (address) {
         return governanceAuthority;
+    }
+
+    /**
+     * @notice Returns the configuration binding for a release.
+     */
+    function getConfigurationBinding(
+        bytes32 releaseId
+    )
+        external
+        view
+        returns (
+            uint256 chainId,
+            bytes32 configurationChecksum,
+            address broadcaster,
+            uint64 noncePlan,
+            uint64 expiresAt
+        )
+    {
+        _requireAttestation(releaseId);
+
+        Attestation storage attestation = _attestations[releaseId];
+
+        return (
+            attestation.chainId,
+            attestation.configurationChecksum,
+            attestation.broadcaster,
+            attestation.noncePlan,
+            attestation.expiresAt
+        );
     }
 
     /**

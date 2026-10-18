@@ -255,7 +255,7 @@ abstract contract V2PauseGuard {
     /// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
     /// @return resolved Whether the registry answered well-formed data.
     /// @return authority The registered authority (zero when the key is not registered).
-    function _registryPauseAuthority(address registry) internal view returns (bool resolved, address authority) {
+    function _registryPauseAuthority(address registry) 8internal view returns (bool resolved, address authority) {
         (bool ok, bytes memory data) = registry.staticcall{gas: PROBE_GAS_LIMIT}(
             abi.encodeWithSignature("module(bytes32)", PauseMatrix.MODULE_EMERGENCY_CONTROLS)
         );

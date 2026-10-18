@@ -41,6 +41,12 @@ library PauseMatrix {
     /// @notice Version of the pause matrix enforced by this build.
     uint16 internal constant PAUSE_MATRIX_VERSION = 1;
 
+    /// @notice Canonical error raised when a scope-gated operation is blocked by a pause.
+    /// @dev Single canonical pause error for every `SCOPE_*` gate. Modules MUST revert with this
+    ///      (not `EnforcedPause`, not a legacy string) so pause semantics are uniform and
+    ///      selector-stable across the V2 surface.
+    error ProtocolPaused(bytes32 scope);
+
     /// @notice Registry key under which registry-resolved modules find their pause authority.
     /// @dev Byte-identical to `ModuleRegistryLib.MODULE_EMERGENCY_CONTROLS`.
     bytes32 internal constant MODULE_EMERGENCY_CONTROLS = keccak256("EMERGENCY_CONTROLS");
@@ -80,6 +86,12 @@ library PauseMatrix {
     /// @notice Placeholder for an unused gate slot.
     bytes32 internal constant NO_GATE = bytes32(0);
 
+    /// @notice Canonical error raised when a token interaction fails (false return or revert).
+    /// @dev Single canonical token-failure error for every token path. Modules MUST NOT surface
+    ///      raw `SafeERC20FailedOperation`, `SafeERC20FailedOperation`-adjacent strings, or
+    ///      legacy `"SafeERC20: ..."` strings; custody invariants are enforced by the caller.
+    error TokenTransferFailed(address token, address to, uint256 amount);
+
     /// @notice Risk classification of an external operation.
     enum RiskClass {
         NEUTRAL,
@@ -98,6 +110,25 @@ library PauseMatrix {
     /// @notice The operation ID is not present in the matrix.
     error UnknownOperationId(bytes32 operationId);
 
+    /// @notice Returns the canonical pause error for a scope gate.
+    /// @dev Reverts with `ProtocolPaused(scope)` when `paused` is true. Callers MUST pass the
+    ///      exact `SCOPE_*` gate returned by `classify`; passing a pseudo-gate or `NO_GATE` is a
+    ///      programming error and reverts with `UnclassifiedOperation` to fail loudly.
+    /// @param gate Scope gate to enforce.
+    /// @param paused Whether the pause authority reports the scope as paused.
+    function enforceScopeGate(bytes32 gate, bool paused) internal pure {
+        if (!isScopeGate(gate)) revert UnclassifiedOperation("PauseMatrix", "enforceScopeGate");
+        if (paused) revert ProtocolPaused(gate);
+    }
+
+    /// @notice Returns the canonical token-failure error.
+    /// @dev Reverts with `TokenTransferFailed(token, to, amount)`. Callers MUST invoke this on any
+    ///      false-return or reverting token interaction so token failures cannot corrupt custody
+    ///      or double-pay.
+    function revertTokenFailure(address token, address to, uint256 amount) internal pure {
+        revert TokenTransferFailed(token, to, amount);
+    }
+
     /// @notice Returns the classification and gates of a canonical V2 operation.
     /// @dev Reverts with `UnclassifiedOperation` for anything not in the matrix, so tests that walk
     ///      the matrix fail loudly when an operation is missing. `gateB` is `NO_GATE` for single-gate
@@ -113,6 +144,10 @@ library PauseMatrix {
         returns (RiskClass risk, bytes32 gateA, bytes32 gateB)
     {
         bytes32 k = _key(moduleName, signature);
+
+        // Pause precedence is deterministic: `gateA` is evaluated before `gateB`. For operations
+        // with two scope gates (e.g. `Aggregation.finalizeAggregation`), `gateA` MUST be checked
+        // first so the reported `ProtocolPaused(scope)` is stable across runs.
 
         // ─── StakeVault ───────────────────────────────────────────────────────────────────
         if (k == _key("StakeVault", "depositStake(uint256,uint256)")) return (RiskClass.RISK_INCREASING, SCOPE_STAKING, NO_GATE);

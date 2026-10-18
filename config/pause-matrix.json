@@ -313,7 +313,7 @@
           "gates": ["SCOPE_EVIDENCE"],
           "gatedVia": "commitEvidence(uint256,bytes32,bytes32,uint256)",
           "localPause": true,
-          "rationale": "Adds evidence that can influence verification; gated through commitEvidence, which carries both the scoped and the local pause."
+          "rationale": "Adds evidence that can influence verification; gated through commitEvidence, which carries both the scoped and the local pause checks."
         }
       ]
     },

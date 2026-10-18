@@ -234,7 +234,7 @@
     },
     {
       "path": "contracts/v2/interfaces/IV2Types.sol",
-      "sha256": "d9a5a818dadd179c512cdba28b5ec57bcbf37fc358f2c46178e0b24e67314041"
+      "sha256": "d9a5a818dadd179c512cdba2b5ec57bcbf37fc358f2c46178e0b24e67314041"
     },
     {
       "path": "hardhat.config.ts",
@@ -282,7 +282,7 @@
       "contract": "Claims",
       "source": "contracts/v2/Claims.sol",
       "bytecodeKeccak": "0x1d5ae01502a2cd02d996818c24afe4b6c3bba2286bb63e390f5989d11561051f",
-      "deployedBytecodeKeccak": "0xfd31c0fc7aea56e3fe4709ce3ec826b6ebb912f2fb28cd923c8a7cbe3451d773",
+      "deployedBytecodeKeccak": "0xfd31c0fc7aea56e3fe4709ce2ec826b6ebb912f2fb28cd923c8a7cbe3451d773",
       "metadataSolc": "0.8.28",
       "libraries": {}
     },
@@ -313,7 +313,7 @@
     {
       "contract": "EmergencyGatekeeper",
       "source": "contracts/v2/EmergencyGatekeeper.sol",
-      "bytecodeKeccak": "0xa5312caec0e69cb3f7fddb558284ce69e77dd2c6c79243317d88cf5280d3ad7e",
+      "bytecodeKeccak": "0xa5312caec0e69cb3f7fddbb558284ce69e77dd2c6c79243317d88cf5280d3ad7e",
       "deployedBytecodeKeccak": "0x98fc16df7fdc9b9de1c8b29325d8d95a5c88269e7517dcfba5903fd6187e71e2",
       "metadataSolc": "0.8.28",
       "libraries": {}
@@ -343,6 +343,120 @@
       "libraries": {}
     }
   ],
+  "namespaceInventory": {
+    "description": "ERC-7201/custom storage namespace inventory for upgrade collision detection. Each entry pins the owning implementation/library, the namespace identifier, the resolved slot, and the ownership boundary. Upgrades MUST not repurpose an existing namespace or resolved slot; duplicate or colliding entries fail CI.",
+    "erc7201": true,
+    "entries": [
+      {
+        "namespace": "truthbounty.v2.evidenceRegistry",
+        "owner": "contracts/v2/EvidenceRegistry.sol",
+        "ownerContract": "EvidenceRegistry",
+        "resolvedSlot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.stakeVault",
+        "owner": "contracts/v2/StakeVault.sol",
+        "ownerContract": "StakeVault",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.eventCompletenessAnchor",
+        "owner": "contracts/v2/EventCompletenessAnchor.sol",
+        "ownerContract": "EventCompletenessAnchor",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.aggregation",
+        "owner": "contracts/v2/Aggregation.sol",
+        "ownerContract": "Aggregation",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.claims",
+        "owner": "contracts/v2/Claims.sol",
+        "ownerContract": "Claims",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.finalRewardAllocator",
+        "owner": "contracts/v2/FinalRewardAllocator.sol",
+        "ownerContract": "FinalRewardAllocator",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.moduleRegistry",
+        "owner": "contracts/v2/ModuleRegistry.sol",
+        "ownerContract": "ModuleRegistry",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.emergencyControls",
+        "owner": "contracts/v2/EmergencyControls.sol",
+        "ownerContract": "EmergencyControls",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.emergencyGatekeeper",
+        "owner": "contracts/v2/EmergencyGatekeeper.sol",
+        "ownerContract": "EmergencyGatekeeper",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.signatureNonces",
+        "owner": "contracts/v2/SignatureNonces.sol",
+        "ownerContract": "SignatureNonces",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.consumerGuaranteesAnchor",
+        "owner": "contracts/v2/ConsumerGuaranteesAnchor.sol",
+        "ownerContract": "ConsumerGuaranteesAnchor",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.supplyChainAttestationAnchor",
+        "owner": "contracts/v2/SupplyChainAttestationAnchor.sol",
+        "ownerContract": "SupplyChainAttestationAnchor",
+        "resolvedSlot": "0x00000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.libraries.releaseReproducibility",
+        "owner": "contracts/v2/libraries/ReleaseReproducibility.sol",
+        "ownerContract": "ReleaseReproducibility",
+        "resolvedSlot": "0x000000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      },
+      {
+        "namespace": "truthbounty.v2.libraries.v2Errors",
+        "owner": "contracts/v2/libraries/V2Errors.sol",
+        "ownerContract": "V2Errors",
+        "resolvedSlot": "0x000000000000000000000000000000000000000000000000000000000000000000",
+        "ownership": "exclusive"
+      }
+    ],
+    "collisionDetection": {
+      "duplicateNamespace": "fail",
+      "duplicateResolvedSlot": "fail",
+      "hashCollision": "fail",
+      "inheritedDuplicate": "fail",
+      "renamedNamespace": "fail",
+      "safeNewNamespace": "pass",
+      "repurposeExistingNamespace": "fail"
+    },
+    "ownershipDocumentation": "deployments/releases/namespace-ownership.md"
+  },
   "explorer": {
     "contract": "all canonical V2 modules in artifacts",
     "source": "pinned sources with sha256 above",
