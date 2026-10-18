@@ -45,6 +45,16 @@ outcome override calls.
 - Cancellation authority is exactly `{Governor, Guardian}`; no other actor may hold `CANCELLER_ROLE`
 - Governance cannot invoke guardian emergency pause paths
 
+## Timelock Delay Bounds & Self-Administration (V2-SC-072)
+
+- `TimelockController` enforces a `minDelay` floor and a `maxDelay` ceiling on any delay change
+- Delay changes must be scheduled through the timelock itself (self-call); immediate decrease is rejected
+- Each scheduled operation is identified by `keccak256(targets, values, calldatas, predecessor, salt)`; duplicate IDs revert
+- `predecessor` must reference a completed operation or `bytes32(0)`; missing predecessors block execution
+- Operations expire after the timelock grace period and cannot execute once expired
+- Cancellation is restricted to `CANCELLER_ROLE`; cancelled operations cannot execute
+- `CallScheduled`, `CallExecuted`, `Cancelled`, and `MinDelayChange` events are emitted for every state transition
+
 ## Token & Delegation Assumptions
 
 - Voting uses timestamp clock (`mode=timestamp`)

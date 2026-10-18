@@ -309,7 +309,10 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         if (verifier == address(0)) revert ZeroVerifier();
         if (effectiveStake == 0) revert ZeroStake();
 
-        uint256 reputationScore = _getReputationScore(verifier);
+        // CEI: INTERACTION first — the oracle call is external and wrapped in
+        // try/catch.  All pure arithmetic is performed on the returned values.
+        // State is only mutated after every external call is complete.
+        uint256 reputationScore = _getReputationScore(verifier); // external call (try/catch)
 
         uint256 reputationMultiplier = _calculateReputationMultiplier(reputationScore);
         uint256 difficultyMultiplier = _getCategoryMultiplier(category);
@@ -327,8 +330,10 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         if (finalAmount < minReward) finalAmount = minReward;
         if (finalAmount > maxReward) finalAmount = maxReward;
 
+        // CHECKS: enforce emission caps before any state write.
         _enforceEmissionCaps(verifier, finalAmount);
 
+        // EFFECTS: all state writes occur after the external oracle call and all checks.
         calculationId = keccak256(abi.encode(
             verifier, effectiveStake, activeStake, category, block.timestamp, calculationCount
         ));
@@ -537,8 +542,12 @@ contract RewardEngine is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBou
         }
         if (amount == 0) revert InvalidRewardAmount();
 
-        rewardToken.safeTransferFrom(msg.sender, address(this), amount);
+        // CEI: EFFECT before INTERACTION — credit the ledger first so any
+        // callback through the inbound transferFrom observes the already-updated
+        // totalFunded and cannot create a double-fund anomaly.
         totalFunded += amount;
+
+        rewardToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit RewardPoolFunded(
             msg.sender,

@@ -16,6 +16,12 @@ pragma solidity ^0.8.28;
  *   inherited modules, libraries, and future upgrades
  */
 contract StorageCompatibilityValidator {
+    enum RollbackPolicy {
+        None,
+        Full,
+        StorageOnly
+    }
+
     struct StorageLayout {
         uint256 slotCount;
         uint256 gapSlots;
@@ -42,6 +48,14 @@ contract StorageCompatibilityValidator {
         string reason;
         uint256 currentSlotCount;
         uint256 newSlotCount;
+    }
+
+    struct RollbackPlan {
+        RollbackPolicy policy;
+        bytes32 preUpgradeStateHash;
+        bytes32 postUpgradeStateHash;
+        bool supported;
+        bool executed;
     }
 
     mapping(address => StorageLayout) internal _registeredLayouts;
@@ -246,6 +260,29 @@ contract StorageCompatibilityValidator {
         emit ImplementationApproved(upgradeHash, true);
     }
 
+    function registerRollbackPlan(
+        address targetContract,
+        RollbackPolicy policy,
+        bytes32 preUpgradeStateHash
+    ) external {
+        if (targetContract == address(0)) revert ZeroAddress();
+        if (policy == RollbackPolicy.None) revert RollbackNotSupported(targetContract);
+
+        _rollbackPlans[targetContract] = RollbackPlan({
+            policy: policy,
+            preUpgradeStateHash: preUpgradeStateHash,
+            postUpgradeStateHash: bytes32(0),
+            supported: true,
+            executed: false
+        });
+
+        emit RollbackPlanRegistered(targetContract, policy, preUpgradeStateHash, true);
+    }
+
+    function getRollbackPlan(address targetContract) external view returns (RollbackPlan memory) {
+        return _rollbackPlans[targetContract];
+    }
+
     function validateUpgrade(
         address targetContract,
         address currentImpl,
@@ -288,6 +325,34 @@ contract StorageCompatibilityValidator {
                 }
             }
         }
+    }
+
+    function executeRollback(
+        address targetContract,
+        bytes32 postUpgradeStateHash
+    ) external {
+        if (targetContract == address(0)) revert ZeroAddress();
+
+        RollbackPlan storage plan = _rollbackPlans[targetContract];
+        if (!plan.supported) revert RollbackNotSupported(targetContract);
+        if (plan.executed) revert RollbackAlreadyExecuted(targetContract);
+
+        if (plan.policy == RollbackPolicy.StorageOnly) {
+            if (postUpgradeStateHash != plan.preUpgradeStateHash) {
+                revert StateNotEquivalent(plan.preUpgradeStateHash, postUpgradeStateHash);
+            }
+        }
+
+        plan.postUpgradeStateHash = postUpgradeStateHash;
+        plan.executed = true;
+
+        bool stateEquivalent = postUpgradeStateHash == plan.preUpgradeStateHash;
+        emit RollbackExecuted(
+            targetContract,
+            plan.preUpgradeStateHash,
+            postUpgradeStateHash,
+            stateEquivalent
+        );
     }
 
     function validateStorageCompatibility(

@@ -75,6 +75,17 @@ library V2TimeBounds {
     /// @notice Maximum timelock execution delay (30 days).
     uint64 internal constant MAX_TIMELOCK_DELAY = 30 days;
 
+    /// @notice Minimum permitted timelock delay change (1 hour).
+    /// @dev Prevents immediate decrease of an active timelock delay below the floor.
+    uint64 internal constant MIN_TIMELOCK_DELAY_CHANGE = 1 hours;
+
+    /// @notice Maximum permitted timelock delay change (7 days).
+    /// @dev Bounds the magnitude of a single delay mutation to prevent governance capture.
+    uint64 internal constant MAX_TIMELOCK_DELAY_CHANGE = 7 days;
+
+    /// @notice Grace period after timelock maturity before an operation expires (14 days).
+    uint64 internal constant TIMELOCK_GRACE_PERIOD = 14 days;
+
     /// @notice Minimum cooldown duration between repeated rate-limited operations (1 hour).
     uint64 internal constant MIN_COOLDOWN_DURATION = 1 hours;
 
@@ -208,6 +219,63 @@ library V2TimeBounds {
     function validateTimelockDelay(uint64 delay) internal pure {
         if (delay < MIN_TIMELOCK_DELAY || delay > MAX_TIMELOCK_DELAY) {
             revert IV2TimeBounds.TimelockOutOfBounds(delay, MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY);
+        }
+    }
+
+    /// @notice Validates a proposed timelock delay change against current delay and bounds.
+    /// @dev Enforces that delay changes are bounded and cannot be decreased immediately.
+    /// @param currentDelay The currently configured timelock delay.
+    /// @param newDelay The proposed new timelock delay.
+    function validateTimelockDelayChange(uint64 currentDelay, uint64 newDelay) internal pure {
+        if (newDelay < MIN_TIMELOCK_DELAY || newDelay > MAX_TIMELOCK_DELAY) {
+            revert IV2TimeBounds.TimelockOutOfBounds(newDelay, MIN_TIMELOCK_DELAY, MAX_TIMELOCK_DELAY);
+        }
+        if (newDelay < currentDelay) {
+            uint64 decrease = currentDelay - newDelay;
+            if (decrease > MAX_TIMELOCK_DELAY_CHANGE) {
+                revert IV2TimeBounds.TimelockDelayChangeTooLarge(decrease, MAX_TIMELOCK_DELAY_CHANGE);
+            }
+        } else if (newDelay > currentDelay) {
+            uint64 increase = newDelay - currentDelay;
+            if (increase > MAX_TIMELOCK_DELAY_CHANGE) {
+                revert IV2TimeBounds.TimelockDelayChangeTooLarge(increase, MAX_TIMELOCK_DELAY_CHANGE);
+            }
+        }
+    }
+
+    /// @notice Validates that a scheduled delay change has matured before application.
+    /// @param scheduledAt Timestamp when the delay change was scheduled.
+    /// @param currentTimestamp Current block timestamp.
+    /// @param currentDelay The currently active timelock delay.
+    function validateTimelockDelayChangeReady(
+        uint64 scheduledAt,
+        uint64 currentTimestamp,
+        uint64 currentDelay
+    ) internal pure {
+        if (currentTimestamp < scheduledAt) {
+            revert IV2TimeBounds.TimelockNotMatured(currentTimestamp, scheduledAt);
+        }
+        uint64 elapsed = currentTimestamp - scheduledAt;
+        if (elapsed < currentDelay) {
+            revert IV2TimeBounds.TimelockNotMatured(currentTimestamp, scheduledAt + currentDelay);
+        }
+    }
+
+    /// @notice Validates that a timelocked operation has not exceeded its grace period.
+    /// @param readyAt The timestamp at which the operation unlocked.
+    /// @param currentTimestamp Current block timestamp.
+    function validateTimelockNotExpired(uint64 readyAt, uint64 currentTimestamp) internal pure {
+        if (currentTimestamp > readyAt + TIMELOCK_GRACE_PERIOD) {
+            revert IV2TimeBounds.TimelockExpired(currentTimestamp, readyAt, TIMELOCK_GRACE_PERIOD);
+        }
+    }
+
+    /// @notice Validates that a timelock operation targets the timelock contract itself for self-administration.
+    /// @param target The address the operation will call.
+    /// @param timelock The timelock contract address.
+    function validateSelfCall(address target, address timelock) internal pure {
+        if (target != timelock) {
+            revert IV2TimeBounds.SelfCallRequired(target, timelock);
         }
     }
 
