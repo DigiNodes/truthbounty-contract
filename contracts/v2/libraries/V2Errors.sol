@@ -65,6 +65,31 @@ library V2Errors {
     /// @notice Zero claim-registry address supplied at construction.
     error ZeroClaimRegistry();
 
+    /// @notice Zero relayer address supplied for an authorized relayer change.
+    error ZeroRelayer();
+
+    /// @notice Zero timelock address supplied for a cooldown change.
+    error ZeroTimelock();
+
+    /// @notice Zero allowance target supplied for an allowance change.
+    error ZeroAllowanceTarget();
+
+    /// @notice Authorized relayer was updated.
+    /// @param previous Previous authorized relayer.
+    /// @param current New authorized relayer.
+    event RelayerUpdated(address indexed previous, address indexed current);
+
+    /// @notice Timelock cooldown was updated.
+    /// @param previous Previous cooldown duration in seconds.
+    /// @param current New cooldown duration in seconds.
+    event TimelockCooldownUpdated(uint64 previous, uint64 current);
+
+    /// @notice Allowance was updated.
+    /// @param account Account whose allowance changed.
+    /// @param previous Previous allowance amount.
+    /// @param current New allowance amount.
+    event AllowanceUpdated(address indexed account, uint256 previous, uint256 current);
+
     // =========================================================================
     // Claims
     // =========================================================================

@@ -28,7 +28,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     mapping(bytes32 => PendingRoleChange) public pendingRoleChanges;
     mapping(address => mapping(bool => bytes32)) public _resolverRoleChangeId;
     mapping(bytes32 => uint256) public resolverRoleChangeReadyAt;
-    uint256 private _operationNonce; // Nonce for unique operation ID
+    uint256 private _operationNonce; // Nonce for unique operation IDs,
 
     event ResolverRoleChangeScheduled(
         bytes32 indexed operationId,
@@ -49,6 +49,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     error ResolverRoleChangeNoop();
     error InvalidDelay(uint256 delay);
     error OperationIdCollision(bytes32 operationId);
+    error ZeroAddress();
     error UnauthorizedCanceller(address caller);
     error AdminRetentionForbidden(bytes32 role);
 
@@ -72,11 +73,13 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     function scheduleResolverRoleGrant(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (account == address(0)) revert ZeroAddress();
         if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
         operationId = _scheduleResolverRoleChange(account, true, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
 
     function scheduleResolverRoleRevoke(address account) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (account == address(0)) revert ZeroAddress();
         if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
         operationId = _scheduleResolverRoleChange(account, false, MIN_RESOLVER_ROLE_CHANGE_DELAY);
     }
@@ -129,11 +132,13 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     function grantRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
+        if (account == address(0)) revert ZeroAddress();
         if (role == _resolverRole()) revert ResolverRoleChangeRequiresTimelock();
         super.grantRole(role, account);
     }
 
     function revokeRole(bytes32 role, address account) public virtual override onlyRole(getRoleAdmin(role)) {
+        if (account == address(0)) revert ZeroAddress();
         if (role == _resolverRole()) revert ResolverRoleChangeRequiresTimelock();
         super.revokeRole(role, account);
     }
@@ -149,11 +154,13 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     function scheduleResolverRoleGrantWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (account == address(0)) revert ZeroAddress();
         if (hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
         operationId = _scheduleResolverRoleChange(account, true, delay);
     }
 
     function scheduleResolverRoleRevokeWithDelay(address account, uint256 delay) external onlyRole(getRoleAdmin(_resolverRole())) returns (bytes32 operationId) {
+        if (account == address(0)) revert ZeroAddress();
         if (!hasRole(_resolverRole(), account)) revert ResolverRoleChangeNoop();
         operationId = _scheduleResolverRoleChange(account, false, delay);
     }
@@ -167,6 +174,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     function _scheduleResolverRoleChange(address account, bool grant, uint256 delay) internal returns (bytes32 operationId) {
+        if (account == address(0)) revert ZeroAddress();
         // Validate delay is within bounds
         if (delay < MIN_RESOLVER_ROLE_CHANGE_DELAY || delay > MAX_RESOLVER_ROLE_CHANGE_DELAY) {
             revert InvalidDelay(delay);
@@ -200,6 +208,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
     }
 
     function _executeResolverRoleChange(bytes32 operationId, address account, bool grant) internal {
+        if (account == address(0)) revert ZeroAddress();
         PendingRoleChange storage pendingChange = pendingRoleChanges[operationId];
         if (pendingChange.readyAt == 0) revert ResolverRoleChangeNotPending();
         if (pendingChange.executed) revert ResolverRoleChangeNoop();

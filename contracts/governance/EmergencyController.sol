@@ -49,6 +49,12 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     error NoChangeRequested();
     error ReasonTooLong(uint256 actual, uint256 maximum);
 
+    /// @notice Raised when a role admin change is requested with no effective change.
+    error RoleAdminUnchanged(bytes32 role, bytes32 currentAdmin);
+
+    /// @notice Raised when a role admin change would remove the last admin of DEFAULT_ADMIN_ROLE.
+    error CannotRemoveLastAdmin();
+
     /// @notice Raised when an operation identifier is not part of the classified operation set.
     /// @dev Emergency checks fail closed: an unclassified operation is rejected, never allowed.
     error UnknownOperation(bytes32 operationType);
@@ -152,6 +158,26 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
     );
 
     event RecoveryFinalised(address indexed executor, uint256 timestamp);
+
+    /// @notice Emitted when the timelock cooldown is updated by governance.
+    event TimelockCooldownUpdated(
+        uint256 indexed previousCooldown,
+        uint256 indexed newCooldown,
+        address indexed executor
+    );
+
+    /// @notice Emitted when a role's admin is changed.
+    event RoleAdminChanged(
+        bytes32 indexed role,
+        bytes32 indexed previousAdminRole,
+        bytes32 indexed newAdminRole
+    );
+
+    /// @notice Emitted when a role is granted to an account.
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+
+    /// @notice Emitted when a role is revoked from an account.
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -406,6 +432,9 @@ contract EmergencyController is AccessControlEnumerable, ReentrancyGuard {
      * @dev Only DAO_GOVERNANCE can change this.
      */
     function setTimelockCooldown(uint256 newCooldown) external onlyRole(DAO_GOVERNANCE) {
+        uint256 previousCooldown = timelockCooldown;
+        if (previousCooldown == newCooldown) revert NoChangeRequested();
         timelockCooldown = newCooldown;
+        emit TimelockCooldownUpdated(previousCooldown, newCooldown, msg.sender);
     }
 }

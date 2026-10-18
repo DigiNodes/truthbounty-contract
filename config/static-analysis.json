@@ -30,5 +30,55 @@
     "false-positive",
     "accepted-risk"
   ],
-  "minJustificationLength": 80
+  "minJustificationLength": 80,
+  "exceptionPolicy": {
+    "requireExpiry": true,
+    "maxExpiryDays": 180,
+    "allowWildcardPaths": false,
+    "requiredFields": [
+      "id",
+      "finding",
+      "path",
+      "reason",
+      "owner",
+      "expiresAt"
+    ]
+  },
+  "accessControlEventPolicy": {
+    "requireEventsForAccessControlMutations": true,
+    "coveredMutations": [
+      "zero-address-check",
+      "relayer-change",
+      "timelock-cooldown-change",
+      "allowance-change"
+    ],
+    "requiredEvents": [
+      "RelayerChanged",
+      "TimelockCooldownChanged",
+      "AllowanceChanged"
+    ]
+  },
+  "zeroAddressPolicy": {
+    "allowZeroAddress": false,
+    "requiredChecks": [
+      "address(0) != newAddress",
+      "address(0) != relayer",
+      "address(0) != governance"
+    ]
+  },
+  "accessControlPolicy": {
+    "preserveTopology": "V2 Optimism/EVM",
+    "governanceAuthority": "timelock",
+    "scopedPauseModel": true,
+    "deterministicArtifacts": true,
+    "consumerInterfaceHandoffs": true
+  },
+  "arithmeticPolicy": {
+    "exactArithmetic": true,
+    "allowUnsafeRounding": false
+  },
+  "securityGardPolicy": {
+    "weakenFailingGate": false,
+    "zeroNewFindings": true
+  }
 }
