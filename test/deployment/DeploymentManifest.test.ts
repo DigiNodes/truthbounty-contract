@@ -61,16 +61,19 @@ describe("Canonical V2 deployment manifest", () => {
     expect(manifest.transactions.map((transaction) => transaction.contract)).to.deep.equal([
       "GovernanceController",
       "RewardToken",
+      "StakeVault",
       "MockReputationOracle",
+      "ParameterVersionRegistry",
       "ClaimRegistry",
       "TruthBountyWeighted",
       "VerificationAggregator",
       "ProvisionalSettlementEngine",
       "AppealVerificationRound",
       "ClaimRegistry",
+      "StakeVault",
     ]);
     expect(manifest.transactions[manifest.transactions.length - 1].action).to.equal("call:grantRole");
-    expect(manifest.transactions[5].dependsOn).to.deep.equal(["TruthBountyWeighted"]);
+    expect(manifest.transactions[7].dependsOn).to.deep.equal(["TruthBountyWeighted"]);
     expect(manifest.contracts[0].address).to.match(/^0x[0-9a-fA-F]{40}$/);
     expect(manifest.contracts[0].salt).to.match(/^0x[0-9a-fA-F]{64}$/);
     expect(manifest.contracts[0].nonce).to.equal(0);
@@ -140,6 +143,22 @@ describe("Canonical V2 deployment manifest", () => {
         transactions: [{ index: 1, nonce: 0, action: "deploy", contract: "A", dependsOn: [], inputHash: "0x" }],
       }),
     ).to.throw("contiguous and ordered");
+  });
+
+  it("rejects dependency reordering before broadcast", async () => {
+    const manifest = await buildCanonicalV2Manifest(artifactReader(), inputs);
+    manifest.transactions[0].dependsOn = ["RewardToken"];
+    expect(() => validateManifest(manifest)).to.throw("dependency must be deployed earlier");
+  });
+
+  it("includes the same bond and parameter registry constructor dependencies as the canonical helper", async () => {
+    const manifest = await buildCanonicalV2Manifest(artifactReader(), { ...inputs, startingNonce: 40, finalizeDeployerRoles: true });
+    expect(manifest.contracts.find(contract => contract.name === "ClaimRegistry")!.constructorArgs).to.deep.equal([
+      { "$ref": "deployer" }, { "$ref": "parameterVersionRegistry" },
+    ]);
+    expect(manifest.transactions[9].dependsOn).to.include("StakeVault");
+    expect(manifest.transactions.at(-1)!.action).to.equal("call:renounceRole");
+    expect(manifest.transactions.map(tx => tx.nonce)).to.deep.equal(Array.from({ length: 13 }, (_, index) => 40 + index));
   });
 
   it("rejects a zero deployer address", async () => {

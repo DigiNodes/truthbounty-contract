@@ -14,6 +14,7 @@ node_modules
 # solidity-coverage files
 /coverage
 /coverage.json
+temp_auto_push.bat
 
 # Gas reporter files
 .gas-reports.json
@@ -31,3 +32,5 @@ issues_to_created_contract.md
 
 # HH3 typechain output
 /types
+.gitignore
+branch_structure.json
