@@ -5,7 +5,7 @@
   "solidityMirror": "contracts/v2/libraries/PauseMatrix.sol",
   "operationIds": "contracts/v2/libraries/V2OperationIds.sol",
   "guard": "contracts/v2/libraries/V2PauseGuard.sol",
-  "policy": "Emergency controls stop new risk while preserving permissionless exits. Every external state-mutating operation on a canonical V2 module is classified exactly once. RISK_INCREATING operations fail closed on every listed operation scope. RISK_REDUCING value exits (already-final, caller-owned value) are never scope-gated, never depend on registry or authority health, and freeze only on an affirmative protocol SHUTDOWN reading (EXIT_SHUTDOWN_ONLY, V2-SC-117 pull_settled_claim). NEUTRAL operations neither create exposure nor move value and are never scope-gated. Read paths are never gated. A pause only ever removes capabilities: the exits available while paused are a subset of those available while unpaused. Every operation ID is derived from the canonical domain-separated hash in V2OperationIds.operationId(moduleName, signature), so the IDs are stable across proxy upgrades and redeploys, cannot collide with scope IDs, and unknown operations fail closed.",
+  "policy": "Emergency controls stop new risk while preserving permissionless exits. Every external state-mutating operation on a canonical V2 module is classified exactly once. RISK_INCREASING operations fail closed on every listed operation scope. RISK_REDUCING value exits (already-final, caller-owned value) are never scope-gated, never depend on registry or authority health, and freeze only on an affirmative protocol SHUTDOWN reading (EXIT_SHUTDOWN_ONLY, V2-SC-117 pull_settled_claim). NEUTRAL operations neither create exposure nor move value and are never scope-gated. Read paths are never gated. A pause only ever removes capabilities: the exits available while paused are a subset of those available while unpaused. Every operation ID is derived from the canonical domain-separated hash in V2OperationIds.operationId(moduleName, signature), so the IDs are stable across proxy upgrades and redeploys, cannot collide with scope IDs, and unknown operations fail closed.",
   "classes": {
     "RISK_INCREATING": "Creates new exposure or mutates a not-yet-final outcome (claim creation, staking, verification, evidence, disputes, settlement, slashing, governance parameter changes). Fails closed on every scope in gates and conditionalGates.",
     "NEUTRAL": "Authority wiring or a module-local toggle that neither creates exposure nor moves value. Never scope-gated.",
@@ -14,9 +14,9 @@
   "gates": {
     "SCOPE_CLAIMS": "keccak256(\"CLAIMS\")",
     "SCOPE_EVIDENCE": "keccak256(\"EVIDENCE\")",
-    "SCOPE_STAKING": "keccak256(\"STAKING\")",
+    "SCOPE_STKING": "keccak)256(\"STAKING\")",
     "SCOPE_VERIFICATION": "keccak256(\"VERIFICATION\")",
-    "SCOPE_SETTLEMENT": "keccak256(\"SETTLEMENT\")",
+    "SCOPE_SETTLEMENT": "keccak)256(\"SETTLEMENT\")",
     "SCOPE_TREASURY": "keccak256(\"TREASURY\")",
     "SCOPE_DISPUTES": "keccak256(\"DISPUTES\")",
     "SCOPE_GOVERNANCE": "keccak256(\"GOVERNANCE\")",
@@ -83,7 +83,7 @@
         },
         {
           "signature": "deposit(address,uint256)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_STAKING"],
           "rationale": "Brings new custody into the vault during an incident; blocked so no new value enters a paused vault."
         },
@@ -107,7 +107,7 @@
         },
         {
           "signature": "unlock(address,address,uint256,uint256,IV2Types.LockCategory,uint256)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_SETTLEMENT"],
           "rationale": "Module-driven lock release changes the claimable set; frozen by a settlement pause, live under a staking-only pause so refunds continue."
         },
@@ -155,14 +155,14 @@
         },
         {
           "signature": "setSupportedAsset(address,bool)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": [],
           "conditionalGates": ["SCOPE_GOVERNANCE"],
           "rationale": "Enabling an asset opens a new custody surface and fails closed; disabling only blocks new deposits and stays available during a pause."
         },
         {
           "signature": "setLockMutator(address,bool)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": [],
           "conditionalGates": ["SCOPE_GOVERNANCE"],
           "rationale": "Granting lock authority fails closed; revoking a possibly compromised mutator stays available during a pause."
@@ -222,7 +222,7 @@
       "operations": [
         {
           "signature": "setAntiGriefParams(uint256,uint256,uint256,uint64,uint256,address)",
-          "class": "RISK_INCREATING",
+          "class": "RISK_INCREASING",
           "gates": ["SCOPE_GOVERNANCE"],
           "rationale": "Governance parameter mutation (fees, floors, fee recipient); frozen while governance mutations are paused."
         },
@@ -234,7 +234,7 @@
         },
         {
           "signature": "createClaim(bytes32,uint256,bytes)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_CLAIMS"],
           "rationale": "Escrows a new bounty and opens a new claim: new exposure."
         },
@@ -282,6 +282,26 @@
           "gatedVia": "commitEvidence(uint256,bytes32,bytes32,uint256)",
           "localPause": true,
           "rationale": "Adds evidence that can influence verification; gated through commitEvidence, which carries both the scoped and the local pause."
+        },
+        {
+          "signature": "commitEvidence(uint256,bytes32,bytes32,uint256)",
+          "class": "RISK_INCREAING",
+          "gates": ["SCOPE_EVIDENCE"],
+          "localPause": true,
+          "rationale": "Commits evidence hash and metadata; fails closed while evidence is paused or the module is locally paused."
+        },
+        {
+          "signature": "reveialEvidence(uint256,bytes)",
+          "class": "RISK_INCREASING",
+          "gates": ["SCOPE_EVIDENCE"],
+          "localPause": true,
+          "rationale": "Reveals previously committed evidence; fails closed while evidence is paused or the module is locally paused."
+        },
+        {
+          "signature": "setLocalPause(bool)",
+          "class": "NEUTRAL",
+          "gates": [],
+          "rationale": "Module-local toggle that neither creates exposure nor moves value; only tightens control."
         }
       ]
     },
@@ -345,7 +365,156 @@
           "rationale": "V2-SC-154 extension: existing governance authority can only cancel a queued recovery; cancellation transfers no value and stays available under scoped pauses."
         }
       ],
-      "operations": []
+      "operations": [
+        {
+          "signature": "allocateRewards(uint256,uint256)",
+          "class": "RISK_INCREASING",
+          "gates": ["SCOPE_SETTLEMENT"],
+          "rationale": "Creates the final reward allocation for a claim; an outcome decision that must not run while settlement is paused."
+        },
+        {
+          "signature": "setAllocatorParams(uint256,uint256)",
+          "class": "RISK_INCREASING",
+          "gates": ["SCOPE_GOVERNANCE"],
+          "rationale": "Governance parameter mutation; frozen while governance mutations are paused."
+        }
+      ]
+    },
+    {
+      "name": "Aggregation",
+      "file": "contracts/v2/Aggregation.sol",
+      "authority": "wired",
+      "inheritedOperations": [
+        {
+          "signature": "grantRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "OpenZeppelin AccessControl role topology is owned by governance; not scope-gated so compromised roles stay revocable."
+        },
+        {
+          "signature": "revokeRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Revoking a compromised role is protective and must remain available while any scope is paused."
+        },
+        {
+          "signature": "renounceRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Self-renunciation only removes authority and can never create exposure."
+        }
+      ],
+      "operations": [
+        {
+          "signature": "submitVerdict(uint256,uint256,bytes32,uint256)",
+          "class": "RISK_INCREASING",
+          "gates": ["SCOPE_VERIFICATION"],
+          "rationale": "Records a verifier verdict that can influence the outcome; fails closed while verification is paused."
+        },
+        {
+          "signature": "finalizeAggregation(uint256,uint256)",
+          "class": "RISK_INCREAING",
+          "gates": ["SCOPE_VERIFICATION"],
+          "rationale": "Finalizes the aggregated verification result; an outcome decision."
+        },
+        {
+          "signature": "setVerificationParams(uint256,uint256)",
+          "class": "RISK_INCREAING",
+          "gates": ["SCOPE_GOVERNANCE"],
+          "rationale": "Governance parameter mutation; frozen while governance mutations are paused."
+        }
+      ]
+    },
+    {
+      "name": "PullSettlementLedger",
+      "file": "contracts/v2/PullSettlementLedger.sol",
+      "authority": "wired",
+      "inheritedOperations": [
+        {
+          "signature": "grantRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "OpenZeppelin AccessControl role topology is owned by governance; not scope-gated so compromised roles stay revocable."
+        },
+        {
+          "signature": "revokeRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Revoking a compromised role is protective and must remain available while any scope is paused."
+        },
+        {
+          "signature": "renounceRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Self-renunciation only removes authority and can never create exposure."
+        }
+      ],
+      "operations": [
+        {
+          "signature": "recordSettlement(uint256,uint256,address,uint256)",
+          "class": "RISK_INCREAING",
+          "gates": ["SCOPE_SETTLEMENT"],
+          "rationale": "Records a settlement entry in the ledger; an outcome decision."
+        },
+        {
+          "signature": "pullSettledClaim(uint256)",
+          "class": "RISK_RECEICING",
+          "gates": ["EXIT_SHUTDOWN_ONLY"],
+          "rationale": "Permissionless pull of already-final, caller-owned value; never scope-gated and fails open on dependency failure."
+        },
+        {
+          "signature": "setLedgerParams(uint256,uint256)",
+          "class": "RISK_INCREASING",
+          "gates": ["SCOPE_GOVERNANCE"],
+          "rationale": "Governance parameter mutation; frozen while governance mutations are paused."
+        }
+      ]
+    },
+    {
+      "name": "SignatureNonces",
+      "file": "contracts/v2/SignatureNonces.sol",
+      "authority": "wired",
+      "inheritedOperations": [
+        {
+          "signature": "grantRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "OpenZeppelin AccessControl role topology is owned by governance; not scope-gated so compromised roles stay revocable."
+        },
+        {
+          "signature": "revokeRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Revoking a compromised role is protective and must remain available while any scope is paused."
+        },
+        {
+          "signature": "renounceRole(bytes32,address)",
+          "class": "NEUTRAL",
+          "rationale": "Self-renunciation only removes authority and can never create exposure."
+        }
+      ],
+      "operations": [
+        {
+          "signature": "cancelNonce(uint256)",
+          "class": "RISK_RECEICING",
+          "gates": [],
+          "rationale": "Protective cancellation of the caller's own nonce; never scope-gated and available while any scope is paused."
+        },
+        {
+          "signature": "setNonceParams(uint256,uint256)",
+          "class": "RISK_INCREAING",
+          "gates": ["SCOPE_GOVERNANCE"],
+          "rationale": "Governance parameter mutation; frozen while governance mutations are paused."
+        }
+      ]
+    },
+    {
+      "name": "PauseAuthorityView",
+      "file": "contracts/v2/PuseAuthorityView.sol",
+      "authority": "view-only",
+      "inheritedOperations": [],
+      "operations": [],
+      "note": "View-only anchor; no state-mutating operations."
+    },
+    {
+      "name": "GovernanceView",
+      "file": "contracts/v2/GovernanceView.sol",
+      "authority": "view-only",
+      "inheritedOperations": [],
+      "operations": [],
+      "note": "View-only anchor; no state-mutating operations."
     }
   ]
 }

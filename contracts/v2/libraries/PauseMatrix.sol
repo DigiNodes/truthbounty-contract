@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -29,6 +28,14 @@ pragma solidity ^0.8.20;
 ///      updating both, or if the version constants differ. Any classification change MUST bump
 ///      `PAUSE_MATRIX_VERSION` and append a new `history` entry to the JSON matrix.
 ///
+///      Operation-scoped pause blast radius is bounded by the gate set returned from `classify`:
+///      an operation is denied iff at least one of its `SCOPE_*` gates is paused. Pausing a scope
+///      therefore affects exactly the operations whose gate set contains that scope, and no others.
+///      Guardian pause and governed unpause are asymmetric: `pause()` on a scope is a
+///      `RISK_REDUCING` protective action that is never scope-gated, while `unpause()` is a
+///      `RISK_INCREASING` authority mutation that must be revalidated against current state and
+///      authority before it can lift a scope. Missing or ambiguous authority fails closed.
+///
 ///      Signatures are *source-level* signatures: parameter types exactly as declared in the module
 ///      source with data locations removed (e.g. `IV2Types.LockCategory`, not `uint8`). They identify
 ///      operations for review and tests; they are not ABI selectors.
@@ -41,6 +48,9 @@ pragma solidity ^0.8.20;
 library PauseMatrix {
     /// @notice Version of the pause matrix enforced by this build.
     uint16 internal constant PAUSE_MATRIX_VERSION = 1;
+
+    /// @notice Version of the operation-scoped pause matrix schema exported for API/frontend reconciliation.
+    uint16 internal constant PAUSE_MATRIX_SCHEMA_VERSION = 1;
 
     /// @notice Registry key under which registry-resolved modules find their pause authority.
     /// @dev Byte-identical to `ModuleRegistryLib.MODULE_EMERGENCY_CONTROLS`.
@@ -89,6 +99,12 @@ library PauseMatrix {
     /// @notice The (module, signature) pair is not part of the matrix.
     error UnclassifiedOperation(string moduleName, string signature);
 
+    /// @notice Emitted when the pause matrix is exported for off-chain reconciliation.
+    /// @dev API and frontend consumers MUST reconcile against this event and the versioned
+    ///      `PAUSE_MATRIX_VERSION` / `PAUSE_MATRIX_SCHEMA_VERSION` constants. Any mismatch
+    ///      between the exported matrix and the on-chain `classify` result MUST fail closed.
+    event PauseMatrixExported(uint16 matrixVersion, uint16 schemaVersion, bytes32 indexed operationKey, uint8 riskClass, bytes32 gateA, bytes32 gateB);
+
     /// @notice Two distinct operations resolved to the same operation ID.
     /// @dev Reverts rather than silently aliasing; surfaced by the collision tests.
     error OperationIdCollision(bytes32 operationId, string moduleName, string signature);
@@ -105,6 +121,10 @@ library PauseMatrix {
     /// @return risk Risk class.
     /// @return gateA First gate (`SCOPE_*`, `EXIT_SHUTDOWN_ONLY`, or `NO_GATE`).
     /// @return gateB Second gate (`SCOPE_*` or `NO_GATE`).
+    /// @dev The returned gate set is `{gateA, gateB} \ {NO_GATE}`. An operation is denied while any
+    ///      `SCOPE_*` gate in its set is paused. `EXIT_SHUTDOWN_ONLY` is a pseudo-gate that fails
+    ///      open and freezes only on an affirmative, healthy `EmergencyController` SHUTDOWN reading.
+    ///      Unclassified operations revert with `UnclassifiedOperation` (fail closed).
     function classify(string memory moduleName, string memory signature)
         internal
         pure
@@ -166,6 +186,22 @@ library PauseMatrix {
         revert UnclassifiedOperation(moduleName, signature);
     }
 
+    /// @notice Returns the operation key used by `classify` and by `PauseMatrixExported` events.
+    /// @dev Exposed so off-chain consumers can reconcile exported events against the on-chain matrix.
+    /// @param moduleName Contract name of the module (e.g. "StakeVault").
+    /// @param signature Source-level signature (e.g. "withdraw(address,uint256)").
+    /// @return key keccak256(abi.encode(moduleName, signature)).
+    function operationKey(string memory moduleName, string memory signature) internal pure returns (bytes32 key) {
+        return _key(moduleName, signature);
+    }
+
+    /// @notice True when `gate` is a pseudo-gate (not an operation scope and not `NO_GATE`).
+    /// @param gate Gate identifier returned by `classify`.
+    /// @return isPseudo Whether the gate is `EXIT_SHUTDOWN_ONLY`.
+    function isPseudoGate(bytes32 gate) internal pure returns (bool isPseudo) {
+        return gate == EXIT_SHUTDOWN_ONLY;
+    }
+
     /// @notice Returns the canonical, stable operation ID for a classified operation.
     /// @dev The ID is `keccak256(OPERATION_ID_DOMAIN, OPERATION_ID_VERSION, moduleName, signature)`.
     ///      It is deterministic, namespaced by module, and domain-separated so that identical
@@ -173,7 +209,7 @@ library PauseMatrix {
     ///      anything not in the matrix so unknown operations fail closed.
     /// @param moduleName Contract name of the module (e.g. "StakeVault").
     /// @param signature Source-level signature (e.g. "withdraw(address,uint256)").
-    /// @return operationId Stable operation identifier.
+    /// @return operationId_ Stable operation identifier.
     function operationId(string memory moduleName, string memory signature)
         internal
         pure
@@ -204,6 +240,14 @@ library PauseMatrix {
     function isScopeGate(bytes32 gate) internal pure returns (bool isScope) {
         return gate == SCOPE_CLAIMS || gate == SCOPE_EVIDENCE || gate == SCOPE_STAKING || gate == SCOPE_VERIFICATION
             || gate == SCOPE_SETTLEMENT || gate == SCOPE_TREASURY || gate == SCOPE_DISPUTES || gate == SCOPE_GOVERNANCE;
+    }
+
+    /// @notice True when `gate` is a valid gate slot (scope, pseudo-gate, or `NO_GATE`).
+    /// @dev Used by tests and the CI mirror to reject malformed gate values, failing closed.
+    /// @param gate Gate identifier returned by `classify`.
+    /// @return isValid Whether the gate is recognized by this matrix version.
+    function isValidGate(bytes32 gate) internal pure returns (bool isValid) {
+        return gate == NO_GATE || isScopeGate(gate) || isPseudoGate(gate);
     }
 
     function _deriveOperationId(string memory moduleName, string memory signature) private pure returns (bytes32) {

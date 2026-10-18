@@ -75,6 +75,15 @@ library V2EventCompleteness {
     /// @notice Hard cap on a single `cellCoverage` page.
     uint256 internal constant MAX_COVERAGE_PAGE_SIZE = 8;
 
+    /// @notice Hard cap on enumerated pausable operations.
+    uint256 internal constant MAX_PAUSABLE_OPERATIONS = 32;
+
+    /// @notice Hard cap on contracts/functions a single operation affects.
+    uint256 internal constant MAX_OPERATION_TARGETS = 8;
+
+    /// @notice Hard cap on a single `operationPauseMatrix` page.
+    uint256 internal constant MAX_MATRIX_PAGE_SIZE = 8;
+
     /// @notice Coverage ordinals, spelled out so the catalogue never depends on
     ///         enum declaration order at a call site.
     uint8 internal constant COVERAGE_DIRECT = 0;
@@ -93,6 +102,51 @@ library V2EventCompleteness {
     bytes32 internal constant MODULE_EMERGENCY_GATEKEEPER = keccak256("EMERGENCY_GATEKEEPER");
     bytes32 internal constant MODULE_CONSUMER_GUARANTEES = keccak256("CONSUMER_GUARANTEES");
     bytes32 internal constant MODULE_EVENT_COMPLETENESS = keccak256("EVENT_COMPLETENESS");
+
+    // =========================================================================
+    // Pausable operation ids (PREWAVE-SC-007)
+    //
+    // Each id names exactly one externally reachable mutating operation whose
+    // blast radius is declared below. The enumeration is authoritative: an
+    // operation absent here is not pausable, and a pause that would affect an
+    // operation absent here is a topology violation.
+    // =========================================================================
+
+    bytes32 internal constant OP_VAULT_DEPOSIT = keccak256("OP:VAULT_DEPOSIT");
+    bytes32 internal constant OP_VAULT_LOCK = keccak256("OP:VAULT_LOCK");
+    bytes32 internal constant OP_VAULT_UNLOCK = keccak256("OP:VAULT_UNLOCK");
+    bytes32 internal constant OP_VAULT_WITHDRAW = keccak256("OP:VAULT_WITHDRAW");
+    bytes32 internal constant OP_VAULT_SLASH = keccak256("OP:VAULT_SLASH");
+    bytes32 internal constant OP_VAULT_SETTLE_CONCLUSIVE = keccak256("OP:VAULT_SETTLE_CONCLUSIVE");
+    bytes32 internal constant OP_EVIDENCE_COMMIT = keccak256("OP:EVIDENCE_COMMIT");
+    bytes32 internal constant OP_EVIDENCE_STATUS = keccak256("OP:EVIDENCE_STATUS");
+    bytes32 internal constant OP_ALLOCATOR_FUND = keccak256("OP:ALLOCATOR_FUND");
+    bytes32 internal constant OP_ALLOCATOR_ALLOCATE = keccak256("OP:ALLOCATOR_ALLOCATE");
+    bytes32 internal constant OP_ALLOCATOR_FINALIZE = keccak256("OP:ALLOCATOR_FINALIZE");
+    bytes32 internal constant OP_AGGREGATION_RECORD = keccak256("OP:AGGREGATION_RECORD");
+    bytes32 internal constant OP_NONCE_CONSUME = keccak256("OP:NONCE_CONSUME");
+
+    uint256 internal constant OPERATION_COUNT = 13;
+
+    // =========================================================================
+    // Pause authority asymmetry (PREWAVE-SC-007)
+    //
+    // Guardian may pause; guardian may NOT unpause. Governed unpause must
+    // revalidate current authority and current pause state before clearing.
+    // =========================================================================
+
+    bytes32 internal constant PAUSE_ROLE_GUARDIAN = keccak256("PAUSE_ROLE:GUARDIAN");
+    bytes32 internal constant PAUSE_ROLE_GOVERNED = keccak256("PAUSE_ROLE:GOVERNED");
+
+    /// @notice Guardian pause is one-directional: it may set, never clear.
+    uint8 internal constant PAUSE_ACTION_SET = 0;
+    uint8 internal constant PAUSE_ACTION_CLEAR = 1;
+
+    /// @notice Canonical pause-state events for API/frontend reconciliation.
+    bytes32 internal constant SIG_OPERATION_PAUSED = keccak256("OperationPaused(bytes32,address,uint64,uint16)");
+    bytes32 internal constant SIG_OPERATION_UNPAUSED = keccak256("OperationUnpaused(bytes32,address,uint64,uint16)");
+    bytes32 internal constant SIG_PAUSE_AUTHORITY_REJECTED =
+        keccak256("PauseAuthorityRejected(bytes32,address,uint8,uint64,uint16)");
 
     // =========================================================================
     // Cell indices (global enumeration order)
