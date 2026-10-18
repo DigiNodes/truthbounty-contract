@@ -177,11 +177,28 @@ contract TreasuryManagement is
 
         _validateSameBlock(pool);
 
+        // Snapshot balance before inbound transfer to detect fee-on-transfer tokens.
         uint256 balanceBefore = protocolToken.balanceOf(address(this));
+
+        // CEI: EFFECT before INTERACTION — credit the pool first so any callback
+        // through the inbound transferFrom observes already-updated pool state and
+        // cannot re-enter depositToPool to create phantom balance anomalies.
+        // The actualAmount adjustment below corrects for fee-on-transfer tokens after
+        // the transfer has completed, but the initial credit uses the requested amount;
+        // any shortfall is corrected immediately before _validateInvariants().
+        _creditPool(pool, amount);
+
         protocolToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 actualAmount = protocolToken.balanceOf(address(this)) - balanceBefore;
 
-        _creditPool(pool, actualAmount);
+        // If the received amount differs from requested (fee-on-transfer token),
+        // correct the pool credit to reflect what was actually received.
+        if (actualAmount != amount) {
+            // Undo the over-credit and replace with exact amount.
+            _pools[uint256(pool)].currentBalance -= amount;
+            _pools[uint256(pool)].totalDeposited -= amount;
+            _creditPool(pool, actualAmount);
+        }
 
         bytes32 recordId = _createRecord(
             msg.sender,
@@ -354,7 +371,7 @@ contract TreasuryManagement is
     }
 
     /// @inheritdoc ITreasuryManagement
-    function recordRewardWithdrawal(address recipient, uint256 amount) external onlyRole(REWARD_MODULE_ROLE) {
+    function recordRewardWithdrawal(address recipient, uint256 amount) external nonReentrant onlyRole(REWARD_MODULE_ROLE) {
         if (amount == 0) revert ZeroAmount();
         if (recipient == address(0)) revert ZeroAddress();
 
@@ -394,6 +411,7 @@ contract TreasuryManagement is
     /// @inheritdoc ITreasuryManagement
     function recordSettlementWithdrawal(address recipient, uint256 amount)
         external
+        nonReentrant
         onlyRole(SETTLEMENT_MODULE_ROLE)
     {
         if (amount == 0) revert ZeroAmount();
