@@ -19,6 +19,12 @@ import {BoundedStaticCall} from "../libraries/BoundedStaticCall.sol";
  *      The catalog deliberately over-includes roles — a role that does not exist on a
  *      contract causes a revert in `hasRole` only if the target is not an IAccessControl
  *      implementation. For non-AccessControl contracts the caller must use `safeCheckRole`.
+ *
+ *      Timelock administration (V2-SC-127): OpenZeppelin `TimelockController >= 5.0` administers
+ *      its role graph through `DEFAULT_ADMIN_ROLE` (0x00) and no longer defines
+ *      `TIMELOCK_ADMIN_ROLE`. The catalog keeps the retired hash so a stale legacy grant is still
+ *      reported as privileged authority, while `DEFAULT_ADMIN_ROLE` remains the canonical
+ *      timelock administration entry.
  */
 library PostDeploymentRoleCheck {
     // ────────────────────────────────────────────────────────────────────
@@ -32,7 +38,14 @@ library PostDeploymentRoleCheck {
     bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
     bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
-    bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
+    /// @dev Retired OpenZeppelin `< 5.0` timelock administration role. OpenZeppelin `>= 5.0`
+    ///      administers the timelock with `DEFAULT_ADMIN_ROLE` (below) and no longer defines this
+    ///      role. It stays in the catalog so a stale legacy grant from an older deployment is still
+    ///      detected as residual privileged authority.
+    bytes32 internal constant LEGACY_TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
+
+    /// @dev Backwards-compatible alias of {LEGACY_TIMELOCK_ADMIN_ROLE}.
+    bytes32 internal constant TIMELOCK_ADMIN_ROLE = LEGACY_TIMELOCK_ADMIN_ROLE;
     bytes32 internal constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
     bytes32 internal constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
 
@@ -77,12 +90,70 @@ library PostDeploymentRoleCheck {
     uint256 internal constant ROLE_CATALOG_SIZE = 27;
 
     // ────────────────────────────────────────────────────────────────────
+    //  Timelock role graph policy (PREWAVE-SC-033)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// @dev Canonical timelock role graph: proposer, executor, canceller, admin.
+    struct TimelockRoleGraph {
+        address proposer;
+        address executor;
+        address canceller;
+        address admin;
+        bool executorOpen;
+    }
+
+    /// @dev Policy violation kinds for the timelock role graph.
+    enum TimelockPolicyViolation {
+        MissingRole,
+        ExtraRole,
+        SameActorConflict,
+        OpenExecutor,
+        UnauthorizedCancel,
+        DelayBypass,
+        AdminRetained
+    }
+
+    /// @notice Emitted when the timelock role graph matches policy exactly.
+    event TimelockRoleGraphVerified(
+        address indexed timelock,
+        address proposer,
+        address executor,
+        address canceller,
+        address admin,
+        bool executorOpen
+    );
+
+    /// @notice Emitted for each timelock role graph policy violation.
+    event TimelockPolicyViolationDetected(
+        address indexed timelock,
+        TimelockPolicyViolation indexed kind,
+        address indexed actor,
+        bytes32 role
+    );
+
+    // ────────────────────────────────────────────────────────────────────
     //  Types
     // ────────────────────────────────────────────────────────────────────
 
     struct RoleViolation {
         address target;
         bytes32 role;
+    }
+
+    /// @notice A single held edge of the live role graph.
+    struct RoleGrant {
+        address account;
+        address target;
+        bytes32 role;
+    }
+
+    /// @notice A machine-verifiable expectation about one edge of the role graph.
+    /// @dev Set `shouldHold` to `true` for an approved holder and `false` for a prohibited one.
+    struct RoleExpectation {
+        address target;
+        bytes32 role;
+        address account;
+        bool shouldHold;
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -179,6 +250,72 @@ library PostDeploymentRoleCheck {
     }
 
     /**
+     * @notice Snapshot every catalog role held by `accounts` on `targets`.
+     * @dev Produces the same edge set as an exhaustive catalogue sweep, so it can be serialized
+     *      immediately before and after a handoff and compared edge-for-edge. Zero-address targets
+     *      are skipped (they carry no code); zero-address accounts are checked so the
+     *      permissionless `EXECUTOR_ROLE` sentinel remains visible in the graph.
+     * @param accounts Accounts whose role edges are captured.
+     * @param targets  AccessControl-compatible contracts to sweep.
+     * @return grants Held (account, target, role) edges.
+     */
+    function roleGraph(
+        address[] memory accounts,
+        address[] memory targets
+    ) internal view returns (RoleGrant[] memory grants) {
+        bytes32[] memory roles = roleCatalog();
+        RoleGrant[] memory buffer = new RoleGrant[](accounts.length * targets.length * roles.length);
+        uint256 count;
+
+        for (uint256 a; a < accounts.length; ++a) {
+            for (uint256 t; t < targets.length; ++t) {
+                if (targets[t] == address(0)) continue;
+                for (uint256 r; r < roles.length; ++r) {
+                    if (_safeHasRole(targets[t], roles[r], accounts[a])) {
+                        buffer[count++] = RoleGrant({
+                            account: accounts[a],
+                            target: targets[t],
+                            role: roles[r]
+                        });
+                    }
+                }
+            }
+        }
+
+        grants = new RoleGrant[](count);
+        for (uint256 k; k < count; ++k) {
+            grants[k] = buffer[k];
+        }
+    }
+
+    /**
+     * @notice Verify a set of machine-readable role-graph expectations.
+     * @dev Returns every expectation whose live state disagrees with `shouldHold`, so a caller can
+     *      assert both the presence of the approved governance graph and the absence of residual
+     *      authority (deployer/admin, legacy grants, duplicates) in one pass.
+     * @param expectations Expected and prohibited role edges.
+     * @return violations Expectations that did not match live state.
+     */
+    function checkExpectations(
+        RoleExpectation[] memory expectations
+    ) internal view returns (RoleExpectation[] memory violations) {
+        RoleExpectation[] memory buffer = new RoleExpectation[](expectations.length);
+        uint256 count;
+
+        for (uint256 i; i < expectations.length; ++i) {
+            bool holds = _safeHasRole(expectations[i].target, expectations[i].role, expectations[i].account);
+            if (holds != expectations[i].shouldHold) {
+                buffer[count++] = expectations[i];
+            }
+        }
+
+        violations = new RoleExpectation[](count);
+        for (uint256 k; k < count; ++k) {
+            violations[k] = buffer[k];
+        }
+    }
+
+    /**
      * @notice Check a single role on a single target with error handling.
      * @dev If the target does not implement `hasRole` (no code, or different ABI),
      *      the static call will fail and this returns false instead of reverting.
@@ -220,6 +357,128 @@ library PostDeploymentRoleCheck {
     // ────────────────────────────────────────────────────────────────────
     //  Internals
     // ────────────────────────────────────────────────────────────────────
+
+    // ────────────────────────────────────────────────────────────────────
+    //  Timelock role graph verification (PREWAVE-SC-033)
+    // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Verify the deployed timelock role graph exactly matches the canonical policy.
+     * @dev Policy:
+     *      - proposer, executor, canceller, admin are distinct non-zero actors.
+     *      - executor is closed (executorOpen == false) unless explicitly allowed.
+     *      - admin is renounced (address(0)) after handoff.
+     *      - no actor can propose and bypass delay alone (proposer != executor).
+     *      - cancellation is bounded to the canceller role.
+     * @param timelock The timelock contract address.
+     * @param graph The observed role graph to check.
+     * @return ok True if the graph matches policy exactly.
+     */
+    function verifyTimelockRoleGraph(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal returns (bool ok) {
+        ok = true;
+
+        if (graph.proposer == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), PROPOSER_ROLE);
+            ok = false;
+        }
+        if (graph.executor == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), EXECUTOR_ROLE);
+            ok = false;
+        }
+        if (graph.canceller == address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.MissingRole, address(0), CANCELLER_ROLE);
+            ok = false;
+        }
+
+        if (graph.proposer == graph.executor) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.proposer, PROPOSER_ROLE);
+            ok = false;
+        }
+        if (graph.proposer == graph.canceller) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.proposer, CANCELLER_ROLE);
+            ok = false;
+        }
+        if (graph.executor == graph.canceller) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.SameActorConflict, graph.executor, CANCELLER_ROLE);
+            ok = false;
+        }
+
+        if (graph.executorOpen) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.OpenExecutor, graph.executor, EXECUTOR_ROLE);
+            ok = false;
+        }
+
+        if (graph.admin != address(0)) {
+            emit TimelockPolicyViolationDetected(timelock, TimelockPolicyViolation.AdminRetained, graph.admin, TIMELOCK_ADMIN_ROLE);
+            ok = false;
+        }
+
+        if (ok) {
+            emit TimelockRoleGraphVerified(
+                timelock,
+                graph.proposer,
+                graph.executor,
+                graph.canceller,
+                graph.admin,
+                graph.executorOpen
+            );
+        }
+    }
+
+    /**
+     * @notice Assert that no actor can propose and bypass delay alone.
+     * @dev Reverts if the proposer and executor are the same actor or if the executor is open.
+     */
+    function assertNoDelayBypass(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.proposer == graph.executor) {
+            revert("PostDeploymentRoleCheck: proposer cannot be executor");
+        }
+        if (graph.executorOpen) {
+            revert("PostDeploymentRoleCheck: executor cannot be open");
+        }
+        if (graph.proposer == address(0) || graph.executor == address(0)) {
+            revert("PostDeploymentRoleCheck: missing proposer or executor");
+        }
+        // silence unused warning
+        timelock;
+    }
+
+    /**
+     * @notice Assert cancellation authority is bounded to the canceller role.
+     * @dev Reverts if canceller is zero, or if canceller overlaps proposer/executor.
+     */
+    function assertBoundedCancellation(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.canceller == address(0)) {
+            revert("PostDeploymentRoleCheck: missing canceller");
+        }
+        if (graph.canceller == graph.proposer || graph.canceller == graph.executor) {
+            revert("PostDeploymentRoleCheck: canceller must be distinct");
+        }
+        timelock;
+    }
+
+    /**
+     * @notice Assert timelock self-administration is explicit (admin renounced).
+     * @dev Reverts if the timelock admin is not address(0).
+     */
+    function assertTimelockSelfAdministration(
+        address timelock,
+        TimelockRoleGraph memory graph
+    ) internal pure {
+        if (graph.admin != address(0)) {
+            revert("PostDeploymentRoleCheck: timelock admin must be renounced");
+        }
+        timelock;
+    }
 
     function _safeHasRole(
         address target,

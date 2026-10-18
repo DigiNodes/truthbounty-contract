@@ -17,6 +17,18 @@ import {ITruthBountyGovernor} from "../../contracts/governance/v2/ITruthBountyGo
 import {GovernanceRoleTopology} from "../../contracts/governance/v2/GovernanceRoleTopology.sol";
 
 /**
+ * @title PostDeploymentRoleCheckHarness
+ * @dev External wrapper around the internal `PostDeploymentRoleCheck` library calls.
+ *      `vm.expectRevert` can only observe a revert raised by a call made from a lower call
+ *      depth, so an internal library call (inlined into the test) cannot be asserted with it.
+ */
+contract PostDeploymentRoleCheckHarness {
+    function assertNoRolesRetained(address account, address[] memory targets) external {
+        PostDeploymentRoleCheck.assertNoRolesRetained(account, targets);
+    }
+}
+
+/**
  * @title PostDeploymentRoleRenunciationTest
  * @notice Foundry test suite for V2-SC-127 — Automate Post-Deployment Role Renunciation Checks.
  * @dev Deploys the full V2 governance suite, wires roles, performs handoff, and verifies
@@ -61,7 +73,7 @@ contract PostDeploymentRoleRenunciationTest is Test {
         // 2. Governance token — no AccessControl roles, just ERC20
         govToken = new TruthBountyGovernanceToken(deployer, 1_000_000_000 ether);
 
-        // 3. TimelockController — deployer gets TIMELOCK_ADMIN_ROLE initially
+        // 3. TimelockController — deployer gets DEFAULT_ADMIN_ROLE initially (OZ >= 5.0)
         address[] memory empty = new address[](0);
         timelock = new TimelockController(2 days, empty, empty, deployer);
 
@@ -107,8 +119,9 @@ contract PostDeploymentRoleRenunciationTest is Test {
         GovernanceRoleTopology.configure(timelock, governor, guardian, 2 days);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, deployer);
 
-        // Transfer registry admin to timelock
-        timelock.grantRole(REGISTRY_ADMIN_ROLE, address(timelock));
+        // Transfer registry admin to timelock (grant lives on the registry, not the timelock;
+        // after finalization the deployer no longer holds timelock administration).
+        registry.grantRole(REGISTRY_ADMIN_ROLE, address(timelock));
 
         // Renounce deployer roles on GovernedModuleRegistry
         registry.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
@@ -163,7 +176,7 @@ contract PostDeploymentRoleRenunciationTest is Test {
         assertTrue(timelock.hasRole(CANCELLER_ROLE, address(governor)));
         assertTrue(timelock.hasRole(CANCELLER_ROLE, guardian));
         assertTrue(timelock.hasRole(EXECUTOR_ROLE, address(0))); // permissionless execution
-        assertTrue(timelock.hasRole(TIMELOCK_ADMIN_ROLE, address(timelock)));
+        assertTrue(timelock.hasRole(DEFAULT_ADMIN_ROLE, address(timelock)));
     }
 
     /// @notice Deployer is fully removed from timelock after finalization.
@@ -203,23 +216,27 @@ contract PostDeploymentRoleRenunciationTest is Test {
             PostDeploymentRoleCheck.checkAllRoles(deployer, _targets());
 
         // deployer should hold: DEFAULT_ADMIN_ROLE + REGISTRY_ADMIN_ROLE on registry,
-        // TIMELOCK_ADMIN_ROLE on timelock, DEFAULT_ADMIN_ROLE on guardianContract
+        // DEFAULT_ADMIN_ROLE on timelock, DEFAULT_ADMIN_ROLE on guardianContract
         assertTrue(violations.length > 0, "deployer should hold roles before handoff");
     }
 
     /// @notice assertNoRolesRetained reverts before handoff.
     function test_AssertNoRolesRetained_RevertsBeforeHandoff() public {
+        PostDeploymentRoleCheckHarness harness = new PostDeploymentRoleCheckHarness();
+
         vm.expectRevert("PostDeploymentRoleCheck: deployer retains unauthorized roles");
-        PostDeploymentRoleCheck.assertNoRolesRetained(deployer, _targets());
+        harness.assertNoRolesRetained(deployer, _targets());
     }
 
     /// @notice Violation events are emitted for each retained role.
     function test_ViolationEventsEmitted() public {
+        PostDeploymentRoleCheckHarness harness = new PostDeploymentRoleCheckHarness();
         PostDeploymentRoleCheck.RoleViolation[] memory violations =
             PostDeploymentRoleCheck.checkAllRoles(deployer, _targets());
+        assertGt(violations.length, 0, "deployer must hold bootstrap roles before handoff");
 
         for (uint256 i; i < violations.length; ++i) {
-            vm.expectEmit(true, true, true, true);
+            vm.expectEmit(true, true, true, true, address(harness));
             emit PostDeploymentRoleCheck.RoleRenunciationViolation(
                 deployer,
                 violations[i].target,
@@ -228,14 +245,15 @@ contract PostDeploymentRoleRenunciationTest is Test {
         }
 
         vm.expectRevert("PostDeploymentRoleCheck: deployer retains unauthorized roles");
-        PostDeploymentRoleCheck.assertNoRolesRetained(deployer, _targets());
+        harness.assertNoRolesRetained(deployer, _targets());
     }
 
     /// @notice The specific roles deployer holds before handoff are correct.
     function test_SpecificDeployerRolesBeforeHandoff() public view {
         assertTrue(registry.hasRole(DEFAULT_ADMIN_ROLE, deployer));
         assertTrue(registry.hasRole(REGISTRY_ADMIN_ROLE, deployer));
-        assertTrue(timelock.hasRole(TIMELOCK_ADMIN_ROLE, deployer));
+        // OZ TimelockController >= 5.0 grants DEFAULT_ADMIN_ROLE to the constructor admin.
+        assertTrue(timelock.hasRole(DEFAULT_ADMIN_ROLE, deployer));
         assertTrue(guardianContract.hasRole(DEFAULT_ADMIN_ROLE, deployer));
     }
 
@@ -268,7 +286,7 @@ contract PostDeploymentRoleRenunciationTest is Test {
         PostDeploymentRoleCheck.RoleViolation[] memory violations =
             PostDeploymentRoleCheck.checkAllRoles(deployer, _targets());
 
-        // Still has TIMELOCK_ADMIN_ROLE on timelock and DEFAULT_ADMIN_ROLE on guardianContract
+        // Still has DEFAULT_ADMIN_ROLE on timelock and DEFAULT_ADMIN_ROLE on guardianContract
         assertTrue(violations.length > 0, "partial renunciation should still have violations");
     }
 
@@ -351,10 +369,15 @@ contract PostDeploymentRoleRenunciationTest is Test {
         registry.grantRole(REGISTRY_ADMIN_ROLE, deployer);
     }
 
-    /// @notice Deployer cannot re-grant TIMELOCK_ADMIN_ROLE after finalization.
+    /// @notice Deployer cannot re-grant timelock administration after finalization.
     function test_DeployerCannotReacquireTimelockAdmin() public {
         _performFullHandoff();
 
+        vm.prank(deployer);
+        vm.expectRevert();
+        timelock.grantRole(DEFAULT_ADMIN_ROLE, deployer);
+
+        // The retired legacy role is likewise un-grantable by the deployer.
         vm.prank(deployer);
         vm.expectRevert();
         timelock.grantRole(TIMELOCK_ADMIN_ROLE, deployer);
@@ -430,7 +453,7 @@ contract PostDeploymentRoleRenunciationTest is Test {
     //  FAILURE-PATH TESTS
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Missing GovernanceRoleTopology.finalizeTimelockAdmin leaves TIMELOCK_ADMIN_ROLE.
+    /// @notice Missing GovernanceRoleTopology.finalizeTimelockAdmin leaves DEFAULT_ADMIN_ROLE.
     function test_MissingTimelockFinalization_DetectsViolation() public {
         vm.startPrank(deployer);
 
@@ -447,16 +470,16 @@ contract PostDeploymentRoleRenunciationTest is Test {
         PostDeploymentRoleCheck.RoleViolation[] memory violations =
             PostDeploymentRoleCheck.checkAllRoles(deployer, _targets());
 
-        assertTrue(violations.length > 0, "should detect TIMELOCK_ADMIN_ROLE violation");
+        assertTrue(violations.length > 0, "should detect timelock administration violation");
 
-        // Verify the specific violation
+        // Verify the specific violation: the canonical OZ >= 5.0 timelock admin role.
         bool foundTimelockAdmin = false;
         for (uint256 i; i < violations.length; ++i) {
-            if (violations[i].target == address(timelock) && violations[i].role == TIMELOCK_ADMIN_ROLE) {
+            if (violations[i].target == address(timelock) && violations[i].role == DEFAULT_ADMIN_ROLE) {
                 foundTimelockAdmin = true;
             }
         }
-        assertTrue(foundTimelockAdmin, "TIMELOCK_ADMIN_ROLE violation not found");
+        assertTrue(foundTimelockAdmin, "DEFAULT_ADMIN_ROLE on timelock violation not found");
     }
 
     /// @notice Missing registry admin renunciation is detected.

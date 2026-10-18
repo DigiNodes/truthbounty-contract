@@ -77,7 +77,7 @@ contract TruthBountyGovernorTest is Test {
         GovernanceRoleTopology.configure(timelock, governor, guardian, TIMELOCK_DELAY);
         GovernanceRoleTopology.finalizeTimelockAdmin(timelock, admin);
         bytes32 registryAdminRole = registry.REGISTRY_ADMIN_ROLE();
-        timelock.grantRole(registryAdminRole, address(timelock));
+        registry.grantRole(registryAdminRole, address(timelock));
 
         module = new MockGovernedModule();
         registry.registerModule("MOCK_MODULE", address(module));
@@ -272,6 +272,93 @@ contract TruthBountyGovernorTest is Test {
         vm.prank(spammer);
         vm.expectRevert();
         governor.propose(targets, values, calldatas, "spam");
+    }
+
+    function test_ProposalRejectsMismatchedOperationArrays() public {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](0);
+        bytes[] memory calldatas = new bytes[](1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.InvalidProposalOperationCount.selector, 1, 0, 1,
+                governor.MAX_PROPOSAL_OPERATIONS()
+            )
+        );
+        governor.propose(targets, values, calldatas, "bad arrays");
+    }
+
+    function test_ProposalRejectsTooManyOperations() public {
+        uint256 count = governor.MAX_PROPOSAL_OPERATIONS() + 1;
+        address[] memory targets = new address[](count);
+        uint256[] memory values = new uint256[](count);
+        bytes[] memory calldatas = new bytes[](count);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.InvalidProposalOperationCount.selector, count, count, count,
+                governor.MAX_PROPOSAL_OPERATIONS()
+            )
+        );
+        governor.propose(targets, values, calldatas, "too many operations");
+    }
+
+    function test_ProposalRejectsOversizedOperationCalldata() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = new bytes(governor.MAX_OPERATION_CALLDATA_BYTES() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.OperationCalldataTooLarge.selector,
+                0,
+                governor.MAX_OPERATION_CALLDATA_BYTES() + 1,
+                governor.MAX_OPERATION_CALLDATA_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, "oversized action");
+    }
+
+    function test_ProposalRejectsOversizedAggregateCalldata() public {
+        uint256 perOperationLimit = governor.MAX_OPERATION_CALLDATA_BYTES();
+        uint256 count = governor.MAX_PROPOSAL_CALLDATA_BYTES() / perOperationLimit + 1;
+        address[] memory targets = new address[](count);
+        uint256[] memory values = new uint256[](count);
+        bytes[] memory calldatas = new bytes[](count);
+        for (uint256 i; i < count; ++i) {
+            targets[i] = address(module);
+            calldatas[i] = new bytes(perOperationLimit);
+        }
+
+        uint256 aggregateSize = count * perOperationLimit;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.ProposalCalldataTooLarge.selector,
+                aggregateSize,
+                governor.MAX_PROPOSAL_CALLDATA_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, "oversized proposal payload");
+    }
+
+    function test_ProposalRejectsOversizedDescription() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(module);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = _proposalCalldata(1);
+        string memory description = new string(governor.MAX_PROPOSAL_DESCRIPTION_BYTES() + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TruthBountyGovernor.ProposalDescriptionTooLarge.selector,
+                governor.MAX_PROPOSAL_DESCRIPTION_BYTES() + 1,
+                governor.MAX_PROPOSAL_DESCRIPTION_BYTES()
+            )
+        );
+        governor.propose(targets, values, calldatas, description);
     }
 
     function test_PublishManifestEmitsConfig() public {

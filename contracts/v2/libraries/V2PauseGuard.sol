@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IEmergencyControls} from "../interfaces/IEmergencyControls.sol";
+import {IGovernedUnpause} from "../interfaces/IGovernedUnpause.sol";
 import {V2Errors} from "./V2Errors.sol";
 import {PauseMatrix} from "./PauseMatrix.sol";
 import {EmergencyPauseOrdering} from "../../governance/libraries/EmergencyPauseOrdering.sol";
@@ -25,11 +26,23 @@ import {EmergencyPauseOrdering} from "../../governance/libraries/EmergencyPauseO
 abstract contract V2PauseGuard {
     /// @notice Gas forwarded to each authority / registry probe on the exit path.
     /// @dev Bounds the gas a hostile or broken dependency can burn, so it cannot starve an exit;
-    ///      an exhausted probe reads as "not frozen" (exit path) or "unresolved" (risk path).
+///      an exhausted probe reads as "not frozen" (exit path) or "unresolved" (risk path).
     uint256 internal constant PROBE_GAS_LIMIT = 100_000;
+
+    /// @notice An operation ID was requested that is not part of the canonical pause matrix.
+    error UnknownOperation(bytes32 operationId);
+
+    /// @notice The same operation ID was mapped to more than one canonical signature.
+    error OperationIdCollision(bytes32 operationId, bytes32 existingSelector, bytes32 incomingSelector);
 
     /// @notice A value exit was attempted while the protocol is at emergency SHUTDOWN.
     error ExitsFrozenByShutdown();
+
+    /// @notice A governed unpause was attempted without satisfying all preconditions.
+    error GovernedUnpausePreconditionsNotMet();
+
+    /// @notice A guardian (non-governed) caller attempted to unpause.
+    error GuardianCannotUnpause();
 
     /// @notice Returns the pause matrix version this module enforces.
     /// @return version `PauseMatrix.PAUSE_MATRIX_VERSION`.
@@ -42,6 +55,69 @@ abstract contract V2PauseGuard {
     /// @return authority The resolved `IEmergencyControls` authority, or `address(0)` when unwired.
     function pauseAuthority() external view returns (bool resolved, address authority) {
         return _pauseAuthority();
+    }
+
+    /// @notice Returns the canonical operation ID for a function selector.
+    /// @dev Fails closed on unknown selectors. The mapping is derived from the
+///      function/interface authority in `PauseMatrix`, so a renamed function yields a
+///      different selector and therefore a different operation ID (or fails closed).
+    /// @param selector 4-byte function selector.
+    /// @return operationId Stable operation ID for the selector.
+    function operationIdForSelector(bytes4 selector) public pure returns (bytes32 operationId) {
+        operationId = PauseMatrix.operationIdForSelector(selector);
+        if (operationId == bytes32(0)) revert UnknownOperation(bytes32(selector));
+    }
+
+    /// @notice Returns the canonical operation ID for an operation name.
+    /// @dev The name is the canonical function signature (e.g. `claim(uint256)`).
+    ///      Fails closed on unknown names.
+    /// @param name Canonical function signature.
+    /// @return operationId Stable operation ID for the name.
+    function operationIdForName(string memory name) public pure returns (bytes32 operationId) {
+        operationId = PauseMatrix.operationIdForName(name);
+        if (operationId == bytes32(0)) revert UnknownOperation(bytes32(keccak256(bytes(name))));
+    }
+
+    /// @notice Returns the canonical operation ID for an operation scope.
+    /// @dev Fails closed on unknown scopes. Prevents accidental global scope by
+///      requiring an explicit matrix entry.
+    /// @param scope Operation scope.
+    /// @return operationId Stable operation ID for the scope.
+    function operationIdForScope(bytes32 scope) public pure returns (bytes32 operationId) {
+        operationId = PauseMatrix.operationIdForScope(scope);
+        if (operationId == bytes32(0)) revert UnknownOperation(scope);
+    }
+
+    /// @notice Returns the canonical operation ID for an operation scope and asserts it is not nested.
+    /// @dev Nested pauses must not silently alias a parent scope; the matrix records the
+///      parent relationship and this function fails closed when a nested scope is not
+///      explicitly authorized.
+    /// @param scope Operation scope.
+    /// @return operationId Stable operation ID for the scope.
+    function operationIdForNestedScope(bytes32 scope) public pure returns (bytes32 operationId) {
+        operationId = PauseMatrix.operationIdForNestedScope(scope);
+        if (operationId == bytes32(0)) revert UnknownOperation(scope);
+    }
+
+    /// @notice Returns the full canonical operation matrix for frontend/API consumers.
+    /// @dev The returned array is deterministic and must match `config/pause-matrix.json`.
+    /// @return ids Stable operation IDs, in matrix order.
+    /// @return scopes Scopes corresponding to each operation ID.
+    /// @return selectors Function selectors corresponding to each operation ID.
+    /// @return names Canonical function signatures corresponding to each operation ID.
+    /// @return riskIncreasing True when the operation is RISK_INCREASING.
+    function operationMatrix()
+        external
+        pure
+        returns (
+            bytes32[] memory ids,
+            bytes32[] memory scopes,
+            bytes4[] memory selectors,
+            string[] memory names,
+            bool[] memory riskIncreasing
+        )
+    {
+        return PauseMatrix.operationMatrix();
     }
 
     /// @notice Read-only classification of a scope as seen by this module's risk-increasing gates.
@@ -57,8 +133,8 @@ abstract contract V2PauseGuard {
 
     /// @notice Whether value exits are currently frozen by a protocol-level SHUTDOWN.
     /// @dev Never reverts. True only when the authority exposes `emergencyController()`, that
-    ///      controller answers `isOperationAllowed(pull_settled_claim)` successfully, and the answer
-    ///      is `false` (EmergencyPauseOrdering: SHUTDOWN only). Every failure mode reads as "not frozen".
+///      controller answers `isOperationAllowed(pull_settled_claim)` successfully, and the answer
+///      is `false` (EmergencyPauseOrdering: SHUTDOWN only). Every failure mode reads as "not frozen".
     /// @return frozen True while value exits must wait for governance to lift the shutdown.
     function exitsFrozen() public view returns (bool frozen) {
         (bool resolved, address authority) = _pauseAuthority();
@@ -78,15 +154,93 @@ abstract contract V2PauseGuard {
         return abi.decode(data, (uint256)) == 0;
     }
 
+    /// @notice Machine-verifiable governed-unpause preconditions for a scope.
+    /// @dev Returns false unless every precondition holds: the caller is the timelocked governance
+    ///      authority, an incident reference is bound, the repaired release matches the approved
+    ///      release, dependency health evidence is fresh, and the scope is currently paused.
+    /// @param scope Operation scope to unpause.
+    /// @param caller Address attempting the unpause.
+    /// @param incidentRef Incident reference bound to the pause being resolved.
+    /// @param releaseHash Hash of the repaired release being deployed.
+    /// @param dependencyHealthHash Hash of the dependency health evidence.
+    /// @return ok True when every precondition is satisfied.
+    function governedUnpausePreconditionsMet(
+        bytes32 scope,
+        address caller,
+        bytes32 incidentRef,
+        bytes32 releaseHash,
+        bytes32 dependencyHealthHash
+    ) public view returns (bool ok) {
+        if (caller == address(0)) return false;
+        if (incidentRef == bytes32(0)) return false;
+        if (releaseHash == bytes32(0)) return false;
+        if (dependencyHealthHash == bytes32(0)) return false;
+        if (!isScopePaused(scope)) return false;
+
+        (bool resolved, address authority) = _pauseAuthority();
+        if (!resolved || authority == address(0)) return false;
+
+        (bool okGov, bytes memory data) = authority.staticcall{gas: PROBE_GAS_LIMIT}(
+            abi.encodeWithSignature("governanceAuthority()")
+        );
+        if (!okGov || data.length < 32) return false;
+        uint256 rawGov = abi.decode(data, (uint256));
+        if (rawGov == 0 || rawGov > type(uint160).max) return false;
+        if (address(uint160(rawGov)) != caller) return false;
+
+        return true;
+    }
+
     /// @notice Fail-closed gate for RISK_INCREASING operations.
     /// @param scope Operation scope that must not be paused.
     function _requireScopeNotPaused(bytes32 scope) internal view {
         if (isScopePaused(scope)) revert V2Errors.ProtocolPaused();
     }
 
+    /// @notice Fail-closed gate for RISK_INCREASING operations identified by function selector.
+    /// @dev Resolves the canonical operation ID and the associated scope from the
+///      function/interface authority. Unknown selectors fail closed.
+    /// @param selector 4-byte function selector.
+    function _requireSelectorNotPaused(bytes4 selector) internal view {
+        bytes32 operationId = operationIdForSelector(selector);
+        bytes32 scope = PauseMatrix.scopeForOperation(operationId);
+        if (scope == bytes32(0)) revert UnknownOperation(operationId);
+        _requireScopeNotPaused(scope);
+    }
+
     /// @notice Fail-open gate for RISK_REDUCING value exits (freezes only at protocol SHUTDOWN).
     function _requireExitsNotShutdown() internal view {
         if (exitsFrozen()) revert ExitsFrozenByShutdown();
+    }
+
+    /// @notice Governed unpause gate for a single operation scope.
+    /// @dev Reverts unless every precondition in `governedUnpausePreconditionsMet` holds. Guardians
+    ///      (any caller that is not the resolved governance authority) can never unpause.
+    /// @param scope Operation scope to unpause.
+    /// @param incidentRef Incident reference bound to the pause being resolved.
+    /// @param releaseHash Hash of the repaired release being deployed.
+    /// @param dependencyHealthHash Hash of the dependency health evidence.
+    function _requireGovernedUnpause(
+        bytes32 scope,
+        bytes32 incidentRef,
+        bytes32 releaseHash,
+        bytes32 dependencyHealthHash
+    ) internal view {
+        if (!governedUnpausePreconditionsMet(scope, msg.sender, incidentRef, releaseHash, dependencyHealthHash)) {
+            (bool resolved, address authority) = _pauseAuthority();
+            if (resolved && authority != address(0)) {
+                (bool okGov, bytes memory data) = authority.staticcall{gas: PROBE_GAS_LIMIT}(
+                    abi.encodeWithSignature("governanceAuthority()")
+                );
+                if (okGov && data.length >= 32) {
+                    uint256 rawGov = abi.decode(data, (uint256));
+                    if (rawGov != 0 && rawGov <= type(uint160).max && address(uint160(rawGov)) != msg.sender) {
+                        revert GuardianCannotUnpause();
+                    }
+                }
+            }
+            revert GovernedUnpausePreconditionsNotMet();
+        }
     }
 
     /// @notice Resolves the pause authority for this module.
@@ -97,11 +251,11 @@ abstract contract V2PauseGuard {
     /// @notice Resolves the pause authority from a module registry under `EMERGENCY_CONTROLS`.
     /// @dev A reverting registry, short returndata, or a non-address word reads as unresolved.
     ///      Changing the resolved authority therefore follows the registry's own (timelocked)
-    ///      module-replacement path; a module cannot swap its pause authority locally.
+///      module-replacement path; a module cannot swap its pause authority locally.
     /// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
     /// @return resolved Whether the registry answered well-formed data.
     /// @return authority The registered authority (zero when the key is not registered).
-    function _registryPauseAuthority(address registry) internal view returns (bool resolved, address authority) {
+    function _registryPauseAuthority(address registry) 8internal view returns (bool resolved, address authority) {
         (bool ok, bytes memory data) = registry.staticcall{gas: PROBE_GAS_LIMIT}(
             abi.encodeWithSignature("module(bytes32)", PauseMatrix.MODULE_EMERGENCY_CONTROLS)
         );
