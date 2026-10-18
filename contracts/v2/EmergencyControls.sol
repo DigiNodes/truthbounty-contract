@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
@@ -68,6 +69,30 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     /// @notice Scope for dispute initiation and resolution
     bytes32 public constant SCOPE_DISPUTES = keccak256("DISPUTES");
 
+    // ─── Operation IDs ────────────────────────────────────────────────
+
+    /// @notice Canonical operation ID for pausing a scope
+    bytes32 public constant OP_PAUSE = keccak256("EmergencyControls.pause(bytes32)");
+
+    /// @notice Canonical operation ID for unpausing a scope
+    bytes32 public constant OP_UNPAUSE = keccak256("EmergencyControls.unpause(bytes32)");
+
+    /// @notice Canonical operation ID for checking paused status
+    bytes32 public constant OP_PAUSED = keccak256("EmergencyControls.paused(bytes32)");
+
+    /// @notice Canonical operation ID for checking specific scope pause status
+    bytes32 public constant OP_IS_SCOPE_SPECIFICALLY_PAUSED =
+        keccak256("EmergencyControls.isScopeSpecificallyPaused(bytes32)");
+
+    /// @notice Canonical operation ID for pausing all operations globally
+    bytes32 public constant OP_PAUSE_ALL = keccak256("EmergencyControls.pauseAll()");
+
+    /// @notice Canonical operation ID for unpausing all operations globally
+    bytes32 public constant OP_UNPAUSE_ALL = keccak256("EmergencyControls.unpauseAll()");
+
+    /// @notice Canonical operation ID for checking global pause status
+    bytes32 public constant OP_IS_GLOBALLY_PAUSED = keccak256("EmergencyControls.isGloballyPaused()");
+
     // ─── Custom Errors ────────────────────────────────────────────────
 
     error AlreadyPaused(bytes32 scope);
@@ -80,6 +105,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     error DependencyUnhealthy(bytes32 dependency);
     error IncidentAlreadyResolved(bytes32 incidentRef);
     error ScopeNotFullyPaused(bytes32 scope);
+    error UnknownOperation(bytes32 operationId);
+    error OperationIdCollision(bytes32 operationId);
+    error InvalidScope(bytes32 scope);
 
     // ─── State ────────────────────────────────────────────────────────
 
@@ -103,6 +131,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     /// @notice Mapping from incident reference to resolution status
     mapping(bytes32 => bool) public incidentResolved;
+
+    /// @notice Mapping from operation ID to canonical operation name
+    mapping(bytes32 => string) private _operationNames;
+
+    /// @notice Mapping from operation ID to whether it is registered
+    mapping(bytes32 => bool) private _operationRegistered;
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -129,6 +163,15 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         _setRoleAdmin(DEFAULT_ADMIN_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(GOVERNANCE_ROLE, GOVERNANCE_ROLE);
         _setRoleAdmin(EMERGENCY_ROLE, GOVERNANCE_ROLE);
+
+        // Register canonical operation IDs
+        _registerOperation(OP_PAUSE, "pause(bytes32)");
+        _registerOperation(OP_UNPAUSE, "unpause(bytes32)");
+        _registerOperation(OP_PAUSED, "paused(bytes32)");
+        _registerOperation(OP_IS_SCOPE_SPECIFICALLY_PAUSED, "isScopeSpecificallyPaused(bytes32)");
+        _registerOperation(OP_PAUSE_ALL, "pauseAll()");
+        _registerOperation(OP_UNPAUSE_ALL, "unpauseAll()");
+        _registerOperation(OP_IS_GLOBALLY_PAUSED, "isGloballyPaused()");
     }
 
     // ─── IV2Module ────────────────────────────────────────────────────
@@ -164,6 +207,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToPause(msg.sender);
         }
+        if (!_operationRegistered[OP_PAUSE]) revert UnknownOperation(OP_PAUSE);
         if (_pausedScopes[scope]) revert AlreadyPaused(scope);
 
         _pausedScopes[scope] = true;
@@ -196,6 +240,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToUnpause(msg.sender);
         }
+        if (!_operationRegistered[OP_UNPAUSE]) revert UnknownOperation(OP_UNPAUSE);
         if (!_pausedScopes[scope]) revert NotPaused(scope);
 
         uint256 readyAt = unpauseScheduledAt[scope];
@@ -241,6 +286,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      * @return True if either the specific scope or the global scope is paused.
      */
     function paused(bytes32 scope) external view override returns (bool) {
+        if (!_operationRegistered[OP_PAUSED]) revert UnknownOperation(OP_PAUSED);
         return _pausedScopes[SCOPE_ALL] || _pausedScopes[scope];
     }
 
@@ -250,6 +296,9 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      * @return True if the specific scope itself is marked paused.
      */
     function isScopeSpecificallyPaused(bytes32 scope) external view returns (bool) {
+        if (!_operationRegistered[OP_IS_SCOPE_SPECIFICALLY_PAUSED]) {
+            revert UnknownOperation(OP_IS_SCOPE_SPECIFICALLY_PAUSED);
+        }
         return _pausedScopes[scope];
     }
 
@@ -269,5 +318,108 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         unpauseScheduledAt[scope] = readyAt;
 
         emit UnpauseScheduled(scope, readyAt, msg.sender);
+    }
+
+    /**
+     * @notice Pause all operations globally.
+     * @dev Convenience wrapper around pause(SCOPE_ALL).
+     */
+    function pauseAll() external {
+        if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert UnauthorizedToPause(msg.sender);
+        }
+        if (!_operationRegistered[OP_PAUSE_ALL]) revert UnknownOperation(OP_PAUSE_ALL);
+        if (_pausedScopes[SCOPE_ALL]) revert AlreadyPaused(SCOPE_ALL);
+
+        _pausedScopes[SCOPE_ALL] = true;
+        pausedAt[SCOPE_ALL] = block.timestamp;
+        pauseCount[SCOPE_ALL]++;
+
+        emit EmergencyPaused(SCOPE_ALL, msg.sender);
+    }
+
+    /**
+     * @notice Unpause all operations globally.
+     * @dev Convenience wrapper around unpause(SCOPE_ALL). GOVERNANCE_ROLE only.
+     */
+    function unpauseAll() external {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert UnauthorizedToUnpause(msg.sender);
+        }
+        if (!_operationRegistered[OP_UNPAUSE_ALL]) revert UnknownOperation(OP_UNPAUSE_ALL);
+        if (!_pausedScopes[SCOPE_ALL]) revert NotPaused(SCOPE_ALL);
+
+        _pausedScopes[SCOPE_ALL] = false;
+        pausedAt[SCOPE_ALL] = 0;
+
+        emit EmergencyUnpaused(SCOPE_ALL, msg.sender);
+    }
+
+    /**
+     * @notice Check whether the global scope is paused.
+     * @return True if the global scope is paused.
+     */
+    function isGloballyPaused() external view returns (bool) {
+        if (!_operationRegistered[OP_IS_GLOBALLY_PAUSED]) {
+            revert UnknownOperation(OP_IS_GLOBALLY_PAUSED);
+        }
+        return _pausedScopes[SCOPE_ALL];
+    }
+
+    /**
+     * @notice Get the canonical operation name for a given operation ID.
+     * @param operationId The operation ID to look up.
+     * @return The canonical operation name.
+     */
+    function operationName(bytes32 operationId) external view returns (string memory) {
+        if (!_operationRegistered[operationId]) revert UnknownOperation(operationId);
+        return _operationNames[operationId];
+    }
+
+    /**
+     * @notice Check whether an operation ID is registered.
+     * @param operationId The operation ID to check.
+     * @return True if the operation ID is registered.
+     */
+    function isOperationRegistered(bytes32 operationId) external view returns (bool) {
+        return _operationRegistered[operationId];
+    }
+
+    /**
+     * @notice Get the full operation matrix for frontend/API consumers.
+     * @return ids Array of operation IDs.
+     * @return names Array of canonical operation names.
+     */
+    function operationMatrix() external view returns (bytes32[] memory ids, string[] memory names) {
+        ids = new bytes32[](7);
+        names = new string[](7);
+
+        ids[0] = OP_PAUSE;
+        names[0] = _operationNames[OP_PAUSE];
+        ids[1] = OP_UNPAUSE;
+        names[1] = _operationNames[OP_UNPAUSE];
+        ids[2] = OP_PAUSED;
+        names[2] = _operationNames[OP_PAUSED];
+        ids[3] = OP_IS_SCOPE_SPECIFICALLY_PAUSED;
+        names[3] = _operationNames[OP_IS_SCOPE_SPECIFICALLY_PAUSED];
+        ids[4] = OP_PAUSE_ALL;
+        names[4] = _operationNames[OP_PAUSE_ALL];
+        ids[5] = OP_UNPAUSE_ALL;
+        names[5] = _operationNames[OP_UNPAUSE_ALL];
+        ids[6] = OP_IS_GLOBALLY_PAUSED;
+        names[6] = _operationNames[OP_IS_GLOBALLY_PAUSED];
+    }
+
+    // ─── Internal Helpers ─────────────────────────────────────────────
+
+    /**
+     * @dev Register a canonical operation ID. Reverts on collision.
+     * @param operationId The operation ID to register.
+     * @param name The canonical operation name.
+     */
+    function _registerOperation(bytes32 operationId, string memory name) internal {
+        if (_operationRegistered[operationId]) revert OperationIdCollision(operationId);
+        _operationRegistered[operationId] = true;
+        _operationNames[operationId] = name;
     }
 }

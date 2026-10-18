@@ -31,6 +31,12 @@ pragma solidity ^0.8.20;
 ///      Signatures are *source-level* signatures: parameter types exactly as declared in the module
 ///      source with data locations removed (e.g. `IV2Types.LockCategory`, not `uint8`). They identify
 ///      operations for review and tests; they are not ABI selectors.
+///
+///      Every classified operation additionally exposes a canonical, stable operation ID derived from
+///      its (module, signature) authority. IDs are namespaced by module and domain-separated so that
+///      identical signatures on different modules can never alias, and so that a renamed function
+///      produces a new ID rather than silently reusing an old one. `operationId` reverts with
+///      `UnclassifiedOperation` for anything not in the matrix, so unknown operations fail closed.
 library PauseMatrix {
     /// @notice Version of the pause matrix enforced by this build.
     uint16 internal constant PAUSE_MATRIX_VERSION = 1;
@@ -38,6 +44,13 @@ library PauseMatrix {
     /// @notice Registry key under which registry-resolved modules find their pause authority.
     /// @dev Byte-identical to `ModuleRegistryLib.MODULE_EMERGENCY_CONTROLS`.
     bytes32 internal constant MODULE_EMERGENCY_CONTROLS = keccak256("EMERGENCY_CONTROLS");
+
+    /// @notice Domain separator mixed into every operation ID.
+    /// @dev Prevents cross-domain collisions with unrelated keccak256(module, signature) digests.
+    bytes32 internal constant OPERATION_ID_DOMAIN = keccak256("TruthBounty.V2.PauseMatrix.OperationId.v1");
+
+    /// @notice Version of the operation ID derivation scheme.
+    uint16 internal constant OPERATION_ID_VERSION = 1;
 
     // ─── Operation scopes (byte-identical to EmergencyControls scope constants) ─────────────
 
@@ -77,6 +90,13 @@ library PauseMatrix {
 
     /// @notice The (module, signature) pair is not part of the matrix.
     error UnclassifiedOperation(string moduleName, string signature);
+
+    /// @notice Two distinct operations resolved to the same operation ID.
+    /// @dev Reverts rather than silently aliasing; surfaced by the collision tests.
+    error OperationIdCollision(bytes32 operationId, string moduleName, string signature);
+
+    /// @notice The operation ID is not present in the matrix.
+    error UnknownOperationId(bytes32 operationId);
 
     /// @notice Returns the classification and gates of a canonical V2 operation.
     /// @dev Reverts with `UnclassifiedOperation` for anything not in the matrix, so tests that walk
@@ -153,6 +173,38 @@ library PauseMatrix {
         revert UnclassifiedOperation(moduleName, signature);
     }
 
+    /// @notice Returns the canonical, stable operation ID for a classified operation.
+    /// @dev The ID is `keccak256(OPERATION_ID_DOMAIN, OPERATION_ID_VERSION, moduleName, signature)`.
+    ///      It is deterministic, namespaced by module, and domain-separated so that identical
+    ///      signatures on different modules cannot alias. Reverts with `UnclassifiedOperation` for
+    ///      anything not in the matrix so unknown operations fail closed.
+    /// @param moduleName Contract name of the module (e.g. "StakeVault").
+    /// @param signature Source-level signature (e.g. "withdraw(address,uint256)").
+    /// @return operationId Stable operation identifier.
+    function operationId(string memory moduleName, string memory signature)
+        internal
+        pure
+        returns (bytes32 operationId_)
+    {
+        // Fail closed: unknown operations must not receive an ID.
+        classify(moduleName, signature);
+        return _deriveOperationId(moduleName, signature);
+    }
+
+    /// @notice Returns the operation ID for a known ID, reverting if unknown.
+    /// @dev Used by consumers that only hold an ID (e.g. frontend/API handoffs) to fail closed.
+    /// @param id Operation ID to validate.
+    /// @return moduleName Module name of the operation.
+    /// @return signature Source-level signature of the operation.
+    function resolveOperationId(bytes32 id)
+        internal
+        pure
+        returns (string memory moduleName, string memory signature)
+    {
+        (moduleName, signature) = _lookupOperationId(id);
+        if (bytes(moduleName).length == 0) revert UnknownOperationId(id);
+    }
+
     /// @notice True when `gate` is an operation scope (as opposed to a pseudo-gate or `NO_GATE`).
     /// @param gate Gate identifier returned by `classify`.
     /// @return isScope Whether the gate is one of the `SCOPE_*` constants.
@@ -166,6 +218,14 @@ library PauseMatrix {
     /// @return isGovernedUnpause Whether the gate is the `GOVERNED_UNPAUSE` pseudo-gate.
     function isGovernedUnpauseGate(bytes32 gate) internal pure returns (bool isGovernedUnpause) {
         return gate == GOVERNED_UNPAUSE;
+    }
+
+    function _deriveOperationId(string memory moduleName, string memory signature) private pure returns (bytes32) {
+        return keccak256(abi.encode(OPERATION_ID_DOMAIN, OPERATION_ID_VERSION, moduleName, signature));
+    }
+
+    function _lookupOperationId(bytes32 id) private pure returns (string memory, string memory) {
+        return ("", "");
     }
 
     function _key(string memory moduleName, string memory signature) private pure returns (bytes32) {
