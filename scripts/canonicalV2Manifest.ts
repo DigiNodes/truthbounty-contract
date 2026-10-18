@@ -21,6 +21,12 @@ export interface CanonicalV2ManifestInputs {
   minAppealStake: string;
   appealMultiplierBps: number;
   maxWeightCap: string;
+  maxAppealRounds?: string;
+  appealBond?: string;
+  appealBondEscalationBps?: string;
+  maxAppealBond?: string;
+  maxVotersPerRound?: string;
+  finalizeDeployerRoles?: boolean;
 }
 
 export interface ArtifactReader {
@@ -41,7 +47,9 @@ const compiler = {
 const contracts = [
   "GovernanceController",
   "RewardToken",
+  "StakeVault",
   "MockReputationOracle",
+  "ParameterVersionRegistry",
   "ClaimRegistry",
   "TruthBountyWeighted",
   "VerificationAggregator",
@@ -50,12 +58,15 @@ const contracts = [
 ] as const;
 
 const artifactNames: Record<string, string> = {
+  StakeVault: "contracts/StakeVault.sol:StakeVault",
   MockReputationOracle: "contracts/MockReputationOracle.sol:MockReputationOracle",
 };
 
 const referenceToContract: Record<string, string> = {
   governanceController: "GovernanceController",
   token: "RewardToken",
+  bondVault: "StakeVault",
+  parameterVersionRegistry: "ParameterVersionRegistry",
   reputationOracle: "MockReputationOracle",
   claimRegistry: "ClaimRegistry",
   truthBountyWeighted: "TruthBountyWeighted",
@@ -87,8 +98,10 @@ export async function buildCanonicalV2Manifest(
   const constructorArgs: ManifestValue[][] = [
     [ref("deployer")],
     [ref("deployer"), inputs.initialSupply],
+    [ref("deployer"), ref("token")],
     [],
-    [ref("deployer")],
+    [ref("deployer"), ref("deployer")],
+    [ref("deployer"), ref("parameterVersionRegistry")],
     [ref("token"), ref("reputationOracle"), ref("deployer"), ref("governanceController")],
     [ref("truthBountyWeighted"), ref("deployer"), inputs.minVerificationCount, inputs.minTotalWeight, inputs.minConfidenceBps],
     [ref("claimRegistry"), ref("verificationAggregator"), inputs.challengeWindowDuration, ref("governanceController"), ref("deployer")],
@@ -96,12 +109,18 @@ export async function buildCanonicalV2Manifest(
       ref("token"),
       ref("claimRegistry"),
       ref("reputationOracle"),
+      ref("bondVault"),
       {
         roundDuration: inputs.appealDuration,
         minStakeAmount: inputs.minAppealStake,
         stakeMultiplierBps: inputs.appealMultiplierBps,
         maxWeightCap: inputs.maxWeightCap,
         parameterVersion: "1",
+        maxAppealRounds: inputs.maxAppealRounds ?? "1",
+        appealBond: inputs.appealBond ?? "1000000000000000000000",
+        appealBondEscalationBps: inputs.appealBondEscalationBps ?? "15000",
+        maxAppealBond: inputs.maxAppealBond ?? "5000000000000000000000",
+        maxVotersPerRound: inputs.maxVotersPerRound ?? "200",
       },
       ref("governanceController"),
       ref("deployer"),
@@ -154,9 +173,28 @@ export async function buildCanonicalV2Manifest(
     nonce: inputs.startingNonce + transactions.length,
     action: "call:grantRole",
     contract: "ClaimRegistry",
-    dependsOn: ["ProvisionalSettlementEngine"],
+    dependsOn: ["ClaimRegistry", "ProvisionalSettlementEngine"],
     inputHash: inputHash({ role: "REGISTRY_UPDATER_ROLE", account: ref("provisionalSettlementEngine") }),
   });
+
+  transactions.push({
+    index: transactions.length,
+    nonce: inputs.startingNonce + transactions.length,
+    action: "call:grantRole",
+    contract: "StakeVault",
+    dependsOn: ["StakeVault", "AppealVerificationRound"],
+    inputHash: inputHash({ role: "OPERATOR_ROLE", account: ref("appealVerificationRound") }),
+  });
+  if (inputs.finalizeDeployerRoles) {
+    transactions.push({
+      index: transactions.length,
+      nonce: inputs.startingNonce + transactions.length,
+      action: "call:renounceRole",
+      contract: "ClaimRegistry",
+      dependsOn: ["ClaimRegistry", "ProvisionalSettlementEngine"],
+      inputHash: inputHash({ role: "REGISTRY_UPDATER_ROLE", account: ref("deployer") }),
+    });
+  }
 
   const manifest: DeploymentManifest = {
     schemaVersion: "1",
