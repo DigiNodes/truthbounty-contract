@@ -22,6 +22,15 @@ interface ISettlement is IV2Module {
     /// @param netAmount Gross amount minus fee in asset base units.
     event SettlementExecuted(uint256 indexed claimId, address indexed recipient, uint256 netAmount);
 
+    /// @notice Emitted when a settlement is cancelled and the obligation is voided.
+    /// @param claimId Claim being cancelled.
+    event SettlementCancelled(uint256 indexed claimId);
+
+    /// @notice Emitted when a settlement execution fails due to an external payout failure.
+    /// @param claimId Claim being settled.
+    /// @param reason ABI-encoded reason code.
+    event SettlementFailed(uint256 indexed claimId, bytes reason);
+
     /// @notice Queues the canonical settlement for a finalized claim.
     /// @dev Must validate final outcome, recipient, fee, and timelock before recording a pending settlement; repeated queueing must revert or be explicitly idempotent.
     /// @param claimId Claim to queue.
@@ -31,6 +40,11 @@ interface ISettlement is IV2Module {
     /// @dev Must fail closed if the timelock has not elapsed, funds are insufficient, or the settlement was already executed. External token calls must revert atomically on failure.
     /// @param claimId Claim to execute.
     function executeSettlement(uint256 claimId) external;
+
+    /// @notice Cancels a pending settlement before execution.
+    /// @dev Only callable by authorized roles or under emergency controls.
+    /// @param claimId Claim to cancel.
+    function cancelSettlement(uint256 claimId) external;
 
     /// @notice Reads the current settlement record.
     /// @param claimId Claim to inspect.

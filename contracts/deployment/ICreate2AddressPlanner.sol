@@ -60,7 +60,7 @@ interface ICreate2AddressPlanner {
      * @notice Pure CREATE2 address prediction.
      * @param deployer CREATE2 factory / deployer address.
      * @param salt Domain-separated salt.
-     * @param initCodeHash keccak256 of creation (init) bytecode.
+     * @param initCodeHash keccak-256 of creation (init) bytecode.
      */
     function computeAddress(address deployer, bytes32 salt, bytes32 initCodeHash)
         external
@@ -102,7 +102,7 @@ interface ICreate2AddressPlanner {
     function confirmDeployment(bytes32 moduleId) external returns (bool);
 
     /**
-     * @notice Returns true only when the plan is reserved, bytecode-verified, and deployment-confirmed.
+     * @notice Returns true only when the plan is reserved, bytecode-set, and deployment-confirmed.
      */
     function isReadyForRegistration(bytes32 moduleId) external view returns (bool);
 
@@ -115,4 +115,122 @@ interface ICreate2AddressPlanner {
      * @notice Clears a plan. Admin only. Fails closed if ready-for-registration unless forced via role.
      */
     function clearPlan(bytes32 moduleId) external;
+
+    // -----------------------------------------------------------------------------
+    // Deployment configuration binding (PREWAVE-SC-028)
+    // -----------------------------------------------------------------------------
+
+    /// @notice Complete deployment configuration binding record.
+    /// @dev Binds the exact environment (chain + release), configuration digest,
+    ///      authorized broadcaster, deterministic nonce plan, and expiry window.
+    ///      A configuration is consumed once and cannot be replayed across chain/release.
+    struct DeploymentConfig {
+        uint256 chainId;
+        bytes32 releaseId;
+        bytes32 configChecksum;
+        address broadcaster;
+        uint64 nonceStart;
+        uint64 nonceCount;
+        uint64 expiry;
+    }
+
+    /// @notice Emitted when a deployment configuration is bound for a release.
+    event DeploymentConfigBound(
+        bytes32 indexed releaseId,
+        uint256 indexed chainId,
+        bytes32 configChecksum,
+        address indexed broadcaster,
+        uint64 nonceStart,
+        uint64 nonceCount,
+        uint64 expiry
+    );
+
+    /// @notice Emitted when a deployment configuration is consumed for broadcast.
+    event DeploymentConfigConsumed(
+        bytes32 indexed releaseId,
+        uint256 indexed chainId,
+        address indexed broadcaster,
+        uint64 nonceStart,
+        uint64 nonceCount
+    );
+
+    /// @notice Emitted when a bound deployment configuration is revoked by an admin.
+    event DeploymentConfigRevoked(
+        bytes32 indexed releaseId,
+        uint256 indexed chainId,
+        bytes32 configChecksum
+    );
+
+    error ZeroChainId();
+    error ZeroReleaseId();
+    error ZeroConfigChecksum();
+    error ZeroBroadcaster();
+    error InvalidNoncePlan(uint64 nonceStart, uint64 nonceCount);
+    error InvalidExpiry(uint64 expiry);
+    error WrongChainId(uint256 expected, uint256 actual);
+    error StaleRelease(bytes32 releaseId);
+    error UnauthorizedBroadcaster(address actual, address expected);
+    error ConfigExpired(uint64 expiry, uint64 now);
+    error ConfigChecksumMismatch(bytes32 expected, bytes32 actual);
+    error DeploymentConfigAlreadyBound(bytes32 releaseId, uint256 chainId);
+    error DeploymentConfigNotFound(bytes32 releaseId, uint256 chainId);
+    error DeploymentConfigAlreadyConsumed(bytes32 releaseId, uint256 chainId);
+    error ForkedChainDetected(uint256 expected, uint256 actual);
+    error NoncePlanExhausted(uint64 nonceStart, uint64 nonceCount, uint64 currentNonce);
+
+    /**
+     * @notice Binds a deployment configuration to a chain + release before the first transaction.
+     * @dev Reverts on zero inputs, invalid nonce plan, expired expiry, or duplicate binding.
+     * @dev The config checksum is a domain-separated digest of the full configuration.
+     */
+    function bindDeploymentConfig(DeploymentConfig calldata config) external;
+
+    /**
+     * @notice Validates a bound deployment configuration against the live environment
+     *         and the caller before the first transaction is broadcast.
+     * @dev Reverts on wrong chain, stale release, unauthorized broadcaster, expired config,
+     *      checksum mutation, forked chain, or nonce plan exhaustion.
+     * @dev Errors reveal only public configuration metadata; no secret material is ever emitted.
+     */
+    function validateDeploymentConfig(bytes32 releaseId, uint256 chainId) external view;
+
+    /**
+     * @notice Marks a bound deployment configuration as consumed and returns the nonce plan.
+     * @dev Validates the configuration first, then consumes it so it cannot be replayed.
+     * @dev Reverts if the config is already consumed or the nonce plan is exhausted.
+     */
+    function consumeDeploymentConfig(bytes32 releaseId, uint256 chainId)
+        external
+        returns (uint64 nonceStart, uint64 nonceCount);
+
+    /**
+     * @notice Revokes a bound deployment configuration. Admin only.
+     * @dev Fails closed if the configuration has already been consumed.
+     */
+    function revokeDeploymentConfig(bytes32 releaseId, uint256 chainId) external;
+
+    /**
+     * @notice Returns the bound deployment configuration for a release + chain.
+     */
+    function getDeploymentConfig(bytes32 releaseId, uint256 chainId)
+        external
+        view
+        returns (DeploymentConfig memory);
+
+    /**
+     * @notice Returns true if the deployment configuration is bound and not yet consumed.
+     */
+    function isDeploymentConfigActive(bytes32 releaseId, uint256 chainId)
+        external
+        view
+        returns (bool);
+
+    /**
+     * @notice Returns the domain-separated checksum for a deployment configuration.
+     * @dev Pure helper so off-chain tooling can reproduce the exact digest.
+     */
+    function computeConfigChecksum(DeploymentConfig calldata config)
+        external
+        pure
+        returns (bytes32 checksum);
 }
