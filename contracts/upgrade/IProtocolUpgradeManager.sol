@@ -56,12 +56,41 @@ interface IProtocolUpgradeManager {
         string description;
     }
 
+    // ============= Migration Types =============
+
+    enum MigrationStatus {
+        None,
+        Pending,
+        Executing,
+        Completed,
+        Failed,
+        Rolled Back
+    }
+
+    struct MigrationStep {
+        uint256 stepId;
+        uint256 reinitializerVersion;
+        bytes32 prerequisiteHash;
+        bytes32 atomicityGroup;
+        bool resumable;
+        bool rollbackable;
+    }
+
+    struct MigrationManifest {
+        bytes32 moduleId;
+        uint256 fromVersionHash;
+        uint256 toVersionHash;
+        bytes32 stepsHash;
+        uint256 completedVersion;
+        bool completed;
+    }
+
     // ============= Registration =============
 
     function registerModule(
         bytes32 moduleId,
         address implementation,
-        Version calldata initialVersion,
+        Version caldata initialVersion,
         bytes32 storageLayoutHash
     ) external;
 
@@ -73,7 +102,7 @@ interface IProtocolUpgradeManager {
         Version calldata toVersion,
         bytes32 newStorageLayoutHash,
         bytes32 migrationHash,
-        string calldata description
+        string caldata description
     ) external returns (uint256 proposalId);
 
     function attestStorageCompatibility(uint256 proposalId, bool compatible) external;
@@ -85,6 +114,14 @@ interface IProtocolUpgradeManager {
     function executeUpgrade(uint256 proposalId) external;
 
     function cancelUpgrade(uint256 proposalId) external;
+
+    // ============= Migration Execution =============
+
+    function executeMigrationStep(bytes32 moduleId, uint256 stepId) external;
+
+    function resumeMigration(bytes32 moduleId) external;
+
+    function rollbackMigration(bytes32 moduleId, string calldata reason) external;
 
     // ============= Recovery =============
 
@@ -130,6 +167,21 @@ interface IProtocolUpgradeManager {
     function latestAuthorized(bytes32 moduleId) external view returns (address);
 
     function upgradeTimelock() external view returns (uint256);
+
+    function getMigrationStep(bytes32 moduleId, uint256 stepId) external view returns (MigrationStep memory);
+
+    function getMigrationStepCount(bytes32 moduleId) external view returns (uint256);
+
+    function getMigrationManifest(bytes32 moduleId) external view returns (MigrationManifest memory);
+
+    function getMigrationStatus(bytes32 moduleId, uint256 stepId) external view returns (MigrationStatus);
+
+    function isMigrationComplete(bytes32 moduleId) external view returns (bool);
+
+    function verifyMigrationPreconditions(bytes32 moduleId, uint256 stepId)
+        external
+        view
+        returns (bool);
 
     // ============= Events =============
 
@@ -197,4 +249,34 @@ interface IProtocolUpgradeManager {
     );
 
     event UpgradeTimelockUpdated(uint256 oldTimelock, uint256 newTimelock);
+
+    event MigrationStepExecuted(
+        bytes32 indexed moduleId,
+        uint256 indexed stepId,
+        uint256 reinitializerVersion,
+        bytes32 atomicityGroup,
+        address executor
+    );
+
+    event MigrationStepFailed(
+        bytes32 indexed moduleId,
+        uint256 indexed stepId,
+        bytes32 reason
+    );
+
+    event MigrationResumed(bytes32 indexed moduleId, uint256 fromStepId);
+
+    event MigrationRolledBack(
+        bytes32 indexed moduleId,
+        uint256 toStepId,
+        string reason,
+        address indexed guardian
+    );
+
+    event MigrationManifestUpdated(
+        bytes32 indexed moduleId,
+        uint256 completedVersion,
+        bytes32 stepsHash,
+        bool completed
+    );
 }
