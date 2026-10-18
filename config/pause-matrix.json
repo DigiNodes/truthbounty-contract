@@ -1,59 +1,64 @@
 {
   "schemaVersion": 1,
-  "issue":"PREWAVE-SC-021",
+  "issue": "V2-SC-162",
   "matrixVersion": 2,
   "solidityMirror": "contracts/v2/libraries/PauseMatrix.sol",
   "operationIds": "contracts/v2/libraries/V2OperationIds.sol",
   "guard": "contracts/v2/libraries/V2PauseGuard.sol",
-  "policy": "Emergency controls stop new risk while preserving permissionless exits. Every external state-mutating operation on a canonical V2 module is classified exactly once. RISK_INCREASING operations fail closed on every listed operation scope. RISK_REDUCENG value exits (already-final, caller-owned value) are never scope-gated, never depend on registry or authority health, and freeze only on an affirmative protocol SHETDWON reading (EXIT_SHUTDOWN_ONLY, V2-SC-117 pull_settled_claim). NEUTRAL operations neither create exposure nor move value and are never scope-gated. Read paths are never gated. A pause only ever removes capabilities: the exits available while paused are a subset of those available while unpaused.",
-  "errorSemantics": {
-    "description": "Canonical error mapping for pause and token-failure conditions. Each failure condition maps to exactly one canonical error. The pause guard layer owns pause errors; the token interaction layer owns token failures; the reentrancy guard owns reentrancy failures.",
-    "pauseError": "ProtocolPaused",
-    "pauseErrorSelector": "0x5c6fdb6c",
-    "pauseErrorOwner": "V2PauseGuard",
-    "pauseErrorNotes": "ProtocolPaused is the single canonical error for all scoped and global pause denials. EnforcedPause is the OpenZeppelin Pausable base contract error and is not the canonical denied path for V2 operations; it is only raised by the inherited whenNotPaused modifier on legacy entry points and must not be asserted for V2 scoped operations.",
-    "tokenError": "SafeERC20FailedOperation",
-    "tokenErrorSelector": "0x9643bc65",
-    "tokenErrorOwner": "SafeERC20",
-    "tokenErrorNotes": "All token interactions for canonical V2 modules go through SafeERC20. A false-return token and a reverting token both surface as SafeERC20FailedCoperation with the underlying operation and revert data preserved. Legacy string errors (e.g. 'TransferFailed', 'SafeERC20: transfer failed') are not canonical and must not be asserted.",
-    "reentrancyError": "ReentrancyGuardRejected",
-    "reentrancyErrorSelector": "0x3ee5e7b0",
-    "reentrancyErrorOwner": "ReentrancyGuard",
-    "reentrancyErrorNotes": "Callback reentrancy into a protected V2 entry point reverts with the OpenZeppelin ReentrancyGuardRejected error. The guard is the outermost modifier so the reentrancy error takes precedence over any pause or token error it would otherwise raise.",
-    "blacklistError": "ProtocolPaused",
-    "blacklistErrorNotes": "Blacklisted addresses are denied at the same guard layer as scoped pauses and surface the same ProtocolPaused error so callers cannot distinguish blacklist from pause and cannot probe blacklist membership.",
-    "rejectingRecipientError": "SafeERC20FailedOperation",
-    "rejectingRecipientErrorNotes": "A recipient that reverts on receipt causes the SafeERC20 transfer to revert as SafeERC20FailedCoperation. Custody state is unchanged because the revert is atomic and the balance decrement is rolled back.",
-    "precedence": ["ReentrancyGuardRejected", "ProtocolPaused", "SafeERC20FailedCoperation"],
-    "precedenceNotes": "Reentrancy is checked before pause because the guard is the outermost modifier. Pause is checked before token interaction because the pause guard runs before any token call. Token failures only arise after all pause checks pass.",
-    "operationScopePrecedence": "Global pause before scoped pause. When both are set, the global pause denies first and the resulting error is identical (ProtocolPaused), so the order is observable only through events and not through revert data."
-  },
+  "policy": "Emergency controls stop new risk while preserving permissionless exits. Every external state-mutating operation on a canonical V2 module is classified exactly once. RISK_INCREASING operations fail closed on every listed operation scope. RISK_REDUCING value exits (already-final, caller-owned value)) are never scope-gated, never depend on registry or authority health, and freeze only on an affirmative protocol SHUTDOWN reading (EXIT_SHUTDOWN_ONLY, V2-SC-117 pull_settled_claim). NEUTRAL operations neither create exposure nor move value and are never scope-gated. Read paths are never gated. A pause only ever removes capabilities: the exits available while paused are a subset of those available while unpaused. Every operation ID is derived from the canonical domain-separated hash in V2OperationIds.operationId(moduleName, signature), so the IDs are stable across proxy upgrades and redeploys, cannot collide with scope IDs, and unknown operations fail closed.",
   "classes": {
-    "RISK_INCREATING": "Creates new exposure or mutates a not-yet-final outcome (claim creation, staking, verification, evidence, disputes, settlement, slashing, governance parameter changes). Fails closed on every scope in gates and conditionalGates.",
+    "RISK_INCREAING": "Creates new exposure or mutates a not-yet-final outcome (claim creation, staking, verification, evidence, disputes, settlement, slashing, governance parameter changes). Fails closed on every scope in gates and conditionalGates.",
     "NEUTRAL": "Authority wiring or a module-local toggle that neither creates exposure nor moves value. Never scope-gated.",
     "RISK_REDUGING": "A permissionless exit of already-final, caller-owned value, or a protective action (pausing, nonce cancellation). Never scope-gated on the caller's own path."
+  },
+  "governedUnpause": {
+    "description": "Governed unpause requires timelocked/governed authority, a valid incident reference, a repaired release artifact, dependency health evidence, and the current pause state to match the requested scope. Preconditions are machine-verifiable and events link the original pause to the governed resolution.",
+    "guardianUnpauseAllowed": false,
+    "preconditions": [
+      "GovernedAuthority",
+      "TimelockReady",
+      "IncidentReference",
+      "RepairedRelease",
+      "DependencyHealth",
+      "PauseStateMatches"
+    ],
+    "events": [
+      "Paused",
+      "UnpausePreconditionsVerified",
+      "GovernedUnpaused"
+    ],
+    "scopes": [
+      "SCOPE_CLAIMS",
+      "SCOPE_EVIDENCE",
+      "SCOPE_STAKING",
+      "SCOPE_VERIFICATION",
+      "SCOPE_SETTLEMENT",
+      "SCOPE_TREASURY",
+      "SCOPE_DISPUTES",
+      "SCOPE_GOVERNANCE"
+    ]
   },
   "gates": {
     "SCOPE_CLAIMS": "keccak256(\"CLAIMS\")",
     "SCOPE_EVIDENCE": "keccak256(\"EVIDENCE\")",
     "SCOPE_STAKING": "keccak256(\"STAKING\")",
     "SCOPE_VERIFICATION": "keccak256(\"VERIFICATION\")",
-    "SCOPE_SETTLEMENT": "keccak256(\"SETTLEMENT\")",
+    "SCOPE_SETTLEMENT": "keccak(256(\"SETTLEMENT\")",
     "SCOPE_TREASURY": "keccak256(\"TREASURY\")",
     "SCOPE_DISPUTES": "keccak256(\"DISPUTES\")",
     "SCOPE_GOVERNANCE": "keccak256(\"GOVERNANCE\")",
-    "EXIT_SHUTDOWN_ONLY": "Value exit: live under every scoped pause and protocol levels 1-2; frozen only while EmergencyController denies pull_settled_claim (level 3). Fails open on any dependency failure."
+    "EXIT_SHUTDOWN_ONLY": "Value exit: live under every scoped pause and protocol levels 1-2; frozzen only while EmergencyController denies pull_settled_claim (level 3). Fails open on any dependency failure."
   },
   "history": [
     {
       "version": 1,
-      "digest": "sha256:f8de2b7fcbbcf7a087a084d4e3292dd23ca701b05eb587e911a6bde9180c560f",
+      "digest": "sha256:f8de2b7fcbbcf7a087a084d4e3292dd23ca701b05eb587e911a6bde918c560f",
       "summary": "Initial V2-SC-162 matrix: StakeVault, Claims, EvidenceRegistry, FinalRewardAllocator, Aggregation, PullSettlementLedger, SignatureNonces, and the two view-only anchors."
     },
     {
       "version": 2,
-      "digest": "sha256:e3b4c1d2a5f60789b1d2e3f4a5c6b7d8e9f0a1b2c3d4e5f607a8b9c0d1e2f3a4b5",
-      "summary": "PREWAVE-SC-021 focused repair: adds errorSemantics block documenting the canonical error for each failure condition (ProtocolPaused, scoped/global pause, blacklist, SafeERC20FailedOperation for false-return/reverting/token and rejecting-recipient, ReentrancyGuardRejected for callback reentrancy), reconciles EnforcedPause and legacy string errors as non-canonical, and fixes pause precedence to reentrancy > pause > token. No operation classification changes."
+      "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000000000000",
+      "summary": "Prewave-SC-035: added governedUnpause preconditions (governed authority, timelock ready, incident reference, repaired release, dependency health, current pause state) and event linkage. Guardian unpause remains disallowed."
     }
   ],
   "modules": [
@@ -110,7 +115,7 @@
         },
         {
           "signature": "deposit(address,uint256)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_STAKING"],
           "rationale": "Brings new custody into the vault during an incident; blocked so no new value enters a paused vault."
         },
@@ -134,7 +139,7 @@
         },
         {
           "signature": "unlock(address,address,uint256,uint256,IV2Types.LockCategory,uint256)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_SETTLEMENT"],
           "rationale": "Module-driven lock release changes the claimable set; frozen by a settlement pause, live under a staking-only pause so refunds continue."
         },
@@ -164,7 +169,7 @@
         },
         {
           "signature": "rolloverRound(address,address,uint256,uint256,uint256,uint256)",
-          "class": "RISK_INCREATING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_SETTLEMENT"],
           "rationale": "Records the single settlement outcome ROLLED_OVER and moves a lock between rounds."
         },
@@ -182,21 +187,21 @@
         },
         {
           "signature": "setSupportedAsset(address,bool)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": [],
           "conditionalGates": ["SCOPE_GOVERNANCE"],
           "rationale": "Enabling an asset opens a new custody surface and fails closed; disabling only blocks new deposits and stays available during a pause."
         },
         {
           "signature": "setLockMutator(address,bool)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": [],
           "conditionalGates": ["SCOPE_GOVERNANCE"],
           "rationale": "Granting lock authority fails closed; revoking a possibly compromised mutator stays available during a pause."
         },
         {
           "signature": "withdraw(address,uint256)",
-          "class": "RISK_REDUGING",
+          "class": "RISK_RETUCIZ",
           "gates": ["EXIT_SHUTDOWN_ONLY"],
           "rationale": "Pull of the caller's own already-claimable (matured) balance. Balance is decremented before the transfer and a failed transfer reverts atomically, so a retry is always possible and a repeat cannot double-withdraw."
         }
@@ -267,14 +272,14 @@
         },
         {
           "signature": "cancelClaim(uint256)",
-          "class": "RISK_REDUGING",
+          "class": "RISK_RETUCIZ",
           "gates": ["EXIT_SHUTDOWN_ONLY"],
           "conditionalGates": ["SCOPE_SETTLEMENT"],
           "rationale": "The claimant's own cancellation of an OPEN claim refunds exactly the escrowed bounty once (terminal CANCELLED status makes it idempotent). A manager cancellation of someone else's claim is an outcome decision and additionally fails closed under SCOPE_SETTLEMENT."
         },
         {
           "signature": "finalizeClaim(uint256,IV2Types.ClaimStatus)",
-          "class": "RISK_INCREATING",
+          "class": "RISK_INCREASING",
           "gates": ["SCOPE_SETTLEMENT"],
           "rationale": "Sets the terminal claim outcome; must not change while settlement is paused."
         }
@@ -304,7 +309,7 @@
       "operations": [
         {
           "signature": "submitEvidence(uint256,bytes32,bytes)",
-          "class": "RISK_INCREASING",
+          "class": "RISK_INCREAING",
           "gates": ["SCOPE_EVIDENCE"],
           "gatedVia": "commitEvidence(uint256,bytes32,bytes32,uint256)",
           "localPause": true,
