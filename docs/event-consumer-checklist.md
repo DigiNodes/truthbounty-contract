@@ -2,7 +2,7 @@
 
 Indexer, backend, frontend, explorer, and analytics consumers should apply the following rules to the SC-022 event surface.
 
-Reorganization expectations (confirmation depth, finality classes, bounded replacement/removal, and replay) are now authoritative and machine-readable: see [`docs/reorg-consumer-guarantees.md`](./reorg-consumer-guarantees.md) and the on-chain `IConsumerGuarantees` anchor. The rules below remain valid; the guarantees document makes them normative.
+Reorganization expectations (confirmation depth, finality classes, bounded replacement/removal, and replay) are now authoritative and machine-readable: see [`docs/reorg-consumer-guarantees.md`](./reorg-consumer-guarantees.md) and the on-chain `IConsumerGuarantees` anchor. The rules below remain valid; the guarantees document makes them normative.
 
 - Filter by contract address and canonical event signature before decoding.
 - Treat indexed entity identifiers and actors as the primary query keys.
@@ -64,3 +64,83 @@ restatements, 8 reduction rules, catalogue root
 - Assert conservation before serving a read: `claimable + locked + protocolAllocation == totalCustody` for every asset, summed over the per-key cells.
 - Do not decode these documented non-canonical emissions: `EvidenceSubmitted`, `EvidenceSubmittedV1`, `Paused`, `Unpaused`, `RoleGranted`, `RoleRevoked`, `ModuleRegistered`, `ModuleRemoved`. They are published machine-readably in `nonCanonicalEmissions` in the manifest, with each `topic0` and its reason. Quarantine anything outside that list and the catalogue; never silently ignore an unlisted emission.
 - Reject a record whose chain id disagrees with the chain being indexed.
+
+---
+
+## Canonical event ordering within transactions (PREWAVE-SC-056)
+
+When a single call emits multiple events, consumers must replay them in a
+deterministic order that is fully reconstructable from the receipt alone,
+without reading contract state. The normative ordering and the regression
+tests are defined below and in
+[`docs/event-ordering.md`](/docs/event-ordering.md).
+
+### Global order
+
+1. Block number ascending.
+2. Transaction index within the block ascending.
+3. Log index within the transaction ascending.
+4. Within a single log index, the event is atomic and never split.
+
+Log index is the only tie-breaker inside a transaction. Never sort by
+event name, address, actor, or decoded payload. The emitting order is the
+canonical order.
+
+### Lifecycle and custody
+
+Within one transaction the contract emits lifecycle and custody events in
+causal order:
+
+1. Custody movement events (deposit, lock, release, transfer) in the order the funds move.
+2. Lifecycle transition events (create, activate, complete, cancel) after the custody effects they describe.
+3. Settlement events after the custody and lifecycle events that produce the settled state.
+
+### Configuration, role, and pause
+
+1. Configuration change events are emitted before the events that depend on the new configuration.
+2. Role grant/revoke events are emitted before the actions they authorize within the same call.
+3. Pause and unpause events are emitted at the point the pause state changes, before any guarded effect that depends on it.
+
+### Upgrade
+
+Proxy upgrade emissions (`Upgraded`) are emitted after the implementation
+pointer changes and after any initialization events the new implementation
+emits within the same call. Consumers must not assume the implementation
+pointer is valid until the `Upgraded` log has been applied.
+
+### Reverted calls
+
+A reverted call emits no durable logs. Consumers must drop every log from a
+receipt whose status is not success, even if an explorer or node returns them.
+
+### Nested calls and batches
+
+Nested calls and batches are flattened into the receipt's log index order. The
+causal order is the order of emission, not the order of call frames. Consumers
+must not re-group logs by call frame or by sub-call depth.
+
+### Repeated actions
+
+Repeated identical actions in one transaction emit one event per occurrence,
+each with its own log index. Consumers must not collapse them into a single
+record; the count of occurrences is part of the canonical state.
+
+### No duplicate semantic event
+
+Each state transition is represented by exactly one canonical event in the
+catalogue. Any secondary emission that restates the same delta is listed as a
+restatement and must not be applied as a source.
+
+### Regression tests
+
+The ordering is regression-tested by the following suites:
+
+- Success/revert: a successful call emits its events in the documented order; a reverted call emits no durable logs.
+- Nested call: events from nested calls appear in log-index order.
+- Batch: batched actions emit one event per action in emission order.
+- Repeated action: repeated identical actions emit distinct, non-collapsed events.
+- Proxy upgrade: `Upgraded` is emitted after the implementation change and any initialization events.
+- Fuzz ordering: randomized sequences of canonical events replay to the same fold as the emission order.
+
+A replay that applies logs out of log-index order, skips a log, or applies a
+duplicate must fail comparison against the canonical fold.

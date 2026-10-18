@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -14,6 +15,7 @@ import { V2EventCompleteness } from "./libraries/V2EventCompleteness.sol";
 ///         completeness catalogue for one canonical V2 deployment (V2-SC-132).
 /// @dev    Deployment-scoped, immutable after construction, and strictly
 ///         passive: the anchor holds no funds, authorizes no caller, and exposes
+///         passive: the anchor holds no funds, authorizes no caller, and exposes
 ///         no state-changing function beyond the constructor. Publishing a
 ///         completeness record makes no off-chain or on-chain actor more
 ///         powerful — it only makes the protocol's existing promise about its own
@@ -21,11 +23,13 @@ import { V2EventCompleteness } from "./libraries/V2EventCompleteness.sol";
 ///
 ///         Consumers MUST pin `catalogueRoot` at ingestion and re-derive it on
 ///         every replay. Reorg and rollback behaviour is *not* declared here; it
+///         every replay. Reorg and rollback behaviour is *not* declared here; it
 ///         is published by `ConsumerGuaranteesAnchor` under V2-SC-134.
 contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
     /// @notice Chain this anchor is bound to, fixed at deployment.
     uint64 public immutable CHAIN_ID;
 
+    /// @notice Deployer/admin recorded for provenance only. It carries no runtime
     /// @notice Deployer/admin recorded for provenance only. It carries no runtime
     ///         authority: the anchor has no function it could call.
     address public immutable deployer;
@@ -40,6 +44,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
     bool private immutable _everyMutationEmits;
     bool private immutable _mutationsAreTerminal;
     bool private immutable _orderIsTotal;
+    bool private immutable _orderingIsCanonical;
     bool private immutable _projectionIsDeterministic;
 
     /// @param completeness_ The validated completeness record to publish.
@@ -59,6 +64,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
         _everyMutationEmits = completeness_.everyMutationEmits;
         _mutationsAreTerminal = completeness_.mutationsAreTerminal;
         _orderIsTotal = completeness_.orderIsTotal;
+        _orderingIsCanonical = completeness_.orderingIsCanonical;
         _projectionIsDeterministic = completeness_.projectionIsDeterministic;
 
         CHAIN_ID = uint64(block.chainid);
@@ -79,6 +85,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
             everyMutationEmits: _everyMutationEmits,
             mutationsAreTerminal: _mutationsAreTerminal,
             orderIsTotal: _orderIsTotal,
+            orderingIsCanonical: _orderingIsCanonical,
             projectionIsDeterministic: _projectionIsDeterministic
         });
     }
@@ -106,6 +113,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
                 closingSetRoot: V2EventCompleteness.closingSetRootOf(i),
                 reductionRuleId: V2EventCompleteness.reductionRuleIdOf(i),
                 restatementCount: V2EventCompleteness.restatementsOf(i).length,
+                orderingRuleId: V2EventCompleteness.orderingRuleIdOf(i),
                 restatementSetRoot: V2EventCompleteness.restatementSetRootOf(i)
             });
             unchecked {
@@ -121,6 +129,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
             moduleId: V2EventCompleteness.moduleIdOf(index),
             cellCount: V2EventCompleteness.cellCountOfModule(index),
             everyMutationEmits: V2EventCompleteness.everyMutationEmitsOfModule(index),
+            orderingIsCanonical: V2EventCompleteness.orderingIsCanonicalOfModule(index),
             isImmutable: V2EventCompleteness.isImmutableModule(index)
         });
     }
@@ -140,6 +149,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
         closingEvents = V2EventCompleteness.closingEventsOf(index);
         restatements = V2EventCompleteness.restatementsOf(index);
         reductionRuleId = V2EventCompleteness.reductionRuleIdOf(index);
+        orderingRuleId = V2EventCompleteness.orderingRuleIdOf(index);
         covered = V2EventCompleteness.isCellComplete(index);
     }
 
@@ -149,6 +159,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
     ///      consumer can re-prove closure instead of trusting the record.
     function proveCatalogueComplete() external pure returns (bool) {
         V2EventCompleteness.assertCatalogueComplete();
+        V2EventCompleteness.assertCanonicalOrdering();
         return true;
     }
 
@@ -160,6 +171,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
     /// @notice ERC-165: advertises IV2Module, IEventCompleteness, and ERC-165.
     function supportsInterface(bytes4 interfaceId) public view override(ERC165, IERC165) returns (bool) {
         return interfaceId == type(IV2Module).interfaceId || interfaceId == type(IEventCompleteness).interfaceId
+            || interfaceId == type(IERC20).interfaceId
             || super.supportsInterface(interfaceId);
     }
 }
