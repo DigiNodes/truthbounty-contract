@@ -9,6 +9,7 @@ node_modules
 # TypeChain files
 /typechain
 /typechain-types
+/types
 
 # solidity-coverage files
 /coverage
@@ -31,3 +32,6 @@ branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
 .gitignore
+
+# HH3 typechain output
+/types

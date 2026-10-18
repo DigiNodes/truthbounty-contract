@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
 import "../governance/GovernanceOwnable.sol";
 import "../governance/GovernanceHooks.sol";
 import "../treasury/ITreasuryAccounting.sol";
@@ -218,6 +218,13 @@ contract TokenomicsEngine is
         onlyRole(DISTRIBUTOR_ROLE)
         returns (bytes32 distributionId)
     {
+        return _distributeRevenue(source, amount);
+    }
+
+    function _distributeRevenue(RevenueSource source, uint256 amount)
+        internal
+        returns (bytes32 distributionId)
+    {
         if (amount == 0) revert ZeroAmount();
 
         SourceAllocation memory config = sourceAllocations[source];
@@ -240,7 +247,7 @@ contract TokenomicsEngine is
 
         protocolToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        AllocationShares memory shares = config.calculateProportionalAllocation(amount);
+        AllocationShares memory shares = AllocationPolicies.calculateProportionalAllocation(amount, config);
 
         if (rewardMultiplier != 1e18) {
             shares.verifierRewards = (shares.verifierRewards * rewardMultiplier) / 1e18;
@@ -302,7 +309,7 @@ contract TokenomicsEngine is
         resultIds = new bytes32[](length);
 
         for (uint256 i = 0; i < length;) {
-            resultIds[i] = distributeRevenue(sources[i], amounts[i]);
+            resultIds[i] = _distributeRevenue(sources[i], amounts[i]);
 
             unchecked {
                 ++i;
@@ -382,14 +389,17 @@ contract TokenomicsEngine is
 
     // ============ Governance Controls ==========
 
+    /**
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setSourceAllocation(RevenueSource source, SourceAllocation calldata config)
         external
         override
         onlyGovernanceOrAdmin
     {
-        uint256 sourceUint = uint256(source);
-
-        SourceAllocation storage old = sourceAllocations[sourceUint];
+        SourceAllocation storage old = sourceAllocations[source];
         uint256 oldVerifier = old.verifierRewardsBPS;
         uint256 oldTreasury = old.treasuryReserveBPS;
         uint256 oldEcosystem = old.ecosystemIncentivesBPS;
@@ -400,7 +410,7 @@ contract TokenomicsEngine is
         (bool valid, string memory reason) = AllocationPolicies.validateAllocationConfig(config);
         if (!valid) revert AllocationConfigInvalid(reason);
 
-        sourceAllocations[sourceUint] = config;
+        sourceAllocations[source] = config;
 
         emit AllocationUpdated(
             source,
@@ -414,12 +424,22 @@ contract TokenomicsEngine is
         );
     }
 
+    /**
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setEmissionLimit(uint256 _emissionLimit) external override onlyGovernanceOrAdmin {
         uint256 old = emissionLimit;
         emissionLimit = _emissionLimit;
         emit EmissionLimitUpdated(old, _emissionLimit);
     }
 
+    /**
+     * @notice Deprecated in V2. Use ParameterVersionRegistry.proposeNewVersion() for atomic
+     *             parameter version updates with proper timelock and validation. This function
+     *             will be removed in a future release.
+     */
     function setRewardMultiplier(uint256 _multiplier) external override onlyGovernanceOrAdmin {
         if (_multiplier == 0) revert InvalidRewardMultiplier();
         uint256 old = rewardMultiplier;
@@ -442,7 +462,7 @@ contract TokenomicsEngine is
         view
         returns (SourceAllocation memory)
     {
-        return sourceAllocations[uint256(source)];
+        return sourceAllocations[source];
     }
 
     function getDistributionRecord(bytes32 distributionId)
@@ -479,7 +499,7 @@ contract TokenomicsEngine is
         view
         returns (uint256)
     {
-        return totalBySource[uint256(source)];
+        return totalBySource[source];
     }
 
     function getDistributionHistory(uint256 offset, uint256 limit)
@@ -500,8 +520,17 @@ contract TokenomicsEngine is
         }
     }
 
-    function getDistributionHistoryLength() external view override returns (uint256) {
+    function getDistributionHistoryLength() external view returns (uint256) {
         return distributionHistory.length;
+    }
+
+    function getProcessedDistribution(bytes32 distributionId)
+        external
+        view
+        override
+        returns (bool)
+    {
+        return processedDistributions[distributionId];
     }
 
     // ============ Internal Helpers ==========
@@ -516,11 +545,11 @@ contract TokenomicsEngine is
 
     // ============ Pause ==========
 
-    function pause() external override onlyRole(PAUSER_ROLE) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external override onlyRole(PAUSER_ROLE) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 

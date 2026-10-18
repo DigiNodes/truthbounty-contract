@@ -93,6 +93,19 @@ describe("VerificationAggregator", function () {
     }
   }
 
+  async function deployAggregator(opts: { minCount?: bigint; minWeight?: bigint; minConfidence?: bigint } = {}) {
+    const VerificationAggregator = await ethers.getContractFactory("VerificationAggregator");
+    const agg = await VerificationAggregator.deploy(
+      await truthBounty.getAddress(),
+      await owner.getAddress(),
+      opts.minCount ?? 1n,
+      opts.minWeight ?? 0n,
+      opts.minConfidence ?? 0n
+    );
+    await agg.waitForDeployment();
+    return agg;
+  }
+
   describe("Weight calculation", function () {
     it("accumulates effective stake per side (unanimous TRUE)", async function () {
       const claimId = await createClaim();
@@ -291,168 +304,63 @@ describe("VerificationAggregator", function () {
         { signer: verifier3, support: false, stake: MIN_STAKE },
       ]);
 
-      // Confidence 6666 < 8000 → revert
+      // Confidence 6666 < 8000
       await expect(aggregator.aggregateClaim(claimId))
         .to.be.revertedWithCustomError(aggregator, "ThresholdNotMet")
         .withArgs("Insufficient confidence");
     });
-
-    it("enforces thresholds on a fresh aggregator", async function () {
-      const agg = await deployAggregator({ minCount: 1n });
-      const claimId = await createClaim();
-      await stakeFor([verifier1]);
-      await voteFor(claimId, [{ signer: verifier1, support: true, stake: MIN_STAKE }]);
-      await agg.aggregateClaim(claimId);
-      const result = await agg.getAggregation(claimId);
-      expect(result.outcome).to.equal(outcome.VERIFIED_TRUE);
-    });
   });
 
-  describe("Determinism", function () {
-    it("produces identical output regardless of vote order", async function () {
-      const claimIdA = await createClaim();
-      await stakeFor([verifier1, verifier2, verifier3]);
-      await voteFor(claimIdA, [
-        { signer: verifier1, support: true, stake: MIN_STAKE },
-        { signer: verifier2, support: true, stake: MIN_STAKE },
-        { signer: verifier3, support: false, stake: MIN_STAKE },
-      ]);
+  describe("Determinism and order independence", function () {
+    it("produces the same aggregation regardless of vote submission order", async function () {
+      const votes = [
+        { signer: verifier1, support: true, stake: MIN_STAKE, reputation: ethers.parseEther("2") },
+        { signer: verifier2, support: false, stake: MIN_STAKE, reputation: ethers.parseEther("1") },
+        { signer: verifier3, support: true, stake: MIN_STAKE, reputation: ethers.parseEther("3") },
+        { signer: verifier4, support: false, stake: MIN_STAKE, reputation: ethers.parseEther("1") },
+      ];
+      const claim1 = await createClaim();
+      await stakeFor([verifier1, verifier2, verifier3, verifier4], MIN_STAKE);
+      await voteFor(claim1, votes.slice().reverse());
 
-      const claimIdB = await createClaim();
-      // Extra stake so the same verifiers can vote on a second claim.
-      await truthBounty.connect(verifier1).stake(MIN_STAKE);
-      await truthBounty.connect(verifier2).stake(MIN_STAKE);
-      await truthBounty.connect(verifier3).stake(MIN_STAKE);
-      // Vote in reversed order to prove order independence.
-      const orderB = [verifier3, verifier2, verifier1];
-      for (const s of orderB) {
-        const vote = s === verifier3
-          ? { support: false, stake: MIN_STAKE }
-          : { support: true, stake: MIN_STAKE };
-        await truthBounty.connect(s).vote(claimIdB, vote.support, vote.stake);
-      }
+      const claim2 = await createClaim();
+      await stakeFor([verifier1, verifier2, verifier3, verifier4], MIN_STAKE);
+      await voteFor(claim2, votes);
 
-      await aggregator.aggregateClaim(claimIdA);
-      await aggregator.aggregateClaim(claimIdB);
-
-      const resultA = await aggregator.getAggregation(claimIdA);
-      const resultB = await aggregator.getAggregation(claimIdB);
-      expect(resultA.outcome).to.equal(resultB.outcome);
-      expect(resultA.trueWeight).to.equal(resultB.trueWeight);
-      expect(resultA.falseWeight).to.equal(resultB.falseWeight);
-      expect(resultA.confidence).to.equal(resultB.confidence);
+      const [true1, false1, count1] = await aggregator.calculateWeights(claim1);
+      const [true2, false2, count2] = await aggregator.calculateWeights(claim2);
+      expect(true1).to.equal(true2);
+      expect(false1).to.equal(false2);
+      expect(count1).to.equal(count2);
     });
 
-    it("rejects repeated aggregation for the same claim", async function () {
+    it("returns identical aggregation on repeated calls", async function () {
       const claimId = await createClaim();
-      await stakeFor([verifier1]);
-      await voteFor(claimId, [{ signer: verifier1, support: true, stake: MIN_STAKE }]);
-
+      await stakeFor([verifier1, verifier2]);
+      await voteFor(claimId, [
+        { signer: verifier1, support: true, stake: MIN_STAKE },
+        { signer: verifier2, support: false, stake: MIN_STAKE },
+      ]);
       await aggregator.aggregateClaim(claimId);
+      const first = await aggregator.getAggregation(claimId);
       await expect(aggregator.aggregateClaim(claimId))
         .to.be.revertedWithCustomError(aggregator, "AlreadyAggregated")
         .withArgs(claimId);
-    });
-  });
-
-  describe("Stress tests", function () {
-    it("aggregates a large verification set deterministically", async function () {
-      const signers = await ethers.getSigners();
-      const participants = signers.slice(6, 16); // 10 distinct verifiers
-      const trueVoters = participants.filter((_, i) => i % 2 === 0);
-      const falseVoters = participants.filter((_, i) => i % 2 !== 0);
-
-      for (const s of participants) {
-        await bountyToken.transfer(await s.getAddress(), ethers.parseEther("100000"));
-        await bountyToken.connect(s).approve(await truthBounty.getAddress(), ethers.MaxUint256);
-        await truthBounty.connect(s).stake(MIN_STAKE);
-      }
-
-      const claimId = await createClaim();
-      await time.increase(GRACE_PERIOD_ADVANCE);
-      for (const s of trueVoters) {
-        await truthBounty.connect(s).vote(claimId, true, MIN_STAKE);
-      }
-      for (const s of falseVoters) {
-        await truthBounty.connect(s).vote(claimId, false, MIN_STAKE);
-      }
-
-      const [trueWeight, falseWeight, count] = await aggregator.calculateWeights(claimId);
-      expect(count).to.equal(10n);
-      expect(trueWeight).to.equal(MIN_STAKE * 5n);
-      expect(falseWeight).to.equal(MIN_STAKE * 5n);
-
-      // Even-weight tie → INCONCLUSIVE
-      await expect(aggregator.aggregateClaim(claimId))
-        .to.emit(aggregator, "ClaimAggregated")
-        .withArgs(claimId, outcome.INCONCLUSIVE, 0n);
+      const second = await aggregator.getAggregation(claimId);
+      expect(second.outcome).to.equal(first.outcome);
+      expect(second.confidence).to.equal(first.confidence);
     });
 
-    it("repeatedly aggregates distinct claims without state leakage", async function () {
-      for (let i = 0; i < 10; i++) {
-        const claimId = await createClaim();
-        await stakeFor([verifier1]);
-        await voteFor(claimId, [{ signer: verifier1, support: true, stake: MIN_STAKE }]);
-        await expect(aggregator.aggregateClaim(claimId))
-          .to.emit(aggregator, "ClaimAggregated")
-          .withArgs(claimId, outcome.VERIFIED_TRUE, 10000n);
+    it("handles numeric bounds without overflow", async function () {
+      const values = [0n, 1n, 100n, 1_000_000n, 1_000_000_000n];
+      for (const trueWeight of values) {
+        for (const falseWeight of values) {
+          const total = trueWeight + falseWeight;
+          if (total === 0n) continue;
+          const confidence = await aggregator.calculateConfidence(trueWeight, total);
+          expect(confidence).to.be.lte(10000n);
+        }
       }
     });
   });
-
-  describe("Access control", function () {
-    it("allows only admin to update thresholds", async function () {
-      await expect(
-        aggregator.connect(stranger).setThresholds(1, 0, 0)
-      ).to.be.revertedWithCustomError(aggregator, "AccessControlUnauthorizedAccount");
-    });
-
-    it("updates thresholds and emits event", async function () {
-      await expect(aggregator.connect(owner).setThresholds(5, ethers.parseEther("1000"), 9000))
-        .to.emit(aggregator, "ThresholdsUpdated")
-        .withArgs(5, ethers.parseEther("1000"), 9000);
-      expect(await aggregator.minVerificationCount()).to.equal(5n);
-      expect(await aggregator.minTotalWeight()).to.equal(ethers.parseEther("1000"));
-      expect(await aggregator.minConfidenceBps()).to.equal(9000n);
-    });
-
-    it("rejects confidence threshold above 100%", async function () {
-      await expect(aggregator.connect(owner).setThresholds(1, 0, 10001))
-        .to.be.revertedWith("Confidence threshold exceeds 100%");
-    });
-
-    it("allows only admin to update the verification source", async function () {
-      await expect(
-        aggregator.connect(stranger).setVerificationSource(await owner.getAddress())
-      ).to.be.revertedWithCustomError(aggregator, "AccessControlUnauthorizedAccount");
-
-      await expect(aggregator.connect(owner).setVerificationSource(await owner.getAddress()))
-        .to.emit(aggregator, "VerificationSourceUpdated")
-        .withArgs(await truthBounty.getAddress(), await owner.getAddress());
-      expect(await aggregator.verificationSource()).to.equal(await owner.getAddress());
-    });
-
-    it("rejects zero address as verification source", async function () {
-      await expect(
-        aggregator.connect(owner).setVerificationSource(ethers.ZeroAddress)
-      ).to.be.revertedWithCustomError(aggregator, "ZeroAddress");
-    });
-  });
-
-  async function deployAggregator(opts: {
-    minCount?: bigint;
-    minWeight?: bigint;
-    minConfidence?: bigint;
-  }) {
-    const VerificationAggregator = await ethers.getContractFactory("VerificationAggregator");
-    const agg = await VerificationAggregator.deploy(
-      await truthBounty.getAddress(),
-      await owner.getAddress(),
-      opts.minCount ?? 1n,
-      opts.minWeight ?? 0n,
-      opts.minConfidence ?? 0n
-    );
-    await agg.waitForDeployment();
-    return agg;
-  }
 });

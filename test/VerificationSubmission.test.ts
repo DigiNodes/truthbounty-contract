@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
 import type { ClaimRegistry, VerificationSubmission, MockERC20 } from "../typechain-types";
+import { deployClaimRegistry } from "./helpers/deployClaimRegistry";
 
 describe("VerificationSubmission", function () {
     const MIN_STAKE = ethers.parseEther("100");
@@ -17,9 +18,7 @@ describe("VerificationSubmission", function () {
         const [admin, updater, verifier1, verifier2, claimCreator] = await ethers.getSigners();
 
         // 1. Deploy ClaimRegistry
-        const ClaimRegistryFactory = await ethers.getContractFactory("ClaimRegistry");
-        const registry = (await ClaimRegistryFactory.deploy(admin.address)) as ClaimRegistry;
-        await registry.waitForDeployment();
+        const registry = await deployClaimRegistry(admin.address);
 
         const REGISTRY_UPDATER_ROLE = await registry.REGISTRY_UPDATER_ROLE();
         await registry.connect(admin).grantRole(REGISTRY_UPDATER_ROLE, updater.address);
@@ -131,6 +130,21 @@ describe("VerificationSubmission", function () {
                 .to.be.revertedWithCustomError(submissionEngine, "VerificationWindowClosed");
         });
 
+        it("accepts inclusion at the deadline and rejects inclusion after it", async function () {
+            const { registry, submissionEngine, updater, verifier1, verifier2, claimId, deadline } =
+                await loadFixture(deployFixture);
+            await registry.connect(updater).updateClaimStatus(claimId, 1);
+
+            await time.setNextBlockTimestamp(Number(deadline));
+            await submissionEngine.connect(verifier1).submitVerification(claimId, 0, MIN_STAKE);
+            expect((await submissionEngine.getVerification(1)).submittedAt).to.equal(BigInt(deadline));
+
+            await time.setNextBlockTimestamp(Number(deadline) + 1);
+            await expect(submissionEngine.connect(verifier2).submitVerification(claimId, 1, MIN_STAKE))
+                .to.be.revertedWithCustomError(submissionEngine, "VerificationWindowClosed");
+            expect(await submissionEngine.getVerificationCount()).to.equal(1);
+        });
+
         it("reverts on duplicate verification from same wallet", async function () {
             const { registry, submissionEngine, updater, verifier1, claimId } = await loadFixture(deployFixture);
             await registry.connect(updater).updateClaimStatus(claimId, 1);
@@ -148,6 +162,30 @@ describe("VerificationSubmission", function () {
             const tooLowStake = MIN_STAKE - 1n;
             await expect(submissionEngine.connect(verifier1).submitVerification(claimId, 0, tooLowStake))
                 .to.be.revertedWithCustomError(submissionEngine, "InsufficientStake");
+        });
+    });
+
+    describe("Paginated Verifications Query", function () {
+        it("supports paginated retrieval of verifications", async function () {
+            const { registry, submissionEngine, updater, verifier1, verifier2, claimId } = await loadFixture(deployFixture);
+            await registry.connect(updater).updateClaimStatus(claimId, 1);
+
+            await submissionEngine.connect(verifier1).submitVerification(claimId, 0, MIN_STAKE);
+            await submissionEngine.connect(verifier2).submitVerification(claimId, 1, MIN_STAKE);
+
+            const [verificationsPage1, total1] = await submissionEngine.getClaimVerificationsPaginated(claimId, 0, 1);
+            expect(total1).to.equal(2);
+            expect(verificationsPage1.length).to.equal(1);
+            expect(verificationsPage1[0]).to.equal(1n);
+
+            const [verificationsPage2, total2] = await submissionEngine.getClaimVerificationsPaginated(claimId, 1, 5);
+            expect(total2).to.equal(2);
+            expect(verificationsPage2.length).to.equal(1);
+            expect(verificationsPage2[0]).to.equal(2n);
+
+            const [verificationsEmpty, totalEmpty] = await submissionEngine.getClaimVerificationsPaginated(claimId, 10, 5);
+            expect(totalEmpty).to.equal(2);
+            expect(verificationsEmpty.length).to.equal(0);
         });
     });
 

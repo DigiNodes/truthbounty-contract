@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
 import "forge-std/console2.sol";
+import "./DeploymentPreflight.sol";
 
 contract DeployBase is Script {
     struct DeploymentConfig {
@@ -78,6 +79,37 @@ contract DeployBase is Script {
         } else {
             revert(string(abi.encodePacked("Unknown environment: ", env)));
         }
+
+        _preflightChecks();
+    }
+
+    function _preflightChecks() internal view {
+        if (vm.envOr("SKIP_DEPLOYMENT_PREFLIGHT", false)) return;
+
+        uint256 expectedChainId = vm.envOr("EXPECTED_CHAIN_ID", uint256(0));
+        if (expectedChainId != 0) DeploymentPreflight.requireExpectedChainId(expectedChainId);
+
+        address expectedDeployer = vm.envOr("EXPECTED_DEPLOYER", address(0));
+        if (expectedDeployer != address(0)) {
+            DeploymentPreflight.requireDeployer(expectedDeployer, msg.sender);
+        }
+
+        DeploymentPreflight.requireNonZeroAddress(config.admin, "admin");
+        if (config.governanceController != address(0)) {
+            DeploymentPreflight.requireNonZeroAddress(config.governanceController, "governanceController");
+        }
+
+        uint256 minBalance = vm.envOr("MIN_GAS_BALANCE", uint256(0.01 ether));
+        if (minBalance != 0) {
+            DeploymentPreflight.requireSufficientBalance(msg.sender, minBalance);
+        }
+    }
+
+    function requireArtifactFreshness(string memory artifactPath, bytes32 expectedArtifactHash) internal view {
+        if (expectedArtifactHash == bytes32(0)) return;
+
+        bytes32 actualArtifactHash = keccak256(bytes(vm.readFile(artifactPath)));
+        DeploymentPreflight.requireArtifactFreshness(actualArtifactHash, expectedArtifactHash, artifactPath);
     }
 
     function saveDeployment(string memory artifactName, string memory content) internal {
@@ -97,6 +129,38 @@ contract DeployBase is Script {
         address slashing,
         address claims
     ) internal view returns (string memory) {
+        return generateManifestWithGovernance(
+            version,
+            migrationManager,
+            token,
+            oracle,
+            bounty,
+            staking,
+            slashing,
+            claims,
+            address(0),
+            address(0),
+            address(0),
+            address(0),
+            address(0)
+        );
+    }
+
+    function generateManifestWithGovernance(
+        string memory version,
+        address migrationManager,
+        address token,
+        address oracle,
+        address bounty,
+        address staking,
+        address slashing,
+        address claims,
+        address governanceToken,
+        address timelock,
+        address governor,
+        address moduleRegistry,
+        address governanceGuardian
+    ) internal view returns (string memory) {
         return string(abi.encodePacked(
             '{\n',
             '  "protocolVersion": "', version, '",\n',
@@ -111,7 +175,19 @@ contract DeployBase is Script {
             '    "TruthBountyWeighted": "', vm.toString(bounty), '",\n',
             '    "Staking": "', vm.toString(staking), '",\n',
             '    "VerifierSlashing": "', vm.toString(slashing), '",\n',
-            '    "TruthBountyClaims": "', vm.toString(claims), '"\n',
+            '    "TruthBountyClaims": "', vm.toString(claims), '",\n',
+            '    "TruthBountyGovernanceToken": "', vm.toString(governanceToken), '",\n',
+            '    "TimelockController": "', vm.toString(timelock), '",\n',
+            '    "TruthBountyGovernor": "', vm.toString(governor), '",\n',
+            '    "GovernedModuleRegistry": "', vm.toString(moduleRegistry), '",\n',
+            '    "GovernanceGuardian": "', vm.toString(governanceGuardian), '"\n',
+            '  },\n',
+            '  "governance": {\n',
+            '    "votingDelay": ', vm.envOr("GOV_VOTING_DELAY", uint256(86400)), ',\n',
+            '    "votingPeriod": ', vm.envOr("GOV_VOTING_PERIOD", uint256(259200)), ',\n',
+            '    "proposalThreshold": "', vm.toString(vm.envOr("GOV_PROPOSAL_THRESHOLD", uint256(100_000 ether))), '",\n',
+            '    "quorumNumerator": ', vm.envOr("GOV_QUORUM_NUMERATOR", uint256(4)), ',\n',
+            '    "timelockMinDelay": ', vm.envOr("TIMELOCK_MIN_DELAY", uint256(172800)), '\n',
             '  }\n',
             '}'
         ));

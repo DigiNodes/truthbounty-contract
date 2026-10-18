@@ -183,7 +183,7 @@ interface ICreate2AddressPlanner {
      * @dev Reverts on zero inputs, invalid nonce plan, expired expiry, or duplicate binding.
      * @dev The config checksum is a domain-separated digest of the full configuration.
      */
-    function bindDeploymentConfig(DeploymentConfig caldata config) external;
+    function bindDeploymentConfig(DeploymentConfig calldata config) external;
 
     /**
      * @notice Validates a bound deployment configuration against the live environment
@@ -229,7 +229,7 @@ interface ICreate2AddressPlanner {
      * @notice Returns the domain-separated checksum for a deployment configuration.
      * @dev Pure helper so off-chain tooling can reproduce the exact digest.
      */
-    function computeConfigChecksum(DeploymentConfig caldata config)
+    function computeConfigChecksum(DeploymentConfig calldata config)
         external
         pure
         returns (bytes32 checksum);

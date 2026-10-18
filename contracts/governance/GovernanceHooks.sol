@@ -4,7 +4,8 @@ pragma solidity ^0.8.20;
 /**
  * @title GovernanceHooks
  * @notice Interface for DAO governance control over protocol parameters
- * @dev Allows governance to control fee percentages, thresholds, and role assignments
+ * @dev Legacy per-parameter surface only. Canonical V2 immutable parameter sets are
+ *      owned by ParameterVersionRegistry and intentionally excluded from this interface.
  */
 interface GovernanceHooks {
     // ============ Parameter Update Types ============
@@ -210,4 +211,5 @@ interface GovernanceHooks {
         uint8 status,
         address proposer
     );
+
 }
