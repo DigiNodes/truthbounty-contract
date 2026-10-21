@@ -134,6 +134,8 @@ jobs:
       # PREWAVE-SC-062: per-contract and proxy deployment size budgets — oversized
       # contracts must not be broadcast.  Growth is attributed per contract in the
       # release report written to deployments/releases/deployment-size-report.json.
+      - name: Compile Hardhat artifacts for size gate
+        run: npx hardhat compile
       - name: Deployment size budget gate (PREWAVE-SC-062)
         run: |
           node scripts/check-deployment-sizes.mjs

@@ -5,7 +5,8 @@ export const COMPILER_SETTINGS = {
       enabled: true,
       runs: 200,
     },
-    viaIR: false,
+    evmVersion: "cancun",
+    viaIR: true,
   },
 };
 

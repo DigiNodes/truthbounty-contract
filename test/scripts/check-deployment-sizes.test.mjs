@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test, before, after, describe } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -42,7 +42,7 @@ const REPO_ROOT = resolve(__dirname, "../..");
 // ---------------------------------------------------------------------------
 
 const { runSizeBudgetGate } = await import(
-  resolve(REPO_ROOT, "scripts/check-deployment-sizes.mjs")
+  pathToFileURL(resolve(REPO_ROOT, "scripts/check-deployment-sizes.mjs")).href
 );
 
 // ---------------------------------------------------------------------------
@@ -222,6 +222,7 @@ function runGate(params) {
     reportOnly: params.reportOnly ?? false,
     writeBaseline: params.writeBaseline ?? false,
     filterContract: params.filterContract ?? null,
+    requireArtifacts: params.requireArtifacts ?? true,
   });
 }
 
@@ -733,14 +734,37 @@ describe("PREWAVE-SC-062 — Deployment Size Budget Gate", () => {
 
     const { report, exitCode } = runGate({ configPath, artifactsDir, reportPath: join(tmp, "report.json") });
 
-    assert.equal(exitCode, 0, "Missing artifact should NOT hard-fail");
+    assert.equal(exitCode, 1, "Missing artifact must hard-fail by default");
     assert.ok(
-      report.warnings.some((w) => w.includes("GhostContract")),
-      `Expected warning for GhostContract. Warnings: ${report.warnings.join("; ")}`,
+      report.hardFailures.some((w) => w.includes("GhostContract")),
+      `Expected hard failure for GhostContract. Failures: ${report.hardFailures.join("; ")}`,
     );
     const cr = report.contracts.find((c) => c.contractName === "GhostContract");
     assert.equal(cr?.status, "missing_artifact");
+  });
+
+  // T14b: explicit opt-out keeps the warning-only behavior for local runs.
+  test("T14b - missing artifact is only a warning with requireArtifacts=false", async () => {
+    const tmp = freshDir();
+    const artifactsDir = join(tmp, "artifacts");
+    mkdirSync(artifactsDir, { recursive: true });
+
+    const config = buildConfig(
+      { GhostContract: { warningThresholdBytes: 22000, hardLimitBytes: 23500 } },
+      { reportPath: join(tmp, "report.json") },
+    );
+    const configPath = writeConfig(tmp, config);
+
+    const { report, exitCode } = runGate({
+      configPath,
+      artifactsDir,
+      reportPath: join(tmp, "report.json"),
+      requireArtifacts: false,
+    });
+
+    assert.equal(exitCode, 0);
     assert.equal(report.hardFailures.length, 0);
+    assert.ok(report.warnings.some((w) => w.includes("GhostContract")));
   });
 
   // -------------------------------------------------------------------------
