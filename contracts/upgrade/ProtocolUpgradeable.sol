@@ -54,6 +54,17 @@ abstract contract ProtocolUpgradeable is
             _grantRole(UPGRADE_CONTROLLER_ROLE, _upgradeController);
         }
     }
+    /// @dev Governance setup is part of the initializer chain, so it may only run while an
+    ///      initializer is executing. Without this guard a derived contract could expose
+    ///      _initializeGovernance on its own and replay the governance setup after
+    ///      deployment (PREWAVE-SC-054).
+    function _initializeGovernance(
+        address _governanceController,
+        address _admin,
+        address _emergencyAdmin
+    ) internal virtual override onlyInitializing {
+        super._initializeGovernance(_governanceController, _admin, _emergencyAdmin);
+    }
 
     function setUpgradeController(address _newController)
         external
