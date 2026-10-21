@@ -187,7 +187,7 @@ contract InitializerReplayLockTest is Test {
         assertEq(upgraded.appendedValue(), 7, "a rejected reinitializer must not change state");
 
         // The V1 initializer is gone after the upgrade and cannot be replayed.
-        vm.expectRevert();
-        upgraded.initialize(stranger);
+        (bool ok, ) = address(proxy).call(abi.encodeWithSignature("initialize(address)", stranger));
+        assertFalse(ok, "the V1 initializer must not be callable after the upgrade");
     }
 }
