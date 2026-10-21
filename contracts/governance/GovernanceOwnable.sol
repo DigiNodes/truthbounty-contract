@@ -102,7 +102,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         address _governanceController,
         address _admin,
         address _emergencyAdmin
-    ) internal {
+    ) internal virtual {
         require(_admin != address(0), ZeroAddress());
         require(_emergencyAdmin != address(0), ZeroAddress());
         
