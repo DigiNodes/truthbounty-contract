@@ -374,6 +374,7 @@ export function runSizeBudgetGate(opts = {}) {
     reportOnly = false,
     writeBaseline = false,
     filterContract = null,
+    requireArtifacts = true,
   } = opts;
 
   const config = loadConfig(configPath);
@@ -428,11 +429,16 @@ export function runSizeBudgetGate(opts = {}) {
         note: budget.note ?? "Artifact not found — contract may be abstract, interface-only, or not yet compiled.",
       };
       contractReports.push(missingReport);
-      // Missing artifact is a warning, not a hard failure, in case the project
-      // hasn't been fully compiled yet.  CI should compile first.
-      warnings.push(
-        `[PREWAVE-SC-062] Missing artifact for ${contractName} — run 'npm run compile' first.`,
-      );
+      // Fail closed by default: a size budget that cannot be measured is not a
+      // passing budget. `--allow-missing-artifacts` is the explicit opt-out for
+      // local/partial builds; CI must compile first and keep the default.
+      const missingMessage =
+        `[PREWAVE-SC-062] Missing artifact for ${contractName} �?" run 'npm run compile' first.`;
+      if (requireArtifacts) {
+        hardFailures.push(missingMessage);
+      } else {
+        warnings.push(missingMessage);
+      }
       continue;
     }
 
@@ -690,6 +696,7 @@ if (invokedDirectly) {
   const args = process.argv.slice(2);
   const writeBaseline = args.includes("--write-baseline");
   const reportOnly = args.includes("--report-only");
+  const allowMissingArtifacts = args.includes("--allow-missing-artifacts");
   const contractIdx = args.indexOf("--contract");
   const filterContract = contractIdx >= 0 ? args[contractIdx + 1] ?? null : null;
 
@@ -698,6 +705,7 @@ if (invokedDirectly) {
       writeBaseline,
       reportOnly,
       filterContract,
+      requireArtifacts: !allowMissingArtifacts,
     });
     printReport(report);
     process.exit(exitCode);
