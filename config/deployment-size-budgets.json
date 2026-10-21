@@ -305,6 +305,36 @@
       "warningThresholdBytes": 15000,
       "hardLimitBytes": 18000,
       "category": "library"
+    },
+    "EventCompletenessAnchor": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
+    },
+    "Aggregation": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
+    },
+    "Claims": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
+    },
+    "EmergencyControls": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
+    },
+    "ConsumerGuaranteesAnchor": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
+    },
+    "SupplyChainAttestationAnchor": {
+      "warningThresholdBytes": 22000,
+      "hardLimitBytes": 23500,
+      "category": "implementation"
     }
   },
   "optimizerProfile": {
