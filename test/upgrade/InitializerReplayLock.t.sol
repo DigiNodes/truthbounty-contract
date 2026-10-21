@@ -117,10 +117,7 @@ contract InitializerReplayLockTest is Test {
 
     function test_SentinelV1_EmitsInitializedEvent() public {
         NamespacedSentinelModuleV1 implementation = new NamespacedSentinelModuleV1();
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(implementation),
-            abi.encodeCall(NamespacedSentinelModuleV1.initialize, (owner))
-        );
+        UninitializedUpgradeProxy proxy = new UninitializedUpgradeProxy(address(implementation));
 
         vm.expectEmit(true, true, true, true, address(proxy));
         emit Initialized(1);
