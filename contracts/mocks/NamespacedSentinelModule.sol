@@ -91,6 +91,14 @@ abstract contract NamespacedSentinelModuleCore is Initializable, UUPSUpgradeable
         if (msg.sender != owner) revert NotOwner(msg.sender);
         _;
     }
+    /// @notice Reverts unless the V1 initializer has already run on this proxy.
+    /// @dev The V2 migration hook must not run on a proxy that was never initialized:
+    ///      skipping the parent initializer would leave the module without an owner and
+    ///      burn the only version that could still set one (PREWAVE-SC-054).
+    modifier parentInitialized() {
+        if (_getInitializedVersion() == 0) revert InvalidInitialization();
+        _;
+    }
 
     /// @notice Writes every V1 sentinel (linear and namespaced).
     /// @param values Sentinel values.
@@ -171,7 +179,7 @@ contract NamespacedSentinelModuleV2 is NamespacedSentinelModuleCore, SentinelMod
 
     /// @notice V2 migration hook, run once through `upgradeToAndCall`.
     /// @param appendedValue_ Initial value of the appended linear variable.
-    function initializeV2(uint256 appendedValue_) external reinitializer(2) {
+    function initializeV2(uint256 appendedValue_) external parentInitialized reinitializer(2) {
         appendedValue = appendedValue_;
     }
 
