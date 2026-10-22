@@ -123,7 +123,7 @@ jobs:
       - name: SBOM/attestation self-tests (PREWAVE-SC-058)
         run: node --test test/scripts/generate-release-sbom.test.mjs test/scripts/check-release-sbom.test.mjs
       - name: Upload SBOM and attestation artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: contract-release-sbom
           path: |
@@ -250,7 +250,7 @@ jobs:
 
       - name: Upload invariant failure seeds
         if: failure()
-        uses: actions/upload-artifact@4cecb44b14c14c14c14c14c14c14c14c14c14c14 # v4.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.0.0
         with:
           name: invariant-failure-seeds-${{ github.sha }}
           path: artifacts/invariant-seeds/
