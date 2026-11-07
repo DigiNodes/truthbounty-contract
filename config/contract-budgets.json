@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "issue": "PREWAVE-SC-009",
+  "description": "Reviewed contract size, gas and calldata budgets for the canonical V2 operations. Gas ceilings must stay at or below config/gas-budgets.json; deployment size limits are owned by config/deployment-size-budgets.json. Any increase over config/contract-budget-baseline.json needs a matching entry in `overrides`.",
+  "calldataModel": {
+    "selectorBytes": 4,
+    "wordBytes": 32,
+    "dynamicArrayOverheadWords": 2,
+    "policyCapBytes": 131072,
+    "note": "Static ABI word model: selector + fixedWords + (dynamic array offset/length) + perItemWords * bound. policyCapBytes is a repository policy limit for denial-of-service review, not a chain-enforced limit."
+  },
+  "feeContext": {
+    "network": "Optimism (OP Stack)",
+    "components": ["L2 execution gas x L2 gas price", "L1 data fee derived from the compressed transaction bytes"],
+    "note": "Calldata bytes drive the L1 data fee. No fee price or cost promise is made here; UI and API consumers must read live fee parameters and must not estimate canonical outcomes from these budgets."
+  },
+  "operations": {
+    "claim": {
+      "gasBudgetKey": "CLAIM_CREATION",
+      "maxGas": 350000,
+      "calldata": { "fixedWords": 4, "dynamicArrays": 1, "perItemWords": 1, "boundKey": "MAX_EVIDENCE_PER_CLAIM", "maxBytes": 3700 },
+      "worstCase": "Claim created with the maximum number of evidence hashes."
+    },
+    "commit": {
+      "gasBudgetKey": "VERIFICATION_VOTE",
+      "maxGas": 350000,
+      "calldata": { "fixedWords": 3, "dynamicArrays": 0, "perItemWords": 0, "boundKey": null, "maxBytes": 132 },
+      "worstCase": "First commit by a verifier into a claim already holding the maximum verifier set."
+    },
+    "reveal": {
+      "gasBudgetKey": "VERIFICATION_VOTE",
+      "maxGas": 350000,
+      "calldata": { "fixedWords": 4, "dynamicArrays": 0, "perItemWords": 0, "boundKey": null, "maxBytes": 164 },
+      "worstCase": "Last reveal that triggers aggregation inputs for the maximum verifier set."
+    },
+    "dispute": {
+      "gasBudgetKey": "CHALLENGE_OPEN",
+      "maxGas": 120000,
+      "calldata": { "fixedWords": 4, "dynamicArrays": 1, "perItemWords": 1, "boundKey": "MAX_EVIDENCE_PER_CLAIM", "maxBytes": 3700 },
+      "worstCase": "Challenge opened with the maximum number of evidence references."
+    },
+    "appeal": {
+      "gasBudgetKey": "APPEAL_SETTLEMENT",
+      "maxGas": 650000,
+      "calldata": { "fixedWords": 4, "dynamicArrays": 1, "perItemWords": 1, "boundKey": "MAX_VERIFIERS_PER_CLAIM", "maxBytes": 6700 },
+      "worstCase": "Appeal round settled over the maximum verifier set."
+    },
+    "settlement": {
+      "gasBudgetKey": "PROVISIONAL_SETTLEMENT",
+      "maxGas": 250000,
+      "calldata": { "fixedWords": 2, "dynamicArrays": 1, "perItemWords": 1, "boundKey": "MAX_SETTLEMENT_BATCH_SIZE", "maxBytes": 6700 },
+      "worstCase": "Settlement batch at MAX_SETTLEMENT_BATCH_SIZE; larger batches must revert (see ScenarioGasSnapshots)."
+    },
+    "rewards": {
+      "gasBudgetKey": "REWARD_CLAIM",
+      "maxGas": 450000,
+      "calldata": { "fixedWords": 2, "dynamicArrays": 1, "perItemWords": 1, "boundKey": "MAX_REWARD_BATCH_SIZE", "maxBytes": 3400 },
+      "worstCase": "Reward claim batch at MAX_REWARD_BATCH_SIZE."
+    },
+    "governance": {
+      "gasBudgetKey": "GOVERNANCE_CONFIGURATION",
+      "maxGas": 120000,
+      "calldata": { "fixedWords": 4, "dynamicArrays": 0, "perItemWords": 0, "boundKey": null, "maxBytes": 164 },
+      "worstCase": "Parameter change proposal with bounded inputs."
+    },
+    "pause": {
+      "gasBudgetKey": "EMERGENCY_PAUSE",
+      "maxGas": 180000,
+      "calldata": { "fixedWords": 0, "dynamicArrays": 0, "perItemWords": 0, "boundKey": null, "maxBytes": 4 },
+      "worstCase": "Emergency pause across all pausable modules."
+    }
+  },
+  "overrides": []
+}

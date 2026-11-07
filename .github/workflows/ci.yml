@@ -140,6 +140,19 @@ jobs:
         run: |
           node scripts/check-deployment-sizes.mjs
           node --test test/scripts/check-deployment-sizes.test.mjs
+      # PREWAVE-SC-009: reviewed gas/calldata/size budgets for canonical operations;
+      # regressions need a reviewed override. Evidence is archived below.
+      - name: Contract budget gate (PREWAVE-SC-009)
+        run: |
+          node scripts/check-contract-budgets.mjs
+          node --test test/scripts/check-contract-budgets.test.mjs
+      - name: Upload contract budget evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-budget-evidence
+          path: deployments/releases/contract-budget-evidence.json
+          if-no-files-found: ignore
       - name: Run Foundry tests (forge test)
         run: forge test --no-match-path "test/{invariant,fuzz}/**"
       - name: Run Hardhat tests

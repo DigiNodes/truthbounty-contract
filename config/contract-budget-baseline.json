@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "operations": {
+    "claim": {
+      "maxGas": 350000,
+      "maxCalldataBytes": 3700
+    },
+    "commit": {
+      "maxGas": 350000,
+      "maxCalldataBytes": 132
+    },
+    "reveal": {
+      "maxGas": 350000,
+      "maxCalldataBytes": 164
+    },
+    "dispute": {
+      "maxGas": 120000,
+      "maxCalldataBytes": 3700
+    },
+    "appeal": {
+      "maxGas": 650000,
+      "maxCalldataBytes": 6700
+    },
+    "settlement": {
+      "maxGas": 250000,
+      "maxCalldataBytes": 6700
+    },
+    "rewards": {
+      "maxGas": 450000,
+      "maxCalldataBytes": 3400
+    },
+    "governance": {
+      "maxGas": 120000,
+      "maxCalldataBytes": 164
+    },
+    "pause": {
+      "maxGas": 180000,
+      "maxCalldataBytes": 4
+    }
+  }
+}
