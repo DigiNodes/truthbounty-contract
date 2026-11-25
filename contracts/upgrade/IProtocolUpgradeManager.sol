@@ -64,7 +64,7 @@ interface IProtocolUpgradeManager {
         Executing,
         Completed,
         Failed,
-        Rolled Back
+        RolledBack
     }
 
     struct MigrationStep {
