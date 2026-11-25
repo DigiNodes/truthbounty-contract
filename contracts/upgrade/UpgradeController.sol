@@ -211,7 +211,7 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
     function proposeUpgrade(
         address targetContract,
         address newImplementation,
-        string caldata version,
+        string calldata version,
         UpgradeType upgradeType,
         bytes32 governanceProposalId
     ) external override nonReentrant whenNotPaused returns (bytes32 proposalId) {
