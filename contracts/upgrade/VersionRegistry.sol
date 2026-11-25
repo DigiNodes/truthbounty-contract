@@ -28,7 +28,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
 
     /// @notice Maximum number of consecutive rollbacks allowed from the current active version.
-    uint256 public constant MAX_ROLLBACK_DEPTH: uint256 = 3;
+    uint256 public constant MAX_ROLLBACK_DEPTH = 3;
 
     /// @notice Maximum number of storage slots that may be compared in a single
     ///         equivalence check to bound gas and keep evidence deterministic.
