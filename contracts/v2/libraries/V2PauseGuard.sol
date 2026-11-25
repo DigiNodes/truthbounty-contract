@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import {IEmergencyControls} from "../interfaces/IEmergencyControls.sol";
-import {IGovernedUnpause} from "../interfaces/IGovernedUnpause.sol";
 import {V2Errors} from "./V2Errors.sol";
 import {PauseMatrix} from "./PauseMatrix.sol";
 import {EmergencyPauseOrdering} from "../../governance/libraries/EmergencyPauseOrdering.sol";
@@ -255,7 +254,7 @@ abstract contract V2PauseGuard {
     /// @param registry Module registry exposing `module(bytes32) returns (address,uint16,uint16)`.
     /// @return resolved Whether the registry answered well-formed data.
     /// @return authority The registered authority (zero when the key is not registered).
-    function _registryPauseAuthority(address registry) 8internal view returns (bool resolved, address authority) {
+    function _registryPauseAuthority(address registry) internal view returns (bool resolved, address authority) {
         (bool ok, bytes memory data) = registry.staticcall{gas: PROBE_GAS_LIMIT}(
             abi.encodeWithSignature("module(bytes32)", PauseMatrix.MODULE_EMERGENCY_CONTROLS)
         );
