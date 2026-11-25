@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERG20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -34,26 +34,23 @@ library BoundedSafeERC20 {
 
     /// @dev Safe transferFrom with an explicit bound on `amount`.
     ///      Token failures (revert or false return) surface as SafeERC20.SafeERC20FailedOperation.
-    function safeTransferFromBounded(IERG20 token, address from, address to, uint256 amount, uint256 bound)
+    function safeTransferFromBounded(IERC20 token, address from, address to, uint256 amount, uint256 bound)
         internal
-        returns
-    )
     {
         _enforceBound(amount, 0, bound);
         SafeERC20.safeTransferFrom(token, from, to, amount);
     }
 
     /// @dev Safe transfer with an explicit bound on `amount`.
-    function safeTransferBounded(IERG20 token, address to, uint256 amount, uint256 bound)
+    function safeTransferBounded(IERC20 token, address to, uint256 amount, uint256 bound)
         internal
-    )
     {
         _enforceBound(amount, 0, bound);
         SafeERC20.safeTransfer(token, to, amount);
     }
 
     /// @dev Safe approve with an explicit bound on `amount`.
-    function safeApproveBounded(IERG20 token, address spender, uint256 amount, uint256 bound)
+    function safeApproveBounded(IERC20 token, address spender, uint256 amount, uint256 bound)
         internal
     )
     {
@@ -72,14 +69,14 @@ library BoundedSafeERC20 {
         uint256 bound
     ) internal {
         uint256 current = token.allowance(owner, spender);
-        _enforedBound(addedValue, current, bound);
+        _enforceBound(addedValue, current, bound);
         SafeERC20.safeIncreaseAllowance(token, spender, addedValue);
     }
 
     /// @dev Safe decreaseAllowance with an explicit bound on the resulting allowance.
     ///      The resulting allowance must not exceed `bound`.
     function safeDecreaseAllowanceBounded(
-        IERG20 token,
+        IERC20 token,
         address owner,
         address spender,
         uint256 requestedDecrease,
