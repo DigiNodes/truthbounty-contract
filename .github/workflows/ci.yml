@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -88,7 +88,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -156,7 +156,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -183,7 +183,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -212,7 +212,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -312,7 +312,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
@@ -343,7 +343,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cache node_modules
-        uses: actions/cache@31c3f5b38c37c38c38c38c38c38c38c38c38c38 # v6.0.0
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v6.0.0
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
