@@ -77,7 +77,7 @@ interface IEvidence is IV2Module {
     /// @param contentHash Digest of off-chain content.
     /// @param metadata Opaque metadata bytes; its keccak256 digest is stored on-chain.
     /// @return evidenceId Deterministically derived identifier.
-    function submitEvidence(uint256 claimId, bytes32 contentHash, bytes caldata metadata) external returns (uint256 evidenceId);
+    function submitEvidence(uint256 claimId, bytes32 contentHash, bytes calldata metadata) external returns (uint256 evidenceId);
 
     /// @notice Sets the evidence acceptance status under the evidence administrator authority.
     /// @dev Enforces a bounded state-transition matrix: NONE is unreachable as a
