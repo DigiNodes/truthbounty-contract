@@ -52,7 +52,6 @@ library BoundedSafeERC20 {
     /// @dev Safe approve with an explicit bound on `amount`.
     function safeApproveBounded(IERC20 token, address spender, uint256 amount, uint256 bound)
         internal
-    )
     {
         _enforceBound(amount, 0, bound);
         SafeERC20.safeApprove(token, spender, amount);
