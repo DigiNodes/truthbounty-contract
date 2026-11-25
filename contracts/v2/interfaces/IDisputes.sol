@@ -36,7 +36,7 @@ interface IDisputes is IV2Module {
     /// @param reasonHash Digest of the reason; raw reason data remains off-chain.
     /// @param evidence Opaque evidence commitment or reference bytes.
     /// @return disputeId Newly assigned dispute identifier.
-    function openDispute(uint256 claimId, bytes32 reasonHash, bytes caldata evidence) external returns (uint256 disputeId);
+    function openDispute(uint256 claimId, bytes32 reasonHash, bytes calldata evidence) external returns (uint256 disputeId);
 
     /// @notice Resolves or escalates a dispute under the resolver authority.
     /// @dev Must enforce the configured transition graph, resolver role, and evidence/decision validation; invalid decisions leave state unchanged.
