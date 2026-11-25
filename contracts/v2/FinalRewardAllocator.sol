@@ -109,7 +109,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
         bytes32 settlementId,
         address asset,
         FinalOutcome outcome,
-        Allocation[] caldata allocations
+        Allocation[] calldata allocations
     ) external override {
         _onlySettlementModule();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
