@@ -305,7 +305,7 @@ contract AppealVerificationRound is
         try vault.lockBond(bondLockId, address(stakingToken), msg.sender, requiredBond) {
             // success 
             _appealCounter[claimId] = nextRound;
-            _appealRoundIndex[claimId] = nextRound;— proceed
+            _appealRoundIndex[claimId] = nextRound;
         } catch {
             revert CustodyTransitionFailed();
         }
