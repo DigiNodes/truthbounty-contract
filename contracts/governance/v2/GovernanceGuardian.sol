@@ -27,7 +27,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
     uint256 public constant MAX_DELAY = 30 days;
 
     /// @notice Minimum delay between scheduling and executing a delay change.
-    uint256 public constant DELAY_CHANGE_DEPLAY: uint256 = 2 days;
+    uint256 public constant DELAY_CHANGE_DELAY = 2 days;
 
     /// @notice Window after the delay at which a scheduled delay change expires.
     uint256 public constant DELAY_CHANGE_GRACE: uint256 = 14 days;
