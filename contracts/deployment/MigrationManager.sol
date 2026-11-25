@@ -244,7 +244,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     /// must already be registered and must have lower ids to enforce order.
     function registerMigrationStep(
         uint256 stepId,
-        string caldata description,
+        string calldata description,
         bytes32 migrationHash,
         uint256[] calldata prerequisites
     ) external onlyRole(MIGRATOR_ROLE) notEmergency {
