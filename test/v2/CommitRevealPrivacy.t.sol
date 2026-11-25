@@ -30,7 +30,7 @@ contract CommitRevealPrivacyTest is Test {
 
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
-    address internal eve = address(0xEvE);
+    address internal eve = address(0xE7E);
 
     bytes32 internal constant CANONICAL_RELEASE = V2CommitRevealReplayDomain.CANONICAL_RELEASE_VERSION;
     uint256 internal constant CANONICAL_CHAIN_ID = 10; // Optimism Mainnet
