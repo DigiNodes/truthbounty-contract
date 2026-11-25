@@ -33,7 +33,7 @@ contract LegacyEventExclusionTest is Test {
         "VoteCast(uint256,address,bool,uint256)",  // Legacy TruthBounty.sol
         "ClaimSettled(uint256,bool,uint256,uint256,uint256,uint256)",  // Legacy settlement
         "RewardsDistributed(uint256,address,uint256)",  // Legacy rewards
-        "RewardsClaimed(address,uint256)",  // Without proper correlation ID
+        "RewardsClaimed(address,uint256)"  // Without proper correlation ID
     ];
     
     // =========================================================================
@@ -54,7 +54,7 @@ contract LegacyEventExclusionTest is Test {
         "StakeCustody",
         "GovernanceOwnable",
         "GovernanceHooks",
-        "EmergencyControls",
+        "EmergencyControls"
     ];
     
     // =========================================================================
