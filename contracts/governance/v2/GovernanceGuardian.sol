@@ -303,7 +303,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
      *      caller to be the contract itself, enforcing the self-administration requirement.
      * @param data ABI-encoded call data for the delay change operation.
      */
-    function selfAdminister(bytes caldata data) external onlyRole(DELAY_ADMIN_ROLE) {
+    function selfAdminister(bytes calldata data) external onlyRole(DELAY_ADMIN_ROLE) {
         if (msg.sender != address(this)) revert NotSelfCall();
         (bool success,) = address(this).call(data);
         require(success, "GovernanceGuardian: self-call failed");
