@@ -987,7 +987,7 @@ contract InsuranceFundReentrancyTest is Test {
 
     function setUp() public {
         token = new CallbackERC20();
-        fund  = new InsuranceFund(address(token), admin, admin, admin);
+        fund  = new InsuranceFund(address(token), admin, admin);
 
         fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), manager);
 
@@ -1008,7 +1008,6 @@ contract InsuranceFundReentrancyTest is Test {
     ///      the idempotent PAID state prevents the duplicate transfer.
     function test_recipientCallback_reentrantExecutePayout_blockedByStateMachine() public {
         // Submit claim.
-        vm.prank(manager);
         uint256 claimId = recipient.submitClaim(100, "ipfs://evidence");
 
         // Approve claim (moves it to APPROVED + sets executeAfter).
@@ -1029,7 +1028,7 @@ contract InsuranceFundReentrancyTest is Test {
 
     // ── B. Same-function: fund → reentrant fund is blocked by nonReentrant ──
 
-    /// @dev AC-2: nonReentrant on fund() prevents a callback from re-entering fund.
+    /// @dev AC-2: nonReentrant on fundReserve() prevents a callback from re-entering fundReserve.
     ///      We verify that the fund balance equals exactly the single funded amount.
     function test_sameFunction_fundNotDoubleAccounted() public {
         // Already funded 500 in setUp. Fund 10 more; ensure no callback doubling.
@@ -1054,13 +1053,13 @@ contract InsuranceFundReentrancyTest is Test {
         uint256 claimId = fund.claimCounter();
         fund.reviewAndApproveClaim(claimId, 50, "ipfs://audit");
 
-        uint256 reserveBefore = fund.reserveBalance();
+        uint256 reserveBefore = fund.getReserveBalance();
 
         // Do NOT advance past timelock — immediate execute should revert.
         vm.expectRevert();
         fund.executePayout(claimId);
 
-        assertEq(fund.reserveBalance(), reserveBefore, "reserve changed after reverted payout");
+        assertEq(fund.getReserveBalance(), reserveBefore, "reserve changed after reverted payout");
         InsuranceFund.Claim memory claim = fund.getClaim(claimId);
         assertEq(uint8(claim.state), uint8(IInsuranceFund.ClaimState.APPROVED), "claim status must remain APPROVED");
     }
@@ -1069,8 +1068,8 @@ contract InsuranceFundReentrancyTest is Test {
 
     /// @dev AC-3: reading reserveBalance() multiple times yields the same value.
     function test_readOnly_reserveBalance_noSideEffect() public view {
-        uint256 a = fund.reserveBalance();
-        uint256 b = fund.reserveBalance();
+        uint256 a = fund.getReserveBalance();
+        uint256 b = fund.getReserveBalance();
         assertEq(a, b);
     }
 }
