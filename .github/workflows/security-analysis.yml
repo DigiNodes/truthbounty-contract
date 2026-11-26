@@ -61,7 +61,6 @@ jobs:
         run: |
           python3 -c "import pkg_resources; print('setuptools', pkg_resources.get_distribution('setuptools').version)"
           .venv-mythril/bin/python -c "from importlib.metadata import version; assert version('mythril') == '0.24.8', version('mythril')"
-          .venv-mythril/bin/myth --version
           slither --version
 
       - name: Install repo dependencies
