@@ -78,7 +78,7 @@ contract DeploymentAttestationRegistry {
         bytes32 indexed artifactDigest,
         uint64 configurationVersion,
         bytes32 configurationChecksum,
-        address indexed broadcaster,
+        address broadcaster,
         uint64 noncePlan,
         uint64 expiresAt,
         bytes32[] moduleIds,
