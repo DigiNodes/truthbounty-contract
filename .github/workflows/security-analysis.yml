@@ -50,6 +50,7 @@ jobs:
       - name: Verify analyzer toolchain
         run: |
           python3 -c "import pkg_resources; print('setuptools', pkg_resources.get_distribution('setuptools').version)"
+          python3 -c "from importlib.metadata import version; assert version('mythril') == '0.24.8', version('mythril')"
           python3 -m mythril --version
           slither --version
 
