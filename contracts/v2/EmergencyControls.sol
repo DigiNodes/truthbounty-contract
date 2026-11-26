@@ -289,7 +289,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
             revert V2Errors.Unauthorized(msg.sender);
         }
         if (!_operationRegistered[OP_UNPAUSE]) revert UnknownOperation(OP_UNPAUSE);
-        if (!_pausedScopes[scope] && pausedOperationCount[scope] == 0) revert NotPaused(scope);
+        if (!_pausedScopes[scope]) revert NotPaused(scope);
 
         uint256 readyAt = unpauseScheduledAt[scope];
         if (readyAt == 0 || block.timestamp < readyAt) {
@@ -319,6 +319,15 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         }
 
         _pausedScopes[scope] = false;
+        bytes32[] storage scopedOperations = _scopeOperationIds[scope];
+        for (uint256 i = 0; i < scopedOperations.length; ++i) {
+            bytes32 operationId = scopedOperations[i];
+            if (_pausedOperations[scope][operationId]) {
+                _pausedOperations[scope][operationId] = false;
+                emit OperationUnpaused(scope, operationId, msg.sender);
+            }
+        }
+        pausedOperationCount[scope] = 0;
         pausedAt[scope] = 0;
         unpauseScheduledAt[scope] = 0;
         incidentResolved[incidentRef] = true;
@@ -359,7 +368,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToUnpause(msg.sender);
         }
-        if (!_pausedScopes[scope]) revert NotPaused(scope);
+        if (!_pausedScopes[scope] && pausedOperationCount[scope] == 0) revert NotPaused(scope);
         if (unpauseScheduledAt[scope] != 0) revert AlreadyPaused(scope);
 
         uint256 readyAt = block.timestamp + UNPAUSE_TIMELOCK_DELAY;
