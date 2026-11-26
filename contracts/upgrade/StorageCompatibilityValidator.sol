@@ -58,7 +58,10 @@ contract StorageCompatibilityValidator {
         bool executed;
     }
 
+    address public immutable governanceAdmin;
+
     mapping(address => StorageLayout) internal _registeredLayouts;
+    mapping(address => RollbackPlan) internal _rollbackPlans;
     mapping(bytes32 => bool) public approvedImplementations;
     mapping(bytes32 => NamespaceEntry) internal _namespaces;
     mapping(bytes32 => bytes32) internal _slotToNamespace;
@@ -85,6 +88,8 @@ contract StorageCompatibilityValidator {
         address indexed existingOwner,
         address newOwner
     );
+    event RollbackPlanRegistered(address indexed targetContract, RollbackPolicy policy, bytes32 preUpgradeStateHash, bool supported);
+    event RollbackExecuted(address indexed targetContract, bytes32 preUpgradeStateHash, bytes32 postUpgradeStateHash, bool stateEquivalent);
 
     error IncompatibleStorageLayout(string reason);
     error ImplementationNotApproved(bytes32 upgradeHash);
@@ -95,13 +100,19 @@ contract StorageCompatibilityValidator {
     error NamespaceNotOwned(bytes32 namespaceId, address caller);
     error NamespaceAlreadyRegistered(bytes32 namespaceId);
     error EmptyNamespaceLabel();
+    error RollbackNotSupported(address targetContract);
+    error RollbackAlreadyExecuted(address targetContract);
+    error StateNotEquivalent(bytes32 expected, bytes32 actual);
+    error UnauthorizedGovernance(address caller);
 
-    modifier onlyGovernance(address admin) {
+    modifier onlyGovernance() {
+        if (msg.sender != governanceAdmin) revert UnauthorizedGovernance(msg.sender);
         _;
-        admin;
     }
 
-    constructor() {}
+    constructor() {
+        governanceAdmin = msg.sender;
+    }
 
     function computeErc7201Slot(bytes32 namespaceId) public pure returns (bytes32) {
         return bytes32(uint256(keccak256(abi.encode(uint256(namespaceId) - 1))) & ~bytes32(uint256(0xff)));
@@ -112,7 +123,7 @@ contract StorageCompatibilityValidator {
         uint256 slotCount,
         uint256 gapSlots,
         bytes32 layoutHash
-    ) external {
+    ) external onlyGovernance {
         _registeredLayouts[contract_] = StorageLayout({
             slotCount: slotCount,
             gapSlots: gapSlots,
@@ -127,7 +138,7 @@ contract StorageCompatibilityValidator {
         bytes32 resolvedSlot,
         address owner,
         string calldata label
-    ) external {
+    ) external onlyGovernance {
         if (owner == address(0)) revert ZeroAddress();
         if (bytes(label).length == 0) revert EmptyNamespaceLabel();
         if (_namespaces[namespaceId].registered) revert NamespaceAlreadyRegistered(namespaceId);
@@ -255,7 +266,7 @@ contract StorageCompatibilityValidator {
         return _contractNamespaces[contract_];
     }
 
-    function approveImplementation(bytes32 upgradeHash) external {
+    function approveImplementation(bytes32 upgradeHash) external onlyGovernance {
         approvedImplementations[upgradeHash] = true;
         emit ImplementationApproved(upgradeHash, true);
     }
@@ -264,7 +275,7 @@ contract StorageCompatibilityValidator {
         address targetContract,
         RollbackPolicy policy,
         bytes32 preUpgradeStateHash
-    ) external {
+    ) external onlyGovernance {
         if (targetContract == address(0)) revert ZeroAddress();
         if (policy == RollbackPolicy.None) revert RollbackNotSupported(targetContract);
 
@@ -330,7 +341,7 @@ contract StorageCompatibilityValidator {
     function executeRollback(
         address targetContract,
         bytes32 postUpgradeStateHash
-    ) external {
+    ) external onlyGovernance {
         if (targetContract == address(0)) revert ZeroAddress();
 
         RollbackPlan storage plan = _rollbackPlans[targetContract];
