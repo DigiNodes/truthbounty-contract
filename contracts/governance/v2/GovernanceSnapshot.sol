@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IGovernanceSnapshot} from "./IGovernanceSnapshot.sol";
+import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
 
 /**
  * @title GovernanceSnapshot
@@ -67,6 +68,7 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
      *      `uint48` matches {TruthBountyGovernanceToken.clock()} return type.
      */
     mapping(uint256 => uint48) private _snapshots;
+    address public votingPowerToken;
 
     // ---------------------------------------------------------------------------
     // Constructor
@@ -118,6 +120,16 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
         emit SnapshotRegistered(proposalId, snapshotTimestamp, msg.sender);
     }
 
+    event VotingPowerTokenUpdated(address indexed previousToken, address indexed newToken);
+    error VotingTokenNotConfigured();
+
+    function setVotingPowerToken(address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (token == address(0)) revert InvalidSnapshotTimestamp();
+        address previous = votingPowerToken;
+        votingPowerToken = token;
+        emit VotingPowerTokenUpdated(previous, token);
+    }
+
     // ---------------------------------------------------------------------------
     // IGovernanceSnapshot — read surface
     // ---------------------------------------------------------------------------
@@ -139,5 +151,19 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
      */
     function hasSnapshot(uint256 proposalId) external view returns (bool registered) {
         registered = _snapshots[proposalId] != 0;
+    }
+
+    /// @inheritdoc IGovernanceSnapshot
+    function getVotingPowerAtSnapshot(uint256 proposalId, address account)
+        external
+        view
+        override
+        returns (uint256 votingPower)
+    {
+        uint48 snapshotTimestamp = _snapshots[proposalId];
+        if (snapshotTimestamp == 0) revert SnapshotNotFound(proposalId);
+        address token = votingPowerToken;
+        if (token == address(0)) revert VotingTokenNotConfigured();
+        return IVotes(token).getPastVotes(account, snapshotTimestamp);
     }
 }
