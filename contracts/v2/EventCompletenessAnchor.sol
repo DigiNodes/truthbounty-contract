@@ -143,7 +143,7 @@ contract EventCompletenessAnchor is ERC165, IV2Module, IEventCompleteness {
     function cellSources(uint256 index)
         external
         view
-        returns (bytes32[] memory closingEvents, bytes32[] memory restatements, bytes32 reductionRuleId, bool covered)
+        returns (bytes32[] memory closingEvents, bytes32[] memory restatements, bytes32 reductionRuleId, bytes32 orderingRuleId, bool covered)
     {
         if (index >= _cellCount) revert V2EventCompleteness.IndexOutOfRange(index);
         closingEvents = V2EventCompleteness.closingEventsOf(index);
