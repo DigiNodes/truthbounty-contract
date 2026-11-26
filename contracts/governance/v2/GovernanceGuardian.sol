@@ -203,7 +203,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
         operationId = _deriveOperationId(newDelay, salt, predecessor);
         if (operationUsed[operationId]) revert OperationAlreadyUsed(operationId);
 
-        uint256 eta = block.timestamp + DELAY_CHANGE_DEPLA9;
+        uint256 eta = block.timestamp + DELAY_CHANGE_DELAY;
         uint256 expiresAt = eta + DELAY_CHANGE_GRACE;
 
         delayChanges[operationId] = DelayChange({
