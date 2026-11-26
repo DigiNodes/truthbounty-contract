@@ -108,15 +108,19 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     error UnknownOperation(bytes32 operationId);
     error OperationIdCollision(bytes32 operationId);
     error InvalidScope(bytes32 scope);
+    error ScopeNotAllowed(bytes32 scope);
 
     // ─── Events ───────────────────────────────────────────────────────
 
     event ScopeAllowedSet(bytes32 indexed scope, bool allowed, address indexed operator);
+    event UnpauseScheduled(bytes32 indexed scope, uint256 readyAt, address indexed actor);
 
     // ─── State ────────────────────────────────────────────────────────
 
     /// @notice Mapping from scope hash to paused status
     mapping(bytes32 => bool) private _pausedScopes;
+    mapping(bytes32 => bool) public allowedScope;
+    mapping(bytes32 => bool) public scopeConfigured;
 
     /// @notice Mapping from scope to timestamp when it was paused (0 if not paused)
     mapping(bytes32 => uint256) public pausedAt;
@@ -314,7 +318,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         incidentResolved[incidentRef] = true;
 
         emit EmergencyUnpaused(scope, msg.sender);
-        emit GovernedUnpauseResolved(scope, incidentRef, repairedRelease, msg.sender);
+        emit GovernedUnpauseExecuted(scope, incidentRef, repairedRelease, msg.sender);
     }
 
     /**
