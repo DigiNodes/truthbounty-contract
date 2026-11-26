@@ -303,7 +303,8 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         if (configChecksum == bytes32(0)) revert ZeroConfigChecksum();
         if (broadcaster == address(0)) revert ZeroBroadcaster();
         if (broadcaster != boundBroadcaster) revert UnauthorizedBroadcaster(boundBroadcaster, broadcaster);
-        if (expiry <= block.timestamp) revert ConfigExpired(expiry, block.timestamp);
+        if (expiry > type(uint64).max || block.timestamp > type(uint64).max) revert InvalidExpiry(type(uint64).max);
+        if (expiry <= block.timestamp) revert ConfigExpired(uint64(expiry), uint64(block.timestamp));
         if (expiry - block.timestamp > MAX_CONFIG_LIFETIME) {
             revert ConfigLifetimeTooLong(expiry - block.timestamp, MAX_CONFIG_LIFETIME);
         }
@@ -351,7 +352,8 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         // Enforce configuration binding before any planning/broadcast can occur.
         ConfigBinding storage binding = _configBindings[moduleId];
         if (!binding.bound) revert ConfigNotBound(moduleId);
-        if (binding.expiry <= block.timestamp) revert ConfigExpired(binding.expiry, block.timestamp);
+        if (binding.expiry > type(uint64).max || block.timestamp > type(uint64).max) revert InvalidExpiry(type(uint64).max);
+        if (binding.expiry <= block.timestamp) revert ConfigExpired(uint64(binding.expiry), uint64(block.timestamp));
         if (binding.chainId != boundChainId) revert WrongChainId(boundChainId, binding.chainId);
         if (binding.releaseId != boundReleaseId) revert StaleReleaseId(boundReleaseId, binding.releaseId);
         if (binding.broadcaster != boundBroadcaster) {
