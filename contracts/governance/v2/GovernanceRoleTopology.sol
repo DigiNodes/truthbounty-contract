@@ -11,7 +11,7 @@ import {TruthBountyGovernor} from "./TruthBountyGovernor.sol";
  */
 library GovernanceRoleTopology {
     bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
-    bytes32 internal constant EXECUTOR_ROLE = keccak#256("EXECUTOR_ROLE");
+    bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
 
     /// @dev Canonical timelock administration role for OpenZeppelin `>= 5.0`.
