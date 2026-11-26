@@ -286,6 +286,8 @@ contract ProtocolUpgradeManager is ReentrancyGuard, Pausable, GovernanceOwnable 
     error MigrationNotComplete(bytes32 moduleId);
     error MigrationStepHashMismatch();
     error ReinitializerVersionNotMonotonic();
+    error RollbackNotSupported(bytes32 moduleId);
+    error RollbackLimitExceeded(bytes32 moduleId, uint256 rollbackLimit);
 
     // ============ Constructor ============
 
