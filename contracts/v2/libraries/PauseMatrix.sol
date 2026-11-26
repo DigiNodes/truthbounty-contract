@@ -240,6 +240,29 @@ library PauseMatrix {
         if (bytes(moduleName).length == 0) revert UnknownOperationId(id);
     }
 
+    /// @dev Selector-only lookup cannot preserve the module namespace used by operationId().
+    ///      Return zero so V2PauseGuard rejects ambiguous or unscoped lookups instead of aliasing IDs.
+    function operationIdForSelector(bytes4) internal pure returns (bytes32) {
+        return bytes32(0);
+    }
+
+    /// @dev Name-only lookup is ambiguous across modules; callers must provide module and signature
+    ///      through operationId(moduleName, signature).
+    function operationIdForName(string memory) internal pure returns (bytes32) {
+        return bytes32(0);
+    }
+
+    /// @dev A scope identifier is not itself an operation ID; no selector-free operation is exposed.
+    function operationIdForScope(bytes32) internal pure returns (bytes32) {
+        return bytes32(0);
+    }
+
+    /// @dev Nested-scope operation IDs require an explicit parent/child matrix entry.
+    ///      Until such entries are declared, fail closed.
+    function operationIdForNestedScope(bytes32) internal pure returns (bytes32) {
+        return bytes32(0);
+    }
+
     /// @notice True when `gate` is an operation scope (as opposed to a pseudo-gate or `NO_GATE`).
     /// @param gate Gate identifier returned by `classify`.
     /// @return isScope Whether the gate is one of the `SCOPE_*` constants.
