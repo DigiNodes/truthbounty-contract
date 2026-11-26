@@ -106,11 +106,18 @@ export function validateToolchainDrift(opts = {}) {
   if (!packageJson) {
     errors.push("Could not read package.json.");
   } else {
-    const solc = packageJson.dependencies?.solc ?? packageJson.devDependencies?.solc;
+    // The release compiler is installed through the explicit npm alias so unrelated
+    // tooling may retain a newer standalone solc dependency without changing release builds.
+    const solcAlias = packageJson.devDependencies?.["solc-0.8.28"];
+    const solcValue = solcAlias ?? packageJson.dependencies?.solc ?? packageJson.devDependencies?.solc;
+    const solcMatch = typeof solcValue === "string"
+      ? solcValue.match(/(?:npm:)?solc@?(\d+\.\d+\.\d+)/)
+      : null;
+    const solc = solcMatch?.[1] ?? solcValue;
     if (!solc) {
-      errors.push("package.json does not pin solc.");
+      errors.push("package.json does not pin the release solc compiler.");
     } else {
-      observed.solidity["package.json"] = solc;
+      observed.solidity["package.json release compiler"] = solc;
     }
   }
 
