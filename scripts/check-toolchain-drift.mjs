@@ -127,10 +127,14 @@ export function validateToolchainDrift(opts = {}) {
   if (hardhatConfig === null) {
     errors.push("Could not read hardhat.config.ts.");
   } else {
-    const settingsSource = /COMPILER_SETTINGS/.test(hardhatConfig)
+    const usesImportedSettings = /COMPILER_SETTINGS/.test(hardhatConfig);
+    const settingsSource = usesImportedSettings
       ? readTextIfExists(resolve(repoRoot, "config/networks.ts"))
       : hardhatConfig;
-    const v = extractHardhatSolidityVersion(settingsSource);
+    const importedVersion = typeof settingsSource === "string"
+      ? settingsSource.match(/version:\s*["']\+?(\d+\.\d+\.\d+)["']/)?.[1]
+      : null;
+    const v = usesImportedSettings ? importedVersion : extractHardhatSolidityVersion(settingsSource);
     if (!v) errors.push("Hardhat compiler settings (hardhat.config.ts or imported config/networks.ts) do not pin a solidity version.");
     else observed.solidity["Hardhat compiler settings"] = v;
   }
