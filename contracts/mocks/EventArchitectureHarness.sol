@@ -19,11 +19,6 @@ import "../interfaces/IStressTestEvents.sol";
 contract EventArchitectureHarness is ITruthBountyEvents, IVerificationRoundEvents, IStressTestEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
 
-    /// @notice Maximum representable amplification ratio in basis points.
-    /// @dev 1x amplification = 10_000 bps. Bounded to uint32 to prevent overflow
-    ///      in downstream monitoring aggregations while allowing up to ~429_496x.
-    uint32 public constant MAX_AMPLIFICATION_RATIO_BPS = type(uint32).max;
-
     /// @notice Emits a StressTestCompleted event with validated amplification metrics.
     /// @param testId Identifier of the stress test run.
     /// @param amplificationRatioBps Amplification ratio in basis points (1x = 10_000).
