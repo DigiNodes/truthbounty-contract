@@ -32,7 +32,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
 
     /// @notice Maximum number of storage slots that may be compared in a single
     ///         equivalence check to bound gas and keep evidence deterministic.
-    uint256 public constant MAX_EQUIVALENCE_SLOTS: uint256 = 256;
+    uint256 public constant MAX_EQUIVALENCE_SLOTS = 256;
 
     enum RollbackPolicy {
         DISABLED,
