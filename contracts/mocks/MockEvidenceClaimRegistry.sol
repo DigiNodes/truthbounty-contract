@@ -48,7 +48,7 @@ contract MockEvidenceClaimRegistry is IClaimRegistry {
     error InvalidLimit(uint256 limit);
     error InvalidCursor(uint256 claimId, uint256 releaseId, uint256 orderKey);
     error DuplicateEvidenceCid(uint256 claimId, bytes32 cid);
-    error ClaimFinalized(uint256 claimId);
+    error ClaimAlreadyFinalized(uint256 claimId);
     error ClaimNotFound(uint256 claimId);
 
     function setClaim(uint256 claimId, address creator, uint64 verificationDeadline, ClaimStatus status) external {
@@ -74,7 +74,7 @@ contract MockEvidenceClaimRegistry is IClaimRegistry {
      */
     function appendEvidence(uint256 claimId, uint256 releaseId, bytes32 cid) external returns (uint256 orderKey) {
         if (!_exists[claimId]) revert ClaimNotFound(claimId);
-        if (_finalized[claimId]) revert ClaimFinalized(claimId);
+        if (_finalized[claimId]) revert ClaimAlreadyFinalized(claimId);
         if (_evidenceCidUsed[claimId][cid]) revert DuplicateEvidenceCid(claimId, cid);
 
         orderKey = _nextOrderKey++;
