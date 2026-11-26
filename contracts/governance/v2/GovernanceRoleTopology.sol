@@ -109,14 +109,16 @@ library GovernanceRoleTopology {
         if (!timelock.hasRole(DEFAULT_ADMIN_ROLE, address(timelock))) {
             revert AdminRetentionForbidden(address(timelock));
         }
-        if (timelock.hasRole(DEFAULT_ADMIN_ROLE, currentAdmin)) {
-            timelock.revokeRole(DEFAULT_ADMIN_ROLE, currentAdmin);
-        }
+        // Revoke the legacy grant first; currentAdmin must retain DEFAULT_ADMIN_ROLE
+        // until every stale grant has been removed.
         if (timelock.hasRole(LEGACY_TIMELOCK_ADMIN_ROLE, currentAdmin)) {
             timelock.revokeRole(LEGACY_TIMELOCK_ADMIN_ROLE, currentAdmin);
         }
         if (timelock.hasRole(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock))) {
             timelock.revokeRole(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock));
+        }
+        if (timelock.hasRole(DEFAULT_ADMIN_ROLE, currentAdmin)) {
+            timelock.revokeRole(DEFAULT_ADMIN_ROLE, currentAdmin);
         }
 
         emit TimelockAdminRenounced(address(timelock), currentAdmin);
