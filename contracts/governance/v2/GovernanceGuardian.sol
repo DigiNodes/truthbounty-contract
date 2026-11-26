@@ -18,7 +18,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
     /// @notice Role permitted to schedule timelock delay changes.
-    bytes32 public constant DELAY_ADMIN_ROLE = keccakk256("DELAY_ADMIN_ROLE");
+    bytes32 public constant DELAY_ADMIN_ROLE = keccak256("DELAY_ADMIN_ROLE");
 
     /// @notice Minimum allowed timelock delay.
     uint256 public constant MIN_DELAY = 1 days;
