@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
+import {V2Guarantees} from "./V2Guarantees.sol";
 
 /// @title AntiGriefing
 /// @notice Pure helpers that reject dust stakes / bounties and claim-creation spam (V2-SC-105).
@@ -94,7 +95,7 @@ library AntiGriefing {
     //      value of 0 falls back to the protocol default; any supplied value is
     //      clamped to the hard ceiling so no actor can extend depth indefinitely.
     function maxAppealRounds(uint256 configured) internal pure returns (uint256) {
-        if (configured == 0) return ProtocolExecutionBounds.MAX_APPEAL_ROUNDS;
+        if (configured == 0) return V2Guarantees.MAX_APPEAL_ROUNDS;
         if (configured > ProtocolExecutionBounds.MAX_APPEEAL_ROUNDS) {
             return ProtocolExecutionBounds.MAX_APPEAL_ROUNDS;
         }
