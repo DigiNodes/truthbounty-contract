@@ -98,6 +98,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     function computeAddress(address deployer, bytes32 salt, bytes32 initCodeHash)
         public
         pure
+        override
         returns (address predicted)
     {
         bytes32 digest = keccak256(abi.encodePacked(bytes1(0xff), deployer, salt, initCodeHash));
@@ -177,14 +178,18 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
 
     /// @inheritdoc ICreate2AddressPlanner
     function validateDeploymentConfig(bytes32 releaseId, uint256 chainId) external view override {
+        _validateDeploymentConfig(releaseId, chainId, msg.sender);
+    }
+
+    function _validateDeploymentConfig(bytes32 releaseId, uint256 chainId, address caller) private view {
         bytes32 key = _deploymentConfigKey(releaseId, chainId);
         DeploymentConfig storage config = _deploymentConfigs[key];
         if (config.releaseId == bytes32(0)) revert DeploymentConfigNotFound(releaseId, chainId);
         if (block.chainid != chainId) revert ForkedChainDetected(chainId, block.chainid);
         if (chainId != boundChainId) revert WrongChainId(boundChainId, chainId);
         if (releaseId != boundReleaseId) revert StaleRelease(releaseId);
-        if (msg.sender != config.broadcaster) {
-            revert UnauthorizedBroadcaster(msg.sender, config.broadcaster);
+        if (caller != config.broadcaster) {
+            revert UnauthorizedBroadcaster(caller, config.broadcaster);
         }
         if (config.expiry <= block.timestamp) revert ConfigExpired(config.expiry, uint64(block.timestamp));
         if (_deploymentConfigConsumed[key]) revert DeploymentConfigAlreadyConsumed(releaseId, chainId);
@@ -210,7 +215,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         override
         returns (uint64 nonceStart, uint64 nonceCount)
     {
-        this.validateDeploymentConfig(releaseId, chainId);
+        _validateDeploymentConfig(releaseId, chainId, msg.sender);
         bytes32 key = _deploymentConfigKey(releaseId, chainId);
         DeploymentConfig storage config = _deploymentConfigs[key];
         _deploymentConfigConsumed[key] = true;
@@ -371,6 +376,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     /// @inheritdoc ICreate2AddressPlanner
     function setExpectedRuntimeCodeHash(bytes32 moduleId, bytes32 runtimeCodeHash)
         external
+        override
         onlyRole(PLANNER_ROLE)
     {
         if (runtimeCodeHash == bytes32(0)) revert ZeroInitCodeHash();
