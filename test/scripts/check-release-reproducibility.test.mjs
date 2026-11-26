@@ -128,6 +128,20 @@ describe("V2-SC-129 release reproducibility checker", () => {
     assert.deepEqual(problems, []);
   });
 
+  it("positive: resolves Hardhat compiler pins from imported COMPILER_SETTINGS", () => {
+    const { dir, manifestRelative } = freshFixture();
+    writeFileSync(
+      join(dir, "hardhat.config.ts"),
+      'import { COMPILER_SETTINGS } from "./config/networks";\\nexport default { solidity: COMPILER_SETTINGS };',
+    );
+    mkdirSync(join(dir, "config"), { recursive: true });
+    writeFileSync(
+      join(dir, "config/networks.ts"),
+      'export const COMPILER_SETTINGS = { version: "0.8.28", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "cancun", viaIR: true } };',
+    );
+    assert.deepEqual(checkToolchain(dir, loadManifest(dir, manifestRelative).manifest), []);
+  });
+
   it("negative: tampered source bytes fail with a source-drift problem", () => {
     const { dir, manifestRelative, sourcePath } = freshFixture();
     writeFileSync(join(dir, sourcePath), "pragma solidity ^0.8.28;\ncontract Fixture { uint256 x; }");
