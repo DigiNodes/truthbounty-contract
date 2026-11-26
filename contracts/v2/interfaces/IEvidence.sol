@@ -57,9 +57,9 @@ interface IEvidence is IV2Module {
     event EvidenceSubmitted(
         uint256 indexed evidenceId,
         uint256 indexed claimId,
-        uint256 indexed releaseId,
+        uint256 releaseId,
         uint256 orderKey,
-        address indexed submitter,
+        address submitter,
         bytes32 contentHash
     );
 
