@@ -49,7 +49,6 @@ contract MockEvidenceClaimRegistry is IClaimRegistry {
     error InvalidCursor(uint256 claimId, uint256 releaseId, uint256 orderKey);
     error DuplicateEvidenceCid(uint256 claimId, bytes32 cid);
     error ClaimAlreadyFinalized(uint256 claimId);
-    error ClaimNotFound(uint256 claimId);
 
     function setClaim(uint256 claimId, address creator, uint64 verificationDeadline, ClaimStatus status) external {
         _claims[claimId] = Claim({
