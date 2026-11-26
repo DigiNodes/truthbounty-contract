@@ -211,7 +211,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
     }
 
     function _onlySettlementModule() internal view {
-        (address implementation,,,) = moduleRegistry.module(MODULE_SETTLEMENT);
+        (address implementation,,) = moduleRegistry.module(MODULE_SETTLEMENT);
         if (implementation != msg.sender) revert UnauthorizedSettlementModule(msg.sender);
     }
 
