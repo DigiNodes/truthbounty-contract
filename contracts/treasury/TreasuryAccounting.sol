@@ -743,7 +743,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
     }
 
     /**
-     * @dv Sync the tracked unexplained delta from the live balance. Called at
+     * @dev Sync the tracked unexplained delta from the live balance. Called at
      *      every accounting boundary to keep the conservation equation exact.
      */
     function _syncUnexplainedDelta() internal {
