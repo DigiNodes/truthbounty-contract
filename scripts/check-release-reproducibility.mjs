@@ -88,12 +88,13 @@ export function readToolchainPins(rootDir = REPO_ROOT) {
   const hardhatRuns = Number(matchSingle(settingsSource, /runs:\s*(\d+)/, "hardhat optimizer runs"));
   const hardhatOptimizer = /optimizer:\s*\{\s*enabled:\s*true/s.test(settingsSource);
   const foundrySolc = matchSingle(foundry, /^\s*solc\s*=\s*["'](\d+\.\d+\.\d+)["']/m, "foundry solc pin");
+  const foundryEvm = matchSingle(foundry, /^\s*evm_version\s*=\s*["']([a-z]+)["']/m, "foundry evm_version");
   const foundryRuns = Number(matchSingle(foundry, /^\s*optimizer_runs\s*=\s*(\d+)/m, "foundry optimizer_runs"));
   const foundryOptimizer = /^\s*optimizer\s*=\s*true/m.test(foundry);
   const foundryViaIR = /^\s*via_ir\s*=\s*true/m.test(foundry);
   return {
     hardhat: { solc: hardhatSolc, evmVersion: hardhatEvm, viaIR: hardhatViaIR, optimizerEnabled: hardhatOptimizer, optimizerRuns: hardhatRuns },
-    foundry: { solc: foundrySolc, optimizerEnabled: foundryOptimizer, optimizerRuns: foundryRuns, viaIR: foundryViaIR },
+    foundry: { solc: foundrySolc, evmVersion: foundryEvm, optimizerEnabled: foundryOptimizer, optimizerRuns: foundryRuns, viaIR: foundryViaIR },
   };
 }
 
@@ -116,6 +117,7 @@ export function checkToolchain(rootDir, manifest) {
   want("hardhat optimizer.enabled", pins.hardhat.optimizerEnabled, expected.optimizer.enabled);
   want("hardhat optimizer.runs", pins.hardhat.optimizerRuns, expected.optimizer.runs);
   want("foundry solc", pins.foundry.solc, expected.solc);
+  want("foundry evmVersion", pins.foundry.evmVersion, expected.evmVersion);
   want("foundry optimizer", pins.foundry.optimizerEnabled, expected.optimizer.enabled);
   want("foundry optimizer_runs", pins.foundry.optimizerRuns, expected.optimizer.runs);
   want("foundry via_ir", pins.foundry.viaIR, expected.viaIR);
