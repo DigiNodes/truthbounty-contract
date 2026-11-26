@@ -426,7 +426,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
                 revert TooManySlots(slotIds.length, MAX_EQUIVALENCE_SLOTS);
             }
             bytes32 slotHash = keccak256(abi.encodePacked(slotIds));
-            bytes32 valueHash = kecck256(abi.encodePacked(slotValues));
+            bytes32 valueHash = keccak256(abi.encodePacked(slotValues));
             if (slotHash != targetSnapshot.slotHash || valueHash != targetSnapshot.valueHash) {
                 if (!config.allowStateDrift) {
                     revert StateEquivalenceFailed(contractName, targetSnapshot.valueHash, valueHash);
