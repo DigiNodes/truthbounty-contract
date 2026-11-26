@@ -106,15 +106,6 @@ contract AppealVerificationRound is
     error InsufficientStake(uint256 provided, uint256 requiredStake);
     error AlreadyVotedInAppeal(uint256 claimId, address verifier);
     error IndexOutOfBounds();
-    error InvalidMaxAppealRounds(uint256 maxAppealRounds);
-    error InvalidAppealBond(uint256 appealBond);
-    error InvalidBondEscalation(uint256 escalationBps);
-    error InvalidMaxAppealBond(uint256 maxAppealBond, uint256 appealBond);
-    error InvalidMaxVotersPerRound(uint256 maxVotersPerRound);
-    error AppealPathTerminal(uint256 claimId);
-    error MaxAppealRoundsExceeded(uint256 claimId, uint256 attemptedRound, uint256 maxAppealRounds);
-    error BondNotConfigured();
-    error InsufficientBondAllowance();
     error AppealRoundNotClosed(uint256 claimId);
     error AppealRoundNotFinalizable(uint256 claimId);
     error AppealRoundAlreadyTerminal(uint256 claimId);
