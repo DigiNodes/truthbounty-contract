@@ -71,7 +71,7 @@ interface IEmergencyControls is IV2Module {
     /// @param incidentRef Incident reference associated with the pause being resolved.
     /// @param release Repaired release identifier authorized for this unpause.
     /// @param dependencyHealth Hash of the dependency health evidence for this unpause.
-    function unpause(bytes32 scope, bytes32 incidentRef, bytes32 release, bytes32 dependencyHealth) external;
+    function unpause(bytes32 scope, bytes32 incidentRef, bytes32 release, bytes32[] calldata dependencyHealth) external;
 
     /// @notice Pauses a single canonical operation within a scope.
     /// @dev Must require emergency authority, reject unknown operation IDs, and never alias another operation or global scope.
