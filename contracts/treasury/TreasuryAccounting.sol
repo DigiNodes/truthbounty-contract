@@ -219,7 +219,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
      * @param targetAccount The treasury account to credit
      * @param amount Amount of tokens to deposit
      */
-    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external nonRentrant {
+    function depositToAccount(TreasuryAccount targetAccount, uint256 amount) external nonReentrant {
         if (amount == 0) revert InsufficientAccountBalance(targetAccount, 0, 0);
         if (targetAccount == TreasuryAccount.EXTERNAL) revert InvalidAccountTransfer(TreasuryAccount.EXTERNAL, targetAccount);
 
@@ -320,7 +320,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
         TreasuryAccount sourceAccount,
         address recipient,
         uint256 amount
-    ) external nonRentrant onlyRole(TREASURY_MANAGER_ROLE) {
+    ) external nonReentrant onlyRole(TREASURY_MANAGER_ROLE) {
         if (recipient == address(0)) revert InvalidAddress(recipient);
         if (sourceAccount == TreasuryAccount.EXTERNAL) revert InvalidAccountTransfer(sourceAccount, TreasuryAccount.EXTERNAL);
         if (amount == 0) revert InsufficientAccountBalance(sourceAccount, 0, _accountBalances[uint256(sourceAccount)]);
