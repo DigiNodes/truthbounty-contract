@@ -26,11 +26,11 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
 
     // ============= ROLES =============
 
-    bytes32 public constant ADMIN_ROLE = keccak(256("ADMIN_ROLE"));
-    bytes32 public constant TREASURY_MANAGER_ROLE = keccak(256("TREASURY_MANAGER_ROLE"));
-    bytes32 public constant STAKING_CONTRACT_ROLE = keccak(256("STAKING_CONTRACT_ROLE"));
-    bytes32 public constant REWARD_ENGINE_ROLE = keccak(256("REWARD_ENGINE_ROLE"));
-    bytes32 public constant SLASHING_CONTRACT_ROLE = keccak(256("SLASHING_CONTRACT_ROLE"));
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
+    bytes32 public constant STAKING_CONTRACT_ROLE = keccak256("STAKING_CONTRACT_ROLE");
+    bytes32 public constant REWARD_ENGINE_ROLE = keccak256("REWARD_ENGINE_ROLE");
+    bytes32 public constant SLASHING_CONTRACT_ROLE = keccak256("SLASHING_CONTRACT_ROLE");
 
     // ============= ACCOUNTING CATEGORIES =============
 
