@@ -1,4 +1,4 @@
-﻿[profile.default]
+[profile.default]
 src = "contracts"
 out = "out"
 libs = ["lib"]
@@ -16,7 +16,7 @@ fs_permissions = [{ access = "read", path = "./" }]
 # manifest, and package.json together; scripts/check-toolchain-drift.mjs
 # enforces agreement in CI and fails the build before any deployment step.
 solc = "0.8.28"
-evm_version = "prague"
+evm_version = "cancun"
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
 
