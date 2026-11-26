@@ -113,7 +113,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
     /// @notice Delay change has expired.
     /// @param operationId Operation ID.
     /// @param expiresAt Expiration timestamp.
-    error DelayChangeExpired(bytes32 operationId, uint256 expiresAt);
+    error DelayChangeHasExpired(bytes32 operationId, uint256 expiresAt);
     /// @notice Delay change was already executed.
     /// @param operationId Operation ID.
     error DelayChangeAlreadyExecuted(bytes32 operationId);
