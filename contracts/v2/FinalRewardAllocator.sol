@@ -6,7 +6,7 @@ import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
-import {IERC256} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IFinalRewardAllocator} from "./interfaces/IFinalRewardAllocator.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {V2Precision} from "./libraries/V2Precision.sol";
