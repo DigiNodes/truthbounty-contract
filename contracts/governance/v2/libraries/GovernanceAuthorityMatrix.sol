@@ -152,7 +152,7 @@ library GovernanceAuthorityMatrix {
      *      role is distinct. Reverts with {TimelockGraphInvalid} otherwise. This is the
      *      machine-checkable deployment conformance guard for PREWAVE-SC-033.
      */
-    function enforceTimelockGraph() pure {
+    function enforceTimelockGraph() internal pure {
         if (!isTimelockGraphClosed()) {
             revert IAuthority.TimelockGraphInvalid();
         }
