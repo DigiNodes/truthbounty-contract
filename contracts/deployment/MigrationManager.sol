@@ -9,7 +9,7 @@ import "../interfaces/ITruthBountyEvents.sol";
 
 contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
-    bytes32 public constant ADMIN_ROLE = keccak(256("ADMIN_ROLE"));
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE"));
     bytes32 public constant PAUSER_ROLE = keccak(256("PAUSER_ROLE"));
     bytes32 public constant MIGRATOR_ROLE = keccak(256("MIGRATOR_ROLE"));
     bytes32 public constant UPGRADER_ROLE = keccak(256("UPGRADER_ROLE"));
@@ -340,7 +340,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     /// provides evidence for operators.
     function flagPartialMigration(
         uint256 failedStep,
-        string caldata reason
+        string calldata reason
     ) external onlyRole(MIGRATOR_ROLE) {
         uint256 lastCompleted = _lastExecutedStepId();
         _pause();
