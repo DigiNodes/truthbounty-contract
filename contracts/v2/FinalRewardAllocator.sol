@@ -215,7 +215,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
         if (implementation != msg.sender) revert UnauthorizedSettlementModule(msg.sender);
     }
 
-    function _allocateCategory(bytes32 settlementId, address asset, Allocation caldata allocation) internal {
+    function _allocateCategory(bytes32 settlementId, address asset, Allocation calldata allocation) internal {
         uint256 totalWeight;
         uint256 count = allocation.accounts.length;
         for (uint256 i; i < count; ++i) {
