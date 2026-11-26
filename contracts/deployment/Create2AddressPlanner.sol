@@ -392,6 +392,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     /// @inheritdoc ICreate2AddressPlanner
     function verifyBytecode(bytes32 moduleId, bytes calldata runtimeBytecode)
         external
+        override
         onlyRole(PLANNER_ROLE)
     {
         if (runtimeBytecode.length > MAX_RUNTIME_BYTECODE_BYTES) {
