@@ -855,9 +855,12 @@ contract StakeVault is ERC165, AccessControl, ReentrancyGuard, IStakeCustody, V2
         (uint256 custody, uint256 obligations) = _reconcile(asset);
         uint256 actualBalance = IERC20(asset).balanceOf(address(this));
 
-        if (obligations > custody) revert V2Errors.ObligationsExceedCustody(asset, custody, obligations);
+        uint256 unexplainedDelta = actualBalance > custody ? actualBalance - custody : custody - actualBalance;
+        if (obligations > custody) {
+            revert V2Errors.ObligationsExceedCustody(asset, custody, obligations, actualBalance, unexplainedDelta);
+        }
         if (custody != obligations || actualBalance != custody) {
-            revert V2Errors.ConservationInvariantViolation(asset, custody, obligations, actualBalance);
+            revert V2Errors.ConservationInvariantViolation(asset, custody, obligations, actualBalance, unexplainedDelta);
         }
     }
 
