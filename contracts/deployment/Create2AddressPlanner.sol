@@ -64,8 +64,10 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         uint256 expiry
     );
 
-    /// @notice Configuration bindings per module, set before broadcast.
+    /// @notice Configuration bindings per module, set before address planning.
     mapping(bytes32 => ConfigBinding) private _configBindings;
+    mapping(bytes32 => DeploymentConfig) private _deploymentConfigs;
+    mapping(bytes32 => bool) private _deploymentConfigConsumed;
     /// @notice Checksum replay guard: checksum => consumed.
     mapping(bytes32 => bool) private _checksumUsed;
     /// @notice Nonce plan replay guard: nonce key => consumed.
@@ -103,8 +105,154 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     }
 
     /// @inheritdoc ICreate2AddressPlanner
-    function deriveSalt(bytes32 moduleId, bytes32 reviewedSalt) public pure returns (bytes32) {
+    function deriveSalt(bytes32 moduleId, bytes32 reviewedSalt) public pure override returns (bytes32) {
         return keccak256(abi.encodePacked(moduleId, reviewedSalt));
+    }
+
+    function _deploymentConfigKey(bytes32 releaseId, uint256 chainId) private pure returns (bytes32) {
+        return keccak256(abi.encode("TRUTHBOUNTY_DEPLOYMENT_CONFIG_V1", releaseId, chainId));
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function computeConfigChecksum(DeploymentConfig calldata config) external pure override returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                "TRUTHBOUNTY_DEPLOYMENT_CONFIG_V1",
+                config.chainId,
+                config.releaseId,
+                config.broadcaster,
+                config.nonceStart,
+                config.nonceCount,
+                config.expiry
+            )
+        );
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function bindDeploymentConfig(DeploymentConfig calldata config) external override onlyRole(CONFIGURATION_ROLE) {
+        if (config.chainId == 0) revert ZeroChainId();
+        if (config.releaseId == bytes32(0)) revert ZeroReleaseId();
+        if (config.configChecksum == bytes32(0)) revert ZeroConfigChecksum();
+        if (config.broadcaster == address(0)) revert ZeroBroadcaster();
+        if (config.chainId != boundChainId) revert WrongChainId(boundChainId, config.chainId);
+        if (config.releaseId != boundReleaseId) revert StaleRelease(config.releaseId);
+        if (config.broadcaster != boundBroadcaster) {
+            revert UnauthorizedBroadcaster(config.broadcaster, boundBroadcaster);
+        }
+        if (config.nonceCount == 0 || uint256(config.nonceStart) + uint256(config.nonceCount) > type(uint64).max) {
+            revert InvalidNoncePlan(config.nonceStart, config.nonceCount);
+        }
+        if (config.expiry <= block.timestamp || config.expiry - block.timestamp > MAX_CONFIG_LIFETIME) {
+            revert InvalidExpiry(config.expiry);
+        }
+        bytes32 expectedChecksum = keccak256(
+            abi.encode(
+                "TRUTHBOUNTY_DEPLOYMENT_CONFIG_V1",
+                config.chainId,
+                config.releaseId,
+                config.broadcaster,
+                config.nonceStart,
+                config.nonceCount,
+                config.expiry
+            )
+        );
+        if (config.configChecksum != expectedChecksum) {
+            revert ConfigChecksumMismatch(expectedChecksum, config.configChecksum);
+        }
+        bytes32 key = _deploymentConfigKey(config.releaseId, config.chainId);
+        if (_deploymentConfigs[key].releaseId != bytes32(0)) {
+            revert DeploymentConfigAlreadyBound(config.releaseId, config.chainId);
+        }
+        _deploymentConfigs[key] = config;
+        emit DeploymentConfigBound(
+            config.releaseId,
+            config.chainId,
+            config.configChecksum,
+            config.broadcaster,
+            config.nonceStart,
+            config.nonceCount,
+            config.expiry
+        );
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function validateDeploymentConfig(bytes32 releaseId, uint256 chainId) external view override {
+        bytes32 key = _deploymentConfigKey(releaseId, chainId);
+        DeploymentConfig storage config = _deploymentConfigs[key];
+        if (config.releaseId == bytes32(0)) revert DeploymentConfigNotFound(releaseId, chainId);
+        if (block.chainid != chainId) revert ForkedChainDetected(chainId, block.chainid);
+        if (chainId != boundChainId) revert WrongChainId(boundChainId, chainId);
+        if (releaseId != boundReleaseId) revert StaleRelease(releaseId);
+        if (msg.sender != config.broadcaster) {
+            revert UnauthorizedBroadcaster(msg.sender, config.broadcaster);
+        }
+        if (config.expiry <= block.timestamp) revert ConfigExpired(config.expiry, uint64(block.timestamp));
+        if (_deploymentConfigConsumed[key]) revert DeploymentConfigAlreadyConsumed(releaseId, chainId);
+        bytes32 actualChecksum = keccak256(
+            abi.encode(
+                "TRUTHBOUNTY_DEPLOYMENT_CONFIG_V1",
+                config.chainId,
+                config.releaseId,
+                config.broadcaster,
+                config.nonceStart,
+                config.nonceCount,
+                config.expiry
+            )
+        );
+        if (actualChecksum != config.configChecksum) {
+            revert ConfigChecksumMismatch(config.configChecksum, actualChecksum);
+        }
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function consumeDeploymentConfig(bytes32 releaseId, uint256 chainId)
+        external
+        override
+        returns (uint64 nonceStart, uint64 nonceCount)
+    {
+        this.validateDeploymentConfig(releaseId, chainId);
+        bytes32 key = _deploymentConfigKey(releaseId, chainId);
+        DeploymentConfig storage config = _deploymentConfigs[key];
+        _deploymentConfigConsumed[key] = true;
+        nonceStart = config.nonceStart;
+        nonceCount = config.nonceCount;
+        emit DeploymentConfigConsumed(releaseId, chainId, config.broadcaster, nonceStart, nonceCount);
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function revokeDeploymentConfig(bytes32 releaseId, uint256 chainId)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        bytes32 key = _deploymentConfigKey(releaseId, chainId);
+        DeploymentConfig memory config = _deploymentConfigs[key];
+        if (config.releaseId == bytes32(0)) revert DeploymentConfigNotFound(releaseId, chainId);
+        if (_deploymentConfigConsumed[key]) revert DeploymentConfigAlreadyConsumed(releaseId, chainId);
+        delete _deploymentConfigs[key];
+        emit DeploymentConfigRevoked(releaseId, chainId, config.configChecksum);
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function getDeploymentConfig(bytes32 releaseId, uint256 chainId)
+        external
+        view
+        override
+        returns (DeploymentConfig memory)
+    {
+        DeploymentConfig memory config = _deploymentConfigs[_deploymentConfigKey(releaseId, chainId)];
+        if (config.releaseId == bytes32(0)) revert DeploymentConfigNotFound(releaseId, chainId);
+        return config;
+    }
+
+    /// @inheritdoc ICreate2AddressPlanner
+    function isDeploymentConfigActive(bytes32 releaseId, uint256 chainId) external view override returns (bool) {
+        bytes32 key = _deploymentConfigKey(releaseId, chainId);
+        DeploymentConfig storage config = _deploymentConfigs[key];
+        return config.releaseId != bytes32(0)
+            && !_deploymentConfigConsumed[key]
+            && config.expiry > block.timestamp
+            && config.chainId == block.chainid;
     }
 
     /**
@@ -171,7 +319,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         bytes32 reviewedSalt,
         bytes32 initCodeHash,
         address deployer
-    ) external onlyRole(PLANNER_ROLE) returns (address predicted) {
+    ) external override onlyRole(PLANNER_ROLE) returns (address predicted) {
         if (moduleId == bytes32(0)) revert ZeroModuleId();
         if (reviewedSalt == bytes32(0)) revert ZeroSalt();
         if (initCodeHash == bytes32(0)) revert ZeroInitCodeHash();
@@ -261,7 +409,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     }
 
     /// @inheritdoc ICreate2AddressPlanner
-    function confirmDeployment(bytes32 moduleId) external returns (bool) {
+    function confirmDeployment(bytes32 moduleId) external override returns (bool) {
         Plan storage plan = _requirePlan(moduleId);
         if (!plan.bytecodeVerified) revert BytecodeNotVerified(moduleId);
 
@@ -283,7 +431,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     }
 
     /// @inheritdoc ICreate2AddressPlanner
-    function isReadyForRegistration(bytes32 moduleId) external view returns (bool) {
+    function isReadyForRegistration(bytes32 moduleId) external view override returns (bool) {
         Plan storage plan = _plans[moduleId];
         ConfigBinding storage binding = _configBindings[moduleId];
         return binding.bound
@@ -297,7 +445,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     }
 
     /// @inheritdoc ICreate2AddressPlanner
-    function getPlan(bytes32 moduleId) external view returns (Plan memory) {
+    function getPlan(bytes32 moduleId) external view override returns (Plan memory) {
         return _plans[moduleId];
     }
 
@@ -307,7 +455,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     }
 
     /// @inheritdoc ICreate2AddressPlanner
-    function clearPlan(bytes32 moduleId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function clearPlan(bytes32 moduleId) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         Plan storage plan = _requirePlan(moduleId);
         address predicted = plan.predicted;
         bytes32 salt = plan.derivedSalt;
