@@ -150,6 +150,6 @@ interface IVersionRegistry {
     function isMigrationCompleted(uint256 reinitializerVersion) external view returns (bool);
     function isMigrationPrerequisiteSatisfied(uint256 reinitializerVersion) external view returns (bool);
     function getCompletedMigrationCount() external view returns (uint256);
-    function getMigrationManifestHash(string calldata contractName) external view returns (bytes32);
+    function getMigrationManifestHash() external view returns (bytes32);
     function verifyMigrationOrdering(uint256[] calldata reinitializerVersions) external view returns (bool);
 }
