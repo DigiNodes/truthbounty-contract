@@ -314,7 +314,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     /// executed step and must be authorized by the timelock executor.
     function rollbackMigrationStep(
         uint256 stepId,
-        string caldata reason
+        string calldata reason
     ) external onlyTimelock notEmergency {
         MigrationStep storage step = migrationSteps[stepId];
         if (!step.registered) revert MigrationStepNotRegistered(stepId);
