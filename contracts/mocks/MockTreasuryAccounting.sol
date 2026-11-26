@@ -13,6 +13,8 @@ import "../treasury/ITreasuryAccounting.sol";
 contract MockTreasuryAccounting is ITreasuryAccounting {
     uint256 public stakingReserve;
     uint256 public slashedTreasury;
+    uint256 public donationReserve;
+    int256 public unexplainedDelta;
     uint256 public totalStakeRecorded;
     uint256 public totalUnstakeRecorded;
     uint256 public totalSlashRecorded;
@@ -81,14 +83,46 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
     function getAccountBalances() external view returns (uint256[6] memory balances) {
         balances[uint256(TreasuryAccount.STAKING_RESERVE)] = stakingReserve;
         balances[uint256(TreasuryAccount.SLASHED_TREASURY)] = slashedTreasury;
+        balances[uint256(TreasuryAccount.PROTOCOL_FEES)] = donationReserve;
     }
 
     function calculateTotalAssets() external view returns (uint256) {
-        return stakingReserve + slashedTreasury;
+        return getTrackedCustody();
     }
 
     function getTrackedCustody() public view returns (uint256) {
-        return stakingReserve + slashedTreasury;
+        return stakingReserve + slashedTreasury + donationReserve;
+    }
+
+    function recordDonation(TreasuryAccount targetAccount, uint256 amount) external {
+        if (targetAccount == TreasuryAccount.STAKING_RESERVE) stakingReserve += amount;
+        else if (targetAccount == TreasuryAccount.SLASHED_TREASURY) slashedTreasury += amount;
+        else donationReserve += amount;
+        totalDonationRecorded += amount;
+    }
+
+    function recordUnexplainedDelta(int256 delta, TreasuryAccount, string calldata) external {
+        unexplainedDelta += delta;
+    }
+
+    function getConservationComponents() external view returns (ConservationComponents memory components) {
+        uint256 unexplained = uint256(unexplainedDelta < 0 ? -unexplainedDelta : unexplainedDelta);
+        components = ConservationComponents({
+            trackedPrincipal: stakingReserve,
+            trackedRewards: 0,
+            trackedFees: slashedTreasury,
+            trackedDonations: donationReserve,
+            unexplainedDelta: unexplained,
+            totalTrackedCustody: getTrackedCustody()
+        });
+    }
+
+    function getTotalTrackedCustody() external view returns (uint256) {
+        return getTrackedCustody();
+    }
+
+    function getUnexplainedDelta() external view returns (int256) {
+        return unexplainedDelta;
     }
 
     function getAccountedComponents() external view returns (uint256) {
