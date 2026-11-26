@@ -215,7 +215,7 @@ library PauseMatrix {
     ///      anything not in the matrix so unknown operations fail closed.
     /// @param moduleName Contract name of the module (e.g. "StakeVault").
     /// @param signature Source-level signature (e.g. "withdraw(address,uint256)").
-    /// @return operationId Stable operation identifier.
+    /// @return operationId_ Stable operation identifier.
     function operationId(string memory moduleName, string memory signature)
         internal
         pure
