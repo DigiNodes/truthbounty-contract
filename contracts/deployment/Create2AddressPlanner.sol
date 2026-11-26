@@ -37,6 +37,33 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
     /// @notice Authorized broadcaster address bound at construction time.
     address public immutable boundBroadcaster;
 
+    struct ConfigBinding {
+        uint256 chainId;
+        bytes32 releaseId;
+        bytes32 configChecksum;
+        address broadcaster;
+        uint256 nonce;
+        uint256 expiry;
+        bool bound;
+    }
+
+    error StaleReleaseId(bytes32 expected, bytes32 actual);
+    error ConfigLifetimeTooLong(uint256 requested, uint256 maximum);
+    error ConfigChecksumReused(bytes32 configChecksum);
+    error NoncePlanAlreadyUsed(bytes32 nonceKey);
+    error ConfigAlreadyBound(bytes32 moduleId);
+    error ConfigNotBound(bytes32 moduleId);
+
+    event ConfigBound(
+        bytes32 indexed moduleId,
+        uint256 indexed chainId,
+        bytes32 indexed releaseId,
+        bytes32 configChecksum,
+        address broadcaster,
+        uint256 nonce,
+        uint256 expiry
+    );
+
     /// @notice Configuration bindings per module, set before broadcast.
     mapping(bytes32 => ConfigBinding) private _configBindings;
     /// @notice Checksum replay guard: checksum => consumed.
@@ -108,7 +135,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         if (broadcaster != boundBroadcaster) revert UnauthorizedBroadcaster(boundBroadcaster, broadcaster);
         if (expiry <= block.timestamp) revert ConfigExpired(expiry, block.timestamp);
         if (expiry - block.timestamp > MAX_CONFIG_LIFETIME) {
-            revert ConfigLifetimeTooLong(mxpiry - block.timestamp, MAX_CONFIG_LIFETIME);
+            revert ConfigLifetimeTooLong(expiry - block.timestamp, MAX_CONFIG_LIFETIME);
         }
 
         // Reject reused configuration across chain/release.
