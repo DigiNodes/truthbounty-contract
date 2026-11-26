@@ -43,7 +43,7 @@ interface IDisputes is IV2Module {
     /// @param disputeId Dispute to update.
     /// @param status New permitted status.
     /// @param decision Opaque decision payload or commitment; the EVM does not infer its meaning.
-    function resolveDispute(uint256 disputeId, IV2Types.DisputeStatus status, bytes caldata decision) external;
+    function resolveDispute(uint256 disputeId, IV2Types.DisputeStatus status, bytes calldata decision) external;
 
     /// @notice Rolls an appeal into the next round, preserving principal and custody.
     /// @dev The appeal window closes inclusively at the round's deadline. Rollover inputs are bounded; an appeal at `block.timestamp > deadline` fails with the canonical expired error. Principal carried into the next round must equal the principal of the closed round, and custody must remain with the dispute contract.
