@@ -49,7 +49,6 @@ abstract contract ResolverRoleTimelock is AccessControl {
     error ResolverRoleChangeNoop();
     error InvalidDelay(uint256 delay);
     error OperationIdCollision(bytes32 operationId);
-    error ZeroAddress();
     error UnauthorizedCanceller(address caller);
     error AdminRetentionForbidden(bytes32 role);
 
