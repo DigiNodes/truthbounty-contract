@@ -11,4 +11,3 @@ setuptools==75.8.0
 wheel==0.45.1
 slither-analyzer==0.11.6
 crytic-compile==0.4.2
-mythril==0.24.8
