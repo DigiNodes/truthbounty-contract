@@ -30,7 +30,7 @@ library AntiGriefing {
     /// @notice Appeal deadline has passed.
     error AppealDeadlinePassed(uint64 deadline, uint64 nowTs);
 
-    /// @@notice Appeal cannot be opened because the claim is already terminal.
+    /// @notice Appeal cannot be opened because the claim is already terminal.
     error AppealTerminal(uint256 claimId);
 
     /// @notice Appeal cannot be opened because the current round is unresolved.
