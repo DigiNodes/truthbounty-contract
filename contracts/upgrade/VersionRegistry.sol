@@ -146,6 +146,8 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     error InvalidStepCount(uint64 stepCount);
     error ReinitializerVersionNotMonotonic(string contractName, uint64 previous, uint64 provided);
     error CanonicalMigrationStepAlreadyDefined(uint256 reinitializerVersion);
+    error CanonicalMigrationAlreadyExecuted(uint256 reinitializerVersion);
+    error CanonicalReinitializerVersionOutOfRange(uint256 reinitializerVersion);
     error CanonicalMigrationStepNotFound(uint256 reinitializerVersion);
     error CanonicalMigrationPrerequisiteNotSatisfied(uint256 reinitializerVersion);
     error CanonicalMigrationEvidenceRequired(uint256 reinitializerVersion);
@@ -763,7 +765,10 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         bool resumable,
         bool rollbackable
     ) external override onlyRole(MIGRATION_ROLE) {
-        if (reinitializerVersion == 0 || stepHash == bytes32(0)) revert InvalidReinitializerVersion(uint64(reinitializerVersion));
+        if (reinitializerVersion == 0 || reinitializerVersion > type(uint64).max) {
+            revert CanonicalReinitializerVersionOutOfRange(reinitializerVersion);
+        }
+        if (stepHash == bytes32(0)) revert InvalidReinitializerVersion(uint64(reinitializerVersion));
         if (_canonicalMigrationStepDefined[reinitializerVersion]) {
             revert CanonicalMigrationStepAlreadyDefined(reinitializerVersion);
         }
@@ -810,7 +815,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         }
         if (evidenceHash == bytes32(0)) revert CanonicalMigrationEvidenceRequired(reinitializerVersion);
         MigrationRecord storage record = _canonicalMigrationRecords[reinitializerVersion];
-        if (record.status == MigrationStatus.COMPLETED) revert CanonicalMigrationStepAlreadyDefined(reinitializerVersion);
+        if (record.status != MigrationStatus.NONE) revert CanonicalMigrationAlreadyExecuted(reinitializerVersion);
 
         record.reinitializerVersion = reinitializerVersion;
         record.fromVersion = step.fromVersion;
