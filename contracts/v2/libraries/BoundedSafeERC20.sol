@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @note Canonical error semantics for token interactions in the V2 EVM/Optimism architecture.
+/// @dev Canonical error semantics for token interactions in the V2 EVM/Optimism architecture.
 /// @note This library is a focused wrapper around Openzeppelin's SafeERC20 that adds bounded
 ///       amount checks and normalizes failure signals so that callers observe one canonical
 ///       error per failure class. The canonical mapping is:
