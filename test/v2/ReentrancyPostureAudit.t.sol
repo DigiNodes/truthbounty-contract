@@ -988,11 +988,12 @@ contract InsuranceFundReentrancyTest is Test {
         fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), manager);
 
         recipient = new InsurancePayoutReentrant(address(fund));
+        fund.grantRole(fund.INSURANCE_MANAGER_ROLE(), address(recipient));
 
         // Fund the insurance pool.
         token.mint(admin, 1000);
         token.approve(address(fund), 1000);
-        fund.fund(500, IInsuranceFund.FundingSource.PROTOCOL_FEES, "initial funding");
+        fund.fundReserve(IInsuranceFund.FundingSource.GOVERNANCE, 500);
     }
 
     // ── E. Recipient-callback: executePayout → reentrant executePayout ───────
@@ -1004,18 +1005,10 @@ contract InsuranceFundReentrancyTest is Test {
     function test_recipientCallback_reentrantExecutePayout_blockedByStateMachine() public {
         // Submit claim.
         vm.prank(manager);
-        fund.submitClaim(
-            address(recipient),   // beneficiary
-            100,                  // amount
-            "Test incident",
-            "ipfs://evidence",
-            IInsuranceFund.IncidentType.SMART_CONTRACT_BUG,
-            IInsuranceFund.FundingSource.PROTOCOL_FEES
-        );
-        uint256 claimId = fund.claimCounter();
+        uint256 claimId = recipient.submitClaim(100, "ipfs://evidence");
 
         // Approve claim (moves it to APPROVED + sets executeAfter).
-        fund.approveClaim(claimId);
+        fund.reviewAndApproveClaim(claimId, 100, "ipfs://audit");
 
         // Advance past payout timelock.
         vm.warp(block.timestamp + fund.payoutTimelock() + 1);
@@ -1038,9 +1031,9 @@ contract InsuranceFundReentrancyTest is Test {
         // Already funded 500 in setUp. Fund 10 more; ensure no callback doubling.
         token.mint(admin, 10);
         token.approve(address(fund), 10);
-        fund.fund(10, IInsuranceFund.FundingSource.ECOSYSTEM, "extra funding");
+        fund.fundReserve(IInsuranceFund.FundingSource.GOVERNANCE, 10);
         // Total funded: 500 + 10 = 510.  reserveBalance = 510 - payouts.
-        assertEq(fund.reserveBalance(), 510, "fund balance mismatch after second fund");
+        assertEq(fund.getReserveBalance(), 510, "fund balance mismatch after second fund");
     }
 
     // ── F. Nested failure: executePayout before timelock reverts atomically ──
@@ -1050,15 +1043,12 @@ contract InsuranceFundReentrancyTest is Test {
     function test_nestedFailure_payoutBeforeTimelockReverts() public {
         vm.prank(manager);
         fund.submitClaim(
-            address(0xDEAD),
+            IInsuranceFund.CoverageCategory.SMART_CONTRACT_FAILURE,
             50,
-            "Revert test",
-            "ipfs://evidence2",
-            IInsuranceFund.IncidentType.SMART_CONTRACT_BUG,
-            IInsuranceFund.FundingSource.PROTOCOL_FEES
+            "ipfs://evidence2"
         );
         uint256 claimId = fund.claimCounter();
-        fund.approveClaim(claimId);
+        fund.reviewAndApproveClaim(claimId, 50, "ipfs://audit");
 
         uint256 reserveBefore = fund.reserveBalance();
 
@@ -1067,8 +1057,8 @@ contract InsuranceFundReentrancyTest is Test {
         fund.executePayout(claimId);
 
         assertEq(fund.reserveBalance(), reserveBefore, "reserve changed after reverted payout");
-        (, IInsuranceFund.ClaimStatus status, , , , ) = fund.getClaimDetails(claimId);
-        assertEq(uint8(status), uint8(IInsuranceFund.ClaimStatus.APPROVED), "claim status must remain APPROVED");
+        InsuranceFund.Claim memory claim = fund.getClaim(claimId);
+        assertEq(uint8(claim.state), uint8(IInsuranceFund.ClaimState.APPROVED), "claim status must remain APPROVED");
     }
 
     // ── C. Read-only: reserveBalance does not mutate state ───────────────────
