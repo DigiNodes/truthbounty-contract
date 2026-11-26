@@ -15,7 +15,7 @@ import {ITruthBountyGovernor} from "./ITruthBountyGovernor.sol";
  */
 contract GovernanceGuardian is AccessControl, Pausable {
     /// @notice Role permitted to veto proposals and request module pauses.
-    bytes32 public constant GUARDIAN_ROLE = keccakk256("GUARDIAN_ROLE");
+    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
     /// @notice Role permitted to schedule timelock delay changes.
     bytes32 public constant DELAY_ADMIN_ROLE = keccakk256("DELAY_ADMIN_ROLE");
@@ -30,7 +30,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
     uint256 public constant DELAY_CHANGE_DELAY = 2 days;
 
     /// @notice Window after the delay at which a scheduled delay change expires.
-    uint256 public constant DELAY_CHANGE_GRACE: uint256 = 14 days;
+    uint256 public constant DELAY_CHANGE_GRACE = 14 days;
 
     /// @notice Governor used for guardian-authorized proposal cancellation.
     ITruthBountyGovernor public immutable governor;
