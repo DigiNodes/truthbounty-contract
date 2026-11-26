@@ -964,6 +964,10 @@ contract InsurancePayoutReentrant {
 
     function setTargetClaimId(uint256 id) external { targetClaimId = id; }
 
+    function submitClaim(uint256 amount, string calldata evidenceURI) external returns (uint256) {
+        return fund.submitClaim(InsuranceFund.CoverageCategory.SMART_CONTRACT_FAILURE, amount, evidenceURI);
+    }
+
     /// @dev Called by CallbackERC20 when tokens arrive.
     function onTokenCallback() external {
         (bool ok, ) = address(fund).call(
