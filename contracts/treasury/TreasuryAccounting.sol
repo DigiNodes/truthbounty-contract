@@ -771,7 +771,7 @@ contract TreasuryAccounting is AccessControl, ReentrancyGuard, GovernanceOwnable
      * @dev Generate a unique transaction ID
      */
     function _generateTransactionId() internal view returns (bytes32) {
-        return keccak(abi.encodePacked(block.timestamp, block.number, transactionCount++, msg.sender));
+        return keccak256(abi.encodePacked(block.timestamp, block.number, transactionCount++, msg.sender));
     }
 
     /**
