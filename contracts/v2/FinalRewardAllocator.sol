@@ -120,7 +120,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
         uint256 totalAmount;
         uint256 categoryMask;
         for (uint256 i; i < allocations.length; ++i) {
-            Allocation caldata allocation = allocations[i];
+            Allocation calldata allocation = allocations[i];
             uint256 categoryBit = 1 << uint8(allocation.category);
             if (categoryMask & categoryBit != 0) revert DuplicateCategory();
             categoryMask |= categoryBit;
