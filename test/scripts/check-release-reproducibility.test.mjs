@@ -196,7 +196,7 @@ describe("V2-SC-129 release reproducibility checker", () => {
   it("boundary: optimizer runs 199 and 201 both fail, 200 passes", () => {
     const { dir, manifestRelative } = freshFixture();
     for (const runs of [199, 201]) {
-      writeFileSync(join(dir, "foundry.toml"), `solc = "0.8.28"\noptimizer = true\noptimizer_runs = ${runs}\nvia_ir = true\n`);
+      writeFileSync(join(dir, "foundry.toml"), `solc = "0.8.28"\nevm_version = "cancun"\noptimizer = true\noptimizer_runs = ${runs}\nvia_ir = true\n`);
       const problems = checkToolchain(dir, loadManifest(dir, manifestRelative).manifest);
       assert.ok(problems.some((problem) => problem.includes("optimizer_runs")), `runs=${runs} must fail`);
     }
