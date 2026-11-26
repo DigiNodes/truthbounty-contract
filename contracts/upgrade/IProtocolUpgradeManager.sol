@@ -90,7 +90,7 @@ interface IProtocolUpgradeManager {
     function registerModule(
         bytes32 moduleId,
         address implementation,
-        Version caldata initialVersion,
+        Version initialVersion,
         bytes32 storageLayoutHash
     ) external;
 
