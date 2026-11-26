@@ -3,6 +3,7 @@
   "description": "Pinned toolchain and scope for the zero-new-finding static analysis baseline. Changing any value under toolchain or scope requires re-triaging config/slither-baseline.json in the same commit. Release SBOM and provenance attestation inputs are pinned here and must remain immutable across clean regeneration.",
   "toolchain": {
     "slither": "0.11.6",
+    "mythril": "0.24.8",
     "cryticCompile": "0.4.2",
     "solc": "0.8.28",
     "python": "3.12",
@@ -10,6 +11,7 @@
     "wheel": "0.45.1"
   },
   "requirementsFile": "config/requirements-static-analysis.txt",
+  "mythrilRequirementsFile": "config/requirements-mythril.txt",
   "releaseAttestation": {
     "sbomFile": "out/release/sbom.spdx.json",
     "provenanceFile": "out/release/provenance.intoto.jsonl",
@@ -34,6 +36,7 @@
   "baselineFile": "config/slither-baseline.json",
   "pinnedInputs": {
     "npmLockfile": "package-lock.json",
+    "mythrilRequirementsFile": "config/requirements-mythril.txt",
     "foundryLockfile": "foundry.lock",
     "submoduleConfig": ".gitmodules",
     "compilerVersion": "0.8.28",

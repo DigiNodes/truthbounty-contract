@@ -332,6 +332,13 @@ contract VerifierSlashing is ResolverRoleTimelock, ReentrancyGuard, Pausable, Go
      * @param _stakingContract Address of the staking contract
      * @param _admin Address that will have admin privileges
      */
+    function renounceRole(bytes32 role, address callerConfirmation)
+        public
+        override(ResolverRoleTimelock, GovernanceOwnable)
+    {
+        ResolverRoleTimelock.renounceRole(role, callerConfirmation);
+    }
+
     constructor(address _stakingContract, address _admin, address _governanceController) {
         if (_stakingContract == address(0) || _admin == address(0)) {
             revert InvalidStakingContract();

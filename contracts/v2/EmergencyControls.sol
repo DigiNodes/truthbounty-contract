@@ -108,10 +108,12 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
     error UnknownOperation(bytes32 operationId);
     error OperationIdCollision(bytes32 operationId);
     error InvalidScope(bytes32 scope);
+    error ScopeNotAllowed(bytes32 scope);
 
     // ─── Events ───────────────────────────────────────────────────────
 
     event ScopeAllowedSet(bytes32 indexed scope, bool allowed, address indexed operator);
+    event UnpauseScheduled(bytes32 indexed scope, uint256 readyAt, address indexed actor);
 
     // ─── State ────────────────────────────────────────────────────────
 
@@ -141,6 +143,17 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     /// @notice Mapping from operation ID to whether it is registered
     mapping(bytes32 => bool) private _operationRegistered;
+
+    // Appended storage for the scoped operation registry and operation-level pause surface.
+    // Keep these declarations after all pre-existing state to preserve proxy storage slots.
+    mapping(bytes32 => bool) public allowedScope;
+    mapping(bytes32 => bool) public scopeConfigured;
+    mapping(bytes32 => mapping(bytes32 => bool)) private _pausedOperations;
+    mapping(bytes32 => mapping(bytes4 => bytes32)) private _scopeSelectorIds;
+    mapping(bytes32 => mapping(bytes32 => bytes4)) private _scopeIdSelectors;
+    mapping(bytes32 => mapping(bytes32 => bool)) private _scopeOperationRegistered;
+    mapping(bytes32 => bytes32[]) private _scopeOperationIds;
+    mapping(bytes32 => uint256) public pausedOperationCount;
 
     // ─── Constructor ──────────────────────────────────────────────────
 
@@ -240,7 +253,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      */
     function pause(bytes32 scope) external override {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert V2Errors.Unauthorized(msg.sender);
+            revert V2Errors.Unauthorized();
         }
         if (!allowedScope[scope]) {
             revert ScopeNotAllowed(scope);
@@ -276,7 +289,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         bytes32[] calldata dependencyHealth
     ) external override {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert V2Errors.Unauthorized(msg.sender);
+            revert V2Errors.Unauthorized();
         }
         if (!_operationRegistered[OP_UNPAUSE]) revert UnknownOperation(OP_UNPAUSE);
         if (!_pausedScopes[scope]) revert NotPaused(scope);
@@ -309,12 +322,21 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         }
 
         _pausedScopes[scope] = false;
+        bytes32[] storage scopedOperations = _scopeOperationIds[scope];
+        for (uint256 i = 0; i < scopedOperations.length; ++i) {
+            bytes32 operationId = scopedOperations[i];
+            if (_pausedOperations[scope][operationId]) {
+                _pausedOperations[scope][operationId] = false;
+                emit OperationUnpaused(scope, operationId, msg.sender);
+            }
+        }
+        pausedOperationCount[scope] = 0;
         pausedAt[scope] = 0;
         unpauseScheduledAt[scope] = 0;
         incidentResolved[incidentRef] = true;
 
         emit EmergencyUnpaused(scope, msg.sender);
-        emit GovernedUnpauseResolved(scope, incidentRef, repairedRelease, msg.sender);
+        emit GovernedUnpauseExecuted(scope, incidentRef, repairedRelease, msg.sender);
     }
 
     /**
@@ -349,7 +371,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
             revert UnauthorizedToUnpause(msg.sender);
         }
-        if (!_pausedScopes[scope]) revert NotPaused(scope);
+        if (!_pausedScopes[scope] && pausedOperationCount[scope] == 0) revert NotPaused(scope);
         if (unpauseScheduledAt[scope] != 0) revert AlreadyPaused(scope);
 
         uint256 readyAt = block.timestamp + UNPAUSE_TIMELOCK_DELAY;
@@ -448,6 +470,90 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         names[6] = _operationNames[OP_IS_GLOBALLY_PAUSED];
     }
 
+    /// @inheritdoc IEmergencyControls
+    function pauseOperation(bytes32 scope, bytes32 operationId) external override {
+        if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert UnauthorizedToPause(msg.sender);
+        }
+        if (!allowedScope[scope]) revert ScopeNotAllowed(scope);
+        if (!_scopeOperationRegistered[scope][operationId]) revert UnknownOperation(operationId);
+        if (_pausedOperations[scope][operationId]) revert AlreadyPaused(scope);
+
+        if (pausedOperationCount[scope] == 0 && !_pausedScopes[scope]) {
+            pausedAt[scope] = block.timestamp;
+            pauseCount[scope]++;
+            bytes32 incidentRef = keccak256(abi.encode(scope, operationId, block.timestamp, msg.sender));
+            pauseIncidentRef[scope] = incidentRef;
+            pauseIncidentAt[scope] = block.timestamp;
+        }
+        _pausedOperations[scope][operationId] = true;
+        pausedOperationCount[scope]++;
+        emit OperationPaused(scope, operationId, msg.sender);
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function unpauseOperation(bytes32 scope, bytes32 operationId) external override {
+        if (!hasRole(GOVERNANCE_ROLE, msg.sender)) revert UnauthorizedToUnpause(msg.sender);
+        if (!_scopeOperationRegistered[scope][operationId]) revert UnknownOperation(operationId);
+        if (!_pausedOperations[scope][operationId]) revert NotPaused(scope);
+        uint256 readyAt = unpauseScheduledAt[scope];
+        if (!unpauseReady(scope)) revert UnpauseTimelockNotReady(scope, readyAt);
+
+        _pausedOperations[scope][operationId] = false;
+        pausedOperationCount[scope]--;
+        emit OperationUnpaused(scope, operationId, msg.sender);
+        if (pausedOperationCount[scope] == 0 && !_pausedScopes[scope]) {
+            bytes32 incidentRef = pauseIncidentRef[scope];
+            incidentResolved[incidentRef] = true;
+            pausedAt[scope] = 0;
+            unpauseScheduledAt[scope] = 0;
+        }
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function unpauseReady(bytes32 scope) public view override returns (bool) {
+        uint256 readyAt = unpauseScheduledAt[scope];
+        return ( _pausedScopes[scope] || pausedOperationCount[scope] > 0)
+            && readyAt != 0
+            && block.timestamp >= readyAt
+            && block.timestamp - pauseIncidentAt[scope] <= MAX_INCIDENT_AGE
+            && !incidentResolved[pauseIncidentRef[scope]];
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function operationPaused(bytes32 scope, bytes32 operationId) external view override returns (bool) {
+        if (!_scopeOperationRegistered[scope][operationId]) revert UnknownOperation(operationId);
+        return _pausedScopes[SCOPE_ALL] || _pausedScopes[scope] || _pausedOperations[scope][operationId];
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function operationIdForSelector(bytes32 scope, bytes4 selector) external view override returns (bytes32) {
+        bytes32 operationId = _scopeSelectorIds[scope][selector];
+        if (operationId == bytes32(0)) revert UnknownOperation(operationId);
+        return operationId;
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function selectorForOperationId(bytes32 scope, bytes32 operationId) external view override returns (bytes4) {
+        bytes4 selector = _scopeIdSelectors[scope][operationId];
+        if (selector == bytes4(0)) revert UnknownOperation(operationId);
+        return selector;
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function operationIdsForScope(bytes32 scope) external view override returns (bytes32[] memory) {
+        if (!scopeConfigured[scope]) revert InvalidScope(scope);
+        return _scopeOperationIds[scope];
+    }
+
+    /// @inheritdoc IEmergencyControls
+    function operationIdForSignature(bytes32 scope, bytes memory signature) external view override returns (bytes32) {
+        bytes4 selector = bytes4(keccak256(signature));
+        bytes32 operationId = _scopeSelectorIds[scope][selector];
+        if (operationId == bytes32(0)) revert UnknownOperation(operationId);
+        return operationId;
+    }
+
     // ─── Internal Helpers ─────────────────────────────────────────────
 
     /**
@@ -459,5 +565,27 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         if (_operationRegistered[operationId]) revert OperationIdCollision(operationId);
         _operationRegistered[operationId] = true;
         _operationNames[operationId] = name;
+
+        bytes4 selector = bytes4(keccak256(bytes(name)));
+        bytes32[8] memory scopes = [
+            SCOPE_ALL,
+            SCOPE_CLAIMS,
+            SCOPE_EVIDENCE,
+            SCOPE_STAKING,
+            SCOPE_VERIFICATION,
+            SCOPE_SETTLEMENT,
+            SCOPE_TREASURY,
+            SCOPE_DISPUTES
+        ];
+        for (uint256 i = 0; i < scopes.length; ++i) {
+            bytes32 scope = scopes[i];
+            bytes32 scopedId = keccak256(abi.encode(scope, selector));
+            if (_scopeOperationRegistered[scope][scopedId]) revert OperationIdCollision(scopedId);
+            _scopeOperationRegistered[scope][scopedId] = true;
+            _scopeSelectorIds[scope][selector] = scopedId;
+            _scopeIdSelectors[scope][scopedId] = selector;
+            _scopeOperationIds[scope].push(scopedId);
+            emit OperationRegistered(scope, scopedId, selector);
+        }
     }
 }

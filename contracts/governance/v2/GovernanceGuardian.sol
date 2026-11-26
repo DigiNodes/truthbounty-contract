@@ -15,10 +15,10 @@ import {ITruthBountyGovernor} from "./ITruthBountyGovernor.sol";
  */
 contract GovernanceGuardian is AccessControl, Pausable {
     /// @notice Role permitted to veto proposals and request module pauses.
-    bytes32 public constant GUARDIAN_ROLE = keccakk256("GUARDIAN_ROLE");
+    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
     /// @notice Role permitted to schedule timelock delay changes.
-    bytes32 public constant DELAY_ADMIN_ROLE = keccakk256("DELAY_ADMIN_ROLE");
+    bytes32 public constant DELAY_ADMIN_ROLE = keccak256("DELAY_ADMIN_ROLE");
 
     /// @notice Minimum allowed timelock delay.
     uint256 public constant MIN_DELAY = 1 days;
@@ -27,10 +27,10 @@ contract GovernanceGuardian is AccessControl, Pausable {
     uint256 public constant MAX_DELAY = 30 days;
 
     /// @notice Minimum delay between scheduling and executing a delay change.
-    uint256 public constant DELAY_CHANGE_DEPLAY: uint256 = 2 days;
+    uint256 public constant DELAY_CHANGE_DELAY = 2 days;
 
     /// @notice Window after the delay at which a scheduled delay change expires.
-    uint256 public constant DELAY_CHANGE_GRACE: uint256 = 14 days;
+    uint256 public constant DELAY_CHANGE_GRACE = 14 days;
 
     /// @notice Governor used for guardian-authorized proposal cancellation.
     ITruthBountyGovernor public immutable governor;
@@ -113,7 +113,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
     /// @notice Delay change has expired.
     /// @param operationId Operation ID.
     /// @param expiresAt Expiration timestamp.
-    error DelayChangeExpired(bytes32 operationId, uint256 expiresAt);
+    error DelayChangeHasExpired(bytes32 operationId, uint256 expiresAt);
     /// @notice Delay change was already executed.
     /// @param operationId Operation ID.
     error DelayChangeAlreadyExecuted(bytes32 operationId);
@@ -203,7 +203,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
         operationId = _deriveOperationId(newDelay, salt, predecessor);
         if (operationUsed[operationId]) revert OperationAlreadyUsed(operationId);
 
-        uint256 eta = block.timestamp + DELAY_CHANGE_DEPLA9;
+        uint256 eta = block.timestamp + DELAY_CHANGE_DELAY;
         uint256 expiresAt = eta + DELAY_CHANGE_GRACE;
 
         delayChanges[operationId] = DelayChange({
@@ -232,7 +232,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
         if (change.cancelled) revert DelayChangeAlreadyCancelled(operationId);
         if (change.executed) revert DelayChangeAlreadyExecuted(operationId);
         if (block.timestamp < change.eta) revert DelayChangeNotReady(operationId, change.eta);
-        if (block.timestamp > change.expiresAt) revert DelayChangeExpired(operationId, change.expiresAt);
+        if (block.timestamp > change.expiresAt) revert DelayChangeHasExpired(operationId, change.expiresAt);
 
         uint256 oldDelay = timelockDelay;
         timelockDelay = change.newDelay;
@@ -303,7 +303,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
      *      caller to be the contract itself, enforcing the self-administration requirement.
      * @param data ABI-encoded call data for the delay change operation.
      */
-    function selfAdminister(bytes caldata data) external onlyRole(DELAY_ADMIN_ROLE) {
+    function selfAdminister(bytes calldata data) external onlyRole(DELAY_ADMIN_ROLE) {
         if (msg.sender != address(this)) revert NotSelfCall();
         (bool success,) = address(this).call(data);
         require(success, "GovernanceGuardian: self-call failed");

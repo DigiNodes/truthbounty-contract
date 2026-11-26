@@ -19,7 +19,7 @@ jobs:
         submodules: recursive
     
     - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@6dff6b4a1c8a6f3a5c8e2f1b9a0d7c6e5f4b3a21 # v1.8.3
+      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.8.3
       with:
         version: v1.8.3
         
@@ -60,7 +60,7 @@ jobs:
         submodules: recursive
     
     - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@6dff6b4a1c8a6f3a5c8e2f1b9a0d7c6e5f4b3a21 # v1.8.3
+      uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.8.3
       with:
         version: v1.8.3
         

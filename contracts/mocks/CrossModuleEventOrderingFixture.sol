@@ -48,7 +48,7 @@ abstract contract CorrelatedFixtureModule {
         _;
     }
 
-    function _recordEntry(bytes32 correlationId, uint256 claimId) override internal {
+    function _recordEntry(bytes32 correlationId, uint256 claimId) internal {
         lastEnteredClaim[correlationId] = claimId;
     }
 

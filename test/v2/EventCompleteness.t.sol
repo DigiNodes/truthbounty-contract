@@ -251,7 +251,7 @@ contract EventCompletenessTest is Test {
 
     function test_CellSourcesPassthrough() public view {
         uint256 index = V2EventCompleteness.CELL_VAULT_CLAIMABLE;
-        (bytes32[] memory closing, bytes32[] memory restated, bytes32 ruleId, bool covered) = anchor.cellSources(index);
+        (bytes32[] memory closing, bytes32[] memory restated, bytes32 ruleId, bytes32 orderingRuleId, bool covered) = anchor.cellSources(index);
         assertTrue(covered);
         assertEq(closing, V2EventCompleteness.closingEventsOf(index));
         assertEq(restated, V2EventCompleteness.restatementsOf(index));
@@ -264,7 +264,7 @@ contract EventCompletenessTest is Test {
     }
 
     function test_CellSourcesPublishesDerivedRule() public view {
-        (,, bytes32 ruleId,) = anchor.cellSources(V2EventCompleteness.CELL_VAULT_SETTLEMENT_OUTCOME);
+        (,, bytes32 ruleId,,) = anchor.cellSources(V2EventCompleteness.CELL_VAULT_SETTLEMENT_OUTCOME);
         assertEq(ruleId, V2EventCompleteness.RULE_SETTLEMENT_OUTCOME_FROM_EVENT);
     }
 

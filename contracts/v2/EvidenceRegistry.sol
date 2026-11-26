@@ -95,11 +95,8 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     error ZeroDigest();
     error InvalidClaim(uint256 claimId);
     error EvidenceWindowClosed(uint256 claimId, uint64 deadline, uint64 timestamp);
-    error ClaimFinalized(uint256 claimId, IClaimRegistry.ClaimStatus status);
     error InvalidNonce(address contributor, uint256 expected, uint256 provided);
-    error DuplicateEvidence(bytes32 commitmentKey);
     error EvidenceNotFound(uint256 evidenceId);
-    error InvalidPageLimit(uint256 limit);
     error EvidenceLimitReached(uint256 claimId, uint256 max);
     /// @notice Attempted evidence status transition is forbidden by the state machine.
     /// @param evidenceId Evidence whose transition was rejected.
@@ -116,8 +113,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @param claimId Claim whose existence flag and record disagreed.
     error ClaimRegistryInconsistent(uint256 claimId);
     /// @notice Cursor does not bind the requested claim or contains an invalid order key.
-    /// @param cursor Opaque cursor that failed validation.
-    error InvalidCursor(bytes32 cursor);
     /// @notice Cursor binds a different claim than the requested claim.
     /// @param expectedClaimId Claim id the cursor was expected to bind.
     /// @param actualClaimId Claim id the cursor actually binds.

@@ -64,7 +64,7 @@ interface IProtocolUpgradeManager {
         Executing,
         Completed,
         Failed,
-        Rolled Back
+        RolledBack
     }
 
     struct MigrationStep {
@@ -90,7 +90,7 @@ interface IProtocolUpgradeManager {
     function registerModule(
         bytes32 moduleId,
         address implementation,
-        Version caldata initialVersion,
+        Version calldata initialVersion,
         bytes32 storageLayoutHash
     ) external;
 
@@ -102,7 +102,7 @@ interface IProtocolUpgradeManager {
         Version calldata toVersion,
         bytes32 newStorageLayoutHash,
         bytes32 migrationHash,
-        string caldata description
+        string calldata description
     ) external returns (uint256 proposalId);
 
     function attestStorageCompatibility(uint256 proposalId, bool compatible) external;

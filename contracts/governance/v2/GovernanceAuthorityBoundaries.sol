@@ -16,6 +16,40 @@ import {GovernanceAuthorityMatrix} from "./libraries/GovernanceAuthorityMatrix.s
  */
 contract GovernanceAuthorityBoundaries is IGovernanceAuthorityBoundaries, AccessControl {
     bytes32 public constant AUTHORITY_ADMIN_ROLE = keccak256("AUTHORITY_ADMIN_ROLE");
+    error DelayAlreadyInitialized();
+    error DelayOutOfBounds(uint256 delay);
+    error DelayChangeAlreadyScheduled(uint256 delay);
+    error DelayCannotDecreaseImmediately(uint256 currentDelay, uint256 newDelay);
+    error DelayChangeNotScheduled(uint256 delay);
+    error DelayChangeNotReady(uint256 eta);
+    error DelayChangeMismatch(uint256 expectedDelay, uint256 actualDelay);
+    error DelayNotInitialized();
+    error PredecessorNotExecuted(bytes32 predecessor);
+    error OperationAlreadyScheduled(bytes32 operationId);
+    error OperationNotScheduled(bytes32 operationId);
+    error OperationAlreadyCancelled(bytes32 operationId);
+    error OperationAlreadyExecuted(bytes32 operationId);
+    error OperationNotReady(uint256 eta);
+    error OperationExpired(uint256 eta);
+    error OperationCallFailed(bytes32 operationId);
+    error SelfCallRequired();
+
+    event DelayInitialized(uint256 delay);
+    event DelayChangeScheduled(uint256 newDelay, uint256 eta);
+    event DelayChanged(uint256 newDelay);
+    event DelayChangeCancelled(uint256 newDelay);
+    event OperationScheduled(
+        bytes32 indexed operationId,
+        address indexed target,
+        uint256 value,
+        bytes data,
+        bytes32 predecessor,
+        bytes32 salt,
+        uint256 eta
+    );
+    event OperationExecuted(bytes32 indexed operationId, address indexed target, uint256 value, bytes data);
+    event OperationCancelled(bytes32 indexed operationId);
+
 
     /// @dev Minimum permitted timelock delay (1 hour).
     uint256 internal constant MIN_DELAY = 1 hours;
@@ -249,7 +283,7 @@ contract GovernanceAuthorityBoundaries is IGovernanceAuthorityBoundaries, Access
         Operation storage op = _operations[id];
 
         if (!_operationScheduled[id]) revert OperationNotScheduled(id);
-        if (op.cancelled) revert OperationCancelled(id);
+        if (op.cancelled) revert OperationAlreadyCancelled(id);
         if (op.executed) revert OperationAlreadyExecuted(id);
         if (block.timestamp < op.eta) revert OperationNotReady(op.eta);
         if (block.timestamp > op.eta + GRACE_PERIOD) revert OperationExpired(op.eta);

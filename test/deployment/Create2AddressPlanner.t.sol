@@ -26,12 +26,44 @@ contract Create2AddressPlannerTest is Test {
     bytes32 internal constant MODULE_B = keccak256("MODULE_B");
     bytes32 internal constant REVIEWED_SALT = keccak256("reviewed-salt-v1");
     bytes32 internal constant OTHER_SALT = keccak256("reviewed-salt-v2");
+    bytes32 internal constant RELEASE_ID = keccak256("CREATE2_TEST_RELEASE");
 
     function setUp() public {
         deployer = address(this);
-        planner = new Create2AddressPlanner(admin);
-        vm.prank(admin);
+        planner = new Create2AddressPlanner(admin, block.chainid, RELEASE_ID, address(this));
+        ICreate2AddressPlanner.DeploymentConfig memory deploymentConfig = ICreate2AddressPlanner.DeploymentConfig({
+            chainId: block.chainid,
+            releaseId: RELEASE_ID,
+            configChecksum: bytes32(0),
+            broadcaster: address(this),
+            nonceStart: 1,
+            nonceCount: 100,
+            expiry: uint64(block.timestamp + planner.MAX_CONFIG_LIFETIME())
+        });
+        deploymentConfig.configChecksum = planner.computeConfigChecksum(deploymentConfig);
+
+        vm.startPrank(admin);
         planner.grantRole(planner.PLANNER_ROLE(), plannerRole);
+        planner.bindDeploymentConfig(deploymentConfig);
+        planner.bindConfiguration(
+            MODULE_A,
+            block.chainid,
+            RELEASE_ID,
+            keccak256(abi.encode("config", MODULE_A)),
+            address(this),
+            101,
+            block.timestamp + planner.MAX_CONFIG_LIFETIME()
+        );
+        planner.bindConfiguration(
+            MODULE_B,
+            block.chainid,
+            RELEASE_ID,
+            keccak256(abi.encode("config", MODULE_B)),
+            address(this),
+            102,
+            block.timestamp + planner.MAX_CONFIG_LIFETIME()
+        );
+        vm.stopPrank();
     }
 
     function _initCodeHash(uint256 marker) internal pure returns (bytes32) {
@@ -79,6 +111,15 @@ contract Create2AddressPlannerTest is Test {
         assertEq(plan.predicted, expected);
         assertEq(plan.deployer, deployer);
         assertEq(plan.initCodeHash, initHash);
+    }
+
+    function test_planAddress_requiresActiveReleaseConfig() public {
+        vm.prank(admin);
+        planner.revokeDeploymentConfig(RELEASE_ID, block.chainid);
+
+        vm.prank(plannerRole);
+        vm.expectRevert(ICreate2AddressPlanner.DeploymentConfigNotFound.selector);
+        planner.planAddress(MODULE_A, REVIEWED_SALT, _initCodeHash(1), deployer);
     }
 
     function test_planAddress_revertsUnauthorized() public {

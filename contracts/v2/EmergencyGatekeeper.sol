@@ -200,6 +200,12 @@ contract EmergencyGatekeeper is AccessControl, ReentrancyGuard, IEmergencyContro
         emit ScopePauseUpdated(scope, msg.sender, false);
     }
 
+    /// @inheritdoc IEmergencyControls
+    function operationIdForSelector(bytes32 scope, bytes4 selector) external pure override returns (bytes32) {
+        if (scope == bytes32(0) || selector == bytes4(0)) revert EmptyScope();
+        return keccak256(abi.encode(scope, selector));
+    }
+
     /// @notice Returns whether the scope is currently paused (local or protocol escalation).
     /// @dev Never reverts: an unwired or misbehaving protocol-level dependency
     ///      classifies the scope as paused (fail closed).

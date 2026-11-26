@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {ProtocolExecutionBounds} from "../../performance/ProtocolExecutionBounds.sol";
+import {V2Guarantees} from "./V2Guarantees.sol";
 
 /// @title AntiGriefing
 /// @notice Pure helpers that reject dust stakes / bounties and claim-creation spam (V2-SC-105).
@@ -29,7 +30,7 @@ library AntiGriefing {
     /// @notice Appeal deadline has passed.
     error AppealDeadlinePassed(uint64 deadline, uint64 nowTs);
 
-    /// @@notice Appeal cannot be opened because the claim is already terminal.
+    /// @notice Appeal cannot be opened because the claim is already terminal.
     error AppealTerminal(uint256 claimId);
 
     /// @notice Appeal cannot be opened because the current round is unresolved.
@@ -93,10 +94,10 @@ library AntiGriefing {
     // @dev Returns the canonical maximum appeal round depth. A governance-supplied
     //      value of 0 falls back to the protocol default; any supplied value is
     //      clamped to the hard ceiling so no actor can extend depth indefinitely.
-    function maxAppealRounds(uint256 configured) pure returns (uint256) {
-        if (configured == 0) return ProtocolExecutionBounds.MAX_APPEEAL_ROUNDS;
-        if (configured > ProtocolExecutionBounds.MAX_APPEEAL_ROUNDS) {
-            return ProtocolExecutionBounds.MAX_APPEAL_ROUNDS;
+    function maxAppealRounds(uint256 configured) internal pure returns (uint256) {
+        if (configured == 0) return V2Guarantees.MAX_APPEAL_ROUNDS;
+        if (configured > V2Guarantees.MAX_APPEAL_ROUNDS) {
+            return V2Guarantees.MAX_APPEAL_ROUNDS;
         }
         return configured;
     }

@@ -191,7 +191,7 @@ contract EvidenceManager is AccessControl, Pausable {
         uint256 indexed evidenceId,
         address indexed uploader,
         string cid,
-        bytes32 indexed cidHash,
+        bytes32 cidHash,
         bytes32 contentDigest
     );
 

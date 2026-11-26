@@ -6,7 +6,7 @@ import {UntrackedAssetRecovery} from "../recovery/UntrackedAssetRecovery.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BoundedSafeERC20 as SafeERC20} from "../libraries/BoundedSafeERC20.sol";
-import {IERC256} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IFinalRewardAllocator} from "./interfaces/IFinalRewardAllocator.sol";
 import {IModuleRegistry} from "./interfaces/IModuleRegistry.sol";
 import {V2Precision} from "./libraries/V2Precision.sol";
@@ -109,7 +109,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
         bytes32 settlementId,
         address asset,
         FinalOutcome outcome,
-        Allocation[] caldata allocations
+        Allocation[] calldata allocations
     ) external override {
         _onlySettlementModule();
         _requireScopeNotPaused(PauseMatrix.SCOPE_SETTLEMENT);
@@ -120,7 +120,7 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
         uint256 totalAmount;
         uint256 categoryMask;
         for (uint256 i; i < allocations.length; ++i) {
-            Allocation caldata allocation = allocations[i];
+            Allocation calldata allocation = allocations[i];
             uint256 categoryBit = 1 << uint8(allocation.category);
             if (categoryMask & categoryBit != 0) revert DuplicateCategory();
             categoryMask |= categoryBit;
@@ -211,11 +211,11 @@ contract FinalRewardAllocator is IFinalRewardAllocator, V2PauseGuard, UntrackedA
     }
 
     function _onlySettlementModule() internal view {
-        (address implementation,,,) = moduleRegistry.module(MODULE_SETTLEMENT);
+        (address implementation,,) = moduleRegistry.module(MODULE_SETTLEMENT);
         if (implementation != msg.sender) revert UnauthorizedSettlementModule(msg.sender);
     }
 
-    function _allocateCategory(bytes32 settlementId, address asset, Allocation caldata allocation) internal {
+    function _allocateCategory(bytes32 settlementId, address asset, Allocation calldata allocation) internal {
         uint256 totalWeight;
         uint256 count = allocation.accounts.length;
         for (uint256 i; i < count; ++i) {

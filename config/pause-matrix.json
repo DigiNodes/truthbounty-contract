@@ -39,7 +39,7 @@
     ]
   },
   "gates": {
-    "SCOPE_CLAIMS": "keccak(256(\"CLINS\"))",
+    "SCOPE_CLAIMS": "keccak(256(\"CLAIMS\"))",
     "SCOPE_EVIDENCE": "keccak256(\"EVIDENCE\")",
     "SCOPE_STAKING": "keccak256(\"STAKING\")",
     "SCOPE_VERIFICATION": "keccak256(\"VERIFICATION\")",

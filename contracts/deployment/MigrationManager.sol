@@ -9,18 +9,18 @@ import "../interfaces/ITruthBountyEvents.sol";
 
 contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
-    bytes32 public constant ADMIN_ROLE = keccak(256("ADMIN_ROLE"));
-    bytes32 public constant PAUSER_ROLE = keccak(256("PAUSER_ROLE"));
-    bytes32 public constant MIGRATOR_ROLE = keccak(256("MIGRATOR_ROLE"));
-    bytes32 public constant UPGRADER_ROLE = keccak(256("UPGRADER_ROLE"));
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    /// @udev Reinitializer version boundaries. Version 0 is the initial deployed
+    /// @dev Reinitializer version boundaries. Version 0 is the initial deployed
     /// state; version 1 is the first authorized upgrade reinitializer. Each
     /// subsequent upgrade must advance the version by exactly one.
     uint64 public constant INITIAL_REINIT_VERSION = 0;
     uint64 public constant FIRST_UPGRADE_REINIT_VERSION = 1;
 
-    /// @udev Migration step definition. Each step is executed exactly once,
+    /// @dev Migration step definition. Each step is executed exactly once,
     /// in ascending order, and only after all of its prerequisite steps have
     /// completed. The hash binds the description and the expected post-state
     /// so that operators cannot silently swap a step for a different one.
@@ -35,7 +35,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         address executedBy;
     }
 
-    /// @udev Release manifest entry. The manifest records completed reinit
+    /// @dev Release manifest entry. The manifest records completed reinit
     /// versions and the exact set of migration steps that have been executed.
     struct Release {
         string version;
@@ -69,16 +69,16 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     mapping(uint256 => Migration) public migrations;
     uint256[] public migrationIds;
 
-    /// @udev Ordered migration plan. Step ids are expected to be assigned in
+    /// @dev Ordered migration plan. Step ids are expected to be assigned in
     /// ascending order and executed in that order.
     mapping(uint256 => MigrationStep) internal migrationSteps;
     uint256[] internal migrationStepIds;
     uint256 public executedStepCount;
 
-    /// @udev Current reinitializer version recorded in the manifest.
+    /// @dev Current reinitializer version recorded in the manifest.
     uint64 public reinitializerVersion;
 
-    /// @udev Manifest of completed reinit versions. Advanced only by the
+    /// @dev Manifest of completed reinit versions. Advanced only by the
     /// governance-timedock authorized upgrade path.
     mapping(uint64 => bool) public completedReinitVersions;
     uint64[] public completedReinitVersionList;
@@ -119,21 +119,21 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         address indexed newOwner
     );
 
-    /// @udev Emitted when a migration step is registered in the ordered plan.
+    /// @dev Emitted when a migration step is registered in the ordered plan.
     event MigrationStepRegistered(
         uint256 indexed stepId,
         bytes32 indexed migrationHash,
         uint256[] prerequisites
     );
 
-    /// @udev Emitted when a migration step completes successfully.
+    /// @dev Emitted when a migration step completes successfully.
     event MigrationStepExecuted(
         uint256 indexed stepId,
         bytes32 indexed migrationHash,
         address indexed executor
     );
 
-    /// @udev Emitted when a migration step is rolled back after a partial
+    /// @dev Emitted when a migration step is rolled back after a partial
     /// failure or governance-requested recovery.
     event MigrationStepRolledBack(
         uint256 indexed stepId,
@@ -142,7 +142,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         string reason
     );
 
-    /// @udev Emitted when the reinitializer version advances and the
+    /// @dev Emitted when the reinitializer version advances and the
     /// manifest records the completed version.
     event ReinitializerVersionAdvanced(
         uint64 indexed previousVersion,
@@ -150,7 +150,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         address indexed executor
     );
 
-    /// @udev Emitted when a partial migration is detected and the contract
+    /// @dev Emitted when a partial migration is detected and the contract
     /// is paused to prevent unsafe state from being exposed.
     event PartialMigrationDetected(
         uint256 indexed lastCompletedStep,
@@ -180,11 +180,11 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     error InvalidPrerequisite(uint256 stepId, uint256 prerequisiteId);
     error EmergencyControlsActive();
 
-    /// @udev Timelock executor authorized to advance the reinitializer version
+    /// @dev Timelock executor authorized to advance the reinitializer version
     /// and record completed versions in the manifest.
     address public timelockExecutor;
 
-    /// @udev Operation-scoped emergency control flag. When set, migration
+    /// @dev Operation-scoped emergency control flag. When set, migration
     /// execution is blocked but governance roles and timelock authority are
     /// preserved.
     bool public emergencyControlsActive;
@@ -221,7 +221,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         _initializeGovernance(_governanceController, initialAdmin, initialAdmin);
     }
 
-    /// @udev Advance the reinitializer version. Only the timelock executor
+    /// @dev Advance the reinitializer version. Only the timelock executor
     /// can call this, and the version must advance by exactly one. The manifest
     /// records the completed version and emits evidence.
     function advanceReinitializerVersion(
@@ -240,11 +240,11 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         emit ReinitializerVersionAdvanced(previous, newVersion, msg.sender);
     }
 
-    /// @udev Register a migration step in the ordered plan. Prerequisites
+    /// @dev Register a migration step in the ordered plan. Prerequisites
     /// must already be registered and must have lower ids to enforce order.
     function registerMigrationStep(
         uint256 stepId,
-        string caldata description,
+        string calldata description,
         bytes32 migrationHash,
         uint256[] calldata prerequisites
     ) external onlyRole(MIGRATOR_ROLE) notEmergency {
@@ -277,7 +277,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         emit MigrationStepRegistered(stepId, migrationHash, prerequisites);
     }
 
-    /// @udev Execute a migration step. Steps must be executed in ascending
+    /// @dev Execute a migration step. Steps must be executed in ascending
     /// order, exactly once, and only after all prerequisites have completed.
     /// The hash must match the registered expected post-state.
     function executeMigrationStep(
@@ -309,12 +309,12 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         emit MigrationStepExecuted(stepId, step.migrationHash, msg.sender);
     }
 
-    /// @udev Roll back a migration step after a partial failure or governance
+    /// @dev Roll back a migration step after a partial failure or governance
     /// recovery request. Rollback is only allowed for the most recently
     /// executed step and must be authorized by the timelock executor.
     function rollbackMigrationStep(
         uint256 stepId,
-        string caldata reason
+        string calldata reason
     ) external onlyTimelock notEmergency {
         MigrationStep storage step = migrationSteps[stepId];
         if (!step.registered) revert MigrationStepNotRegistered(stepId);
@@ -335,19 +335,19 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         emit MigrationStepRolledBack(stepId, step.migrationHash, msg.sender, reason);
     }
 
-    /// @udev Marked as partial migration when a step fails and the contract
+    /// @dev Marked as partial migration when a step fails and the contract
     /// is paused. This ensures unsafe state is not exposed and the event
     /// provides evidence for operators.
     function flagPartialMigration(
         uint256 failedStep,
-        string caldata reason
+        string calldata reason
     ) external onlyRole(MIGRATOR_ROLE) {
         uint256 lastCompleted = _lastExecutedStepId();
         _pause();
         emit PartialMigrationDetected(lastCompleted, failedStep, reason);
     }
 
-    /// @udev Emergency controls are operation-scoped and do not weaken the
+    /// @dev Emergency controls are operation-scoped and do not weaken the
     /// governance or timelock authority. They only block migration execution.
     function setEmergencyControls(bool active) external onlyRole(ADMIN_ROLE) {
         emergencyControlsActive = active;
@@ -389,7 +389,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     }
 
     function executeMigration(
-        string caldata description,
+        string calldata description,
         bytes32 migrationHash
     ) external onlyRole(MIGRATOR_ROLE) nonReentrant {
         uint256 id = migrationCounter++;
@@ -443,7 +443,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
 
     function getAllRegisteredModules() external view returns (bytes32[] memory ids, address[] memory addresses) {
         ids = registeredModuleKeys;
-        addresses = new address ids.length);
+        addresses = new address[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             addresses[i] = addressRegistry[ids[i]];
         }
@@ -470,18 +470,18 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         return registeredModules[moduleId];
     }
 
-    /// @udev Returns the number of registered migration steps.
+    /// @dev Returns the number of registered migration steps.
     function getMigrationStepCount() external view returns (uint256) {
         return migrationStepIds.length;
     }
 
-    /// @udev Returns a migration step by id.
+    /// @dev Returns a migration step by id.
     function getMigrationStep(uint256 stepId) external view returns (MigrationStep memory) {
         if (!migrationSteps[stepId].registered) revert MigrationStepNotRegistered(stepId);
         return migrationSteps[stepId];
     }
 
-    /// @udev Returns the next executable step id and whether all steps are
+    /// @dev Returns the next executable step id and whether all steps are
     /// complete. Preconditions are machine-verifiable by consumers.
     function getNextExecutableStep() external view returns (uint256 nextStepId, bool allComplete) {
         allComplete = executedStepCount == migrationStepIds.length;
@@ -491,17 +491,17 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         nextStepId = _nextExecutableStepId();
     }
 
-    /// @udev Returns the manifest of completed reinit versions.
+    /// @dev Returns the manifest of completed reinit versions.
     function getCompletedReinitVersions() external view returns (uint64[] memory) {
         return completedReinitVersionList;
     }
 
-    /// @udev Returns true if the given reinit version has been recorded as complete.
+    /// @dev Returns true if the given reinit version has been recorded as complete.
     function isReinitVersionCompleted(uint64 version) external view returns (bool) {
         return completedReinitVersions[version];
     }
 
-    /// @udev Returns true if the migration plan is in a safe, consistent
+    /// @dev Returns true if the migration plan is in a safe, consistent
     /// state: no partial execution that exposes unsafe state.
     function isManifestConsistent() external view returns (bool) {
         if (executedStepCount == 0) return true;
@@ -524,7 +524,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         return true;
     }
 
-    /// @udev Returns the last executed step id in the contiguous prefix.
+    /// @dev Returns the last executed step id in the contiguous prefix.
     function getLastCompletedStep() external view returns (uint256) {
         return _lastExecutedStepId();
     }
@@ -533,7 +533,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    /// @udev Returns the lowest step id in the registered plan that has not
+    /// @dev Returns the lowest step id in the registered plan that has not
     /// yet been executed. Reverts if all steps are executed.
     function _nextExecutableStepId() internal view returns (uint256) {
         for (uint256 i = 0; i < migrationStepIds.length; i++) {
@@ -545,7 +545,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
         revert MigrationStepNotRegistered(0);
     }
 
-    /// @udev Returns the highest step id in the contiguous executed prefix.
+    /// @dev Returns the highest step id in the contiguous executed prefix.
     /// Reverts if no step has been executed.
     function _lastExecutedStepId() internal view returns (uint256) {
         for (uint256 i = migrationStepIds.length; i > 0; i--) {

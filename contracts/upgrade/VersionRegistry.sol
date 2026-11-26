@@ -28,11 +28,11 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     bytes32 public constant MIGRATION_ROLE = keccak256("MIGRATION_ROLE");
 
     /// @notice Maximum number of consecutive rollbacks allowed from the current active version.
-    uint256 public constant MAX_ROLLBACK_DEPTH: uint256 = 3;
+    uint256 public constant MAX_ROLLBACK_DEPTH = 3;
 
     /// @notice Maximum number of storage slots that may be compared in a single
     ///         equivalence check to bound gas and keep evidence deterministic.
-    uint256 public constant MAX_EQUIVALENCE_SLOTS: uint256 = 256;
+    uint256 public constant MAX_EQUIVALENCE_SLOTS = 256;
 
     enum RollbackPolicy {
         DISABLED,
@@ -80,7 +80,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     }
 
     /// @dev Per-contract migration step record.
-    struct MigrationStep {
+    struct ExecutionStep {
         uint64 index;
         bytes32 stepHash;
         bool executed;
@@ -90,6 +90,15 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     mapping(string => VersionList) internal _versions;
     string[] internal _contractNames;
     mapping(string => bool) internal _contractRegistered;
+
+    // Canonical interface migration ledger (reinitializer-version keyed).
+    mapping(uint256 => MigrationStep) private _canonicalMigrationSteps;
+    mapping(uint256 => MigrationRecord) private _canonicalMigrationRecords;
+    mapping(uint256 => bool) private _canonicalMigrationStepDefined;
+    mapping(bytes32 => bool) private _completedCanonicalStepHashes;
+    uint256[] private _canonicalMigrationVersions;
+    uint256 public completedMigrationCount;
+    bytes32 private _canonicalMigrationManifestHash;
 
     /// @notice Snapshots taken before an upgrade keyed by contract name and
     ///         the version being upgraded from.
@@ -104,7 +113,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
 
     /// @dev Per-contract migration manifest and ordered steps.
     mapping(string => MigrationManifest) internal _manifests;
-    mapping(string => MigrationStep[]) internal _migrationSteps;
+    mapping(string => ExecutionStep[]) internal _migrationSteps;
     mapping(string => mapping(bytes32 => bool)) internal _stepHashSeen;
 
     error ContractAlreadyRegistered(string contractName);
@@ -136,6 +145,15 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
     error InvalidReinitializerVersion(uint64 version);
     error InvalidStepCount(uint64 stepCount);
     error ReinitializerVersionNotMonotonic(string contractName, uint64 previous, uint64 provided);
+    error CanonicalMigrationStepAlreadyDefined(uint256 reinitializerVersion);
+    error CanonicalMigrationAlreadyExecuted(uint256 reinitializerVersion);
+    error CanonicalReinitializerVersionOutOfRange(uint256 reinitializerVersion);
+    error CanonicalMigrationStepNotFound(uint256 reinitializerVersion);
+    error CanonicalMigrationPrerequisiteNotSatisfied(uint256 reinitializerVersion);
+    error CanonicalMigrationEvidenceRequired(uint256 reinitializerVersion);
+    error CanonicalMigrationNotCompleted(uint256 reinitializerVersion);
+    error CanonicalMigrationNotRollbackable(uint256 reinitializerVersion);
+    error CanonicalMigrationAlreadyRolledBack(uint256 reinitializerVersion);
 
     event ContractRegistered(string indexed contractName);
     event StorageSnapshotCaptured(
@@ -184,7 +202,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         uint64 completedStepCount,
         string completedVersion
     );
-    event MigrationRolledBack(string indexed contractName, uint64 completedStepCount);
+    event ContractMigrationRolledBack(string indexed contractName, uint64 completedStepCount);
 
     constructor(address admin) {
         require(admin != address(0), "Zero address");
@@ -410,7 +428,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
                 revert TooManySlots(slotIds.length, MAX_EQUIVALENCE_SLOTS);
             }
             bytes32 slotHash = keccak256(abi.encodePacked(slotIds));
-            bytes32 valueHash = kecck256(abi.encodePacked(slotValues));
+            bytes32 valueHash = keccak256(abi.encodePacked(slotValues));
             if (slotHash != targetSnapshot.slotHash || valueHash != targetSnapshot.valueHash) {
                 if (!config.allowStateDrift) {
                     revert StateEquivalenceFailed(contractName, targetSnapshot.valueHash, valueHash);
@@ -561,7 +579,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
             if (h == bytes32(0)) revert InvalidStepCount(i);
             if (_stepHashSeen[contractName][h]) revert MigrationStepHashMismatch(contractName, i);
             _stepHashSeen[contractName][h] = true;
-            _migrationSteps[contractName].push(MigrationStep({
+            _migrationSteps[contractName].push(ExecutionStep({
                 index: i,
                 stepHash: h,
                 executed: false,
@@ -617,9 +635,9 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         uint64 expected = manifest.completedStepCount;
         if (index != expected) revert MigrationStepOutOfOrder(contractName, expected, index);
 
-        MigrationStep[] storage steps = _migrationSteps[contractName];
+        ExecutionStep[] storage steps = _migrationSteps[contractName];
         if (index >= steps.length) revert MigrationStepOutOfOrder(contractName, expected, index);
-        MigrationStep storage step = steps[index];
+        ExecutionStep storage step = steps[index];
         if (step.executed) revert MigrationStepAlreadyExecuted(contractName, index);
         if (step.stepHash != stepHash) revert MigrationStepHashMismatch(contractName, index);
 
@@ -683,7 +701,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
         if (!manifest.initialized) revert MigrationNotConfigured(contractName);
         if (manifest.completed) revert MigrationAlreadyComplete(contractName);
 
-        MigrationStep[] storage steps = _migrationSteps[contractName];
+        ExecutionStep[] storage steps = _migrationSteps[contractName];
         for (uint256 i = 0; i < steps.length; i++) {
             steps[i].executed = false;
             steps[i].executedAt = 0;
@@ -702,7 +720,7 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
 
     /// @notice Returns a migration step by index.
     function getMigrationStep(string calldata contractName, uint64 index)
-        external view returns (MigrationStep memory)
+        external view returns (ExecutionStep memory)
     {
         return _migrationSteps[contractName][index];
     }
@@ -733,6 +751,165 @@ contract VersionRegistry is IVersionRegistry, AccessControl {
 
     /// @dev V2-SC-160: hashes the raw string bytes directly (byte-identical to the former
     ///      single-argument packed form) so no packed encoding remains in the upgrade surface.
+    // ---------------------------------------------------------------------
+    // IVersionRegistry canonical migration-step interface
+    // ---------------------------------------------------------------------
+
+    function defineMigrationStep(
+        uint256 reinitializerVersion,
+        string calldata fromVersion,
+        string calldata toVersion,
+        bytes32 prerequisiteHash,
+        bytes32 stepHash,
+        bool atomic,
+        bool resumable,
+        bool rollbackable
+    ) external override onlyRole(MIGRATION_ROLE) {
+        if (reinitializerVersion == 0 || reinitializerVersion > type(uint64).max) {
+            revert CanonicalReinitializerVersionOutOfRange(reinitializerVersion);
+        }
+        if (stepHash == bytes32(0)) revert InvalidReinitializerVersion(uint64(reinitializerVersion));
+        if (_canonicalMigrationStepDefined[reinitializerVersion]) {
+            revert CanonicalMigrationStepAlreadyDefined(reinitializerVersion);
+        }
+        if (bytes(fromVersion).length == 0 || bytes(toVersion).length == 0 || _strEq(fromVersion, toVersion)) {
+            revert EmptyString();
+        }
+        if (_canonicalMigrationVersions.length > 0) {
+            uint256 previous = _canonicalMigrationVersions[_canonicalMigrationVersions.length - 1];
+            if (reinitializerVersion <= previous) {
+                revert ReinitializerVersionNotMonotonic("", uint64(previous), uint64(reinitializerVersion));
+            }
+        }
+        _canonicalMigrationSteps[reinitializerVersion] = MigrationStep({
+            reinitializerVersion: reinitializerVersion,
+            fromVersion: fromVersion,
+            toVersion: toVersion,
+            prerequisiteHash: prerequisiteHash,
+            stepHash: stepHash,
+            atomic: atomic,
+            resumable: resumable,
+            rollbackable: rollbackable
+        });
+        _canonicalMigrationStepDefined[reinitializerVersion] = true;
+        _canonicalMigrationVersions.push(reinitializerVersion);
+        _canonicalMigrationManifestHash = keccak256(
+            abi.encode(_canonicalMigrationManifestHash, reinitializerVersion, fromVersion, toVersion, prerequisiteHash, stepHash, atomic, resumable, rollbackable)
+        );
+        emit MigrationStepDefined(reinitializerVersion, fromVersion, toVersion, stepHash);
+        emit MigrationManifestUpdated("GLOBAL", reinitializerVersion, _canonicalMigrationManifestHash);
+    }
+
+    function executeMigrationStep(
+        uint256 reinitializerVersion,
+        bytes32 stepHash,
+        bytes32 evidenceHash
+    ) external override onlyRole(MIGRATION_ROLE) {
+        if (!_canonicalMigrationStepDefined[reinitializerVersion]) {
+            revert CanonicalMigrationStepNotFound(reinitializerVersion);
+        }
+        MigrationStep storage step = _canonicalMigrationSteps[reinitializerVersion];
+        if (step.stepHash != stepHash) revert MigrationStepHashMismatch("", uint64(reinitializerVersion));
+        if (!isMigrationPrerequisiteSatisfied(reinitializerVersion)) {
+            revert CanonicalMigrationPrerequisiteNotSatisfied(reinitializerVersion);
+        }
+        if (evidenceHash == bytes32(0)) revert CanonicalMigrationEvidenceRequired(reinitializerVersion);
+        MigrationRecord storage record = _canonicalMigrationRecords[reinitializerVersion];
+        if (record.status != MigrationStatus.NONE) revert CanonicalMigrationAlreadyExecuted(reinitializerVersion);
+
+        record.reinitializerVersion = reinitializerVersion;
+        record.fromVersion = step.fromVersion;
+        record.toVersion = step.toVersion;
+        record.stepHash = stepHash;
+        record.evidenceHash = evidenceHash;
+        record.executedAt = block.timestamp;
+        record.status = MigrationStatus.COMPLETED;
+        _completedCanonicalStepHashes[stepHash] = true;
+        completedMigrationCount++;
+        _canonicalMigrationManifestHash = keccak256(
+            abi.encode(_canonicalMigrationManifestHash, reinitializerVersion, stepHash, evidenceHash, block.timestamp, MigrationStatus.COMPLETED)
+        );
+        emit MigrationExecuted(reinitializerVersion, step.fromVersion, step.toVersion, stepHash, evidenceHash);
+        emit MigrationManifestUpdated("GLOBAL", reinitializerVersion, _canonicalMigrationManifestHash);
+    }
+
+    function rollbackMigrationStep(
+        uint256 reinitializerVersion,
+        bytes32 stepHash
+    ) external override onlyRole(ROLLBACK_ROLE) {
+        if (!_canonicalMigrationStepDefined[reinitializerVersion]) {
+            revert CanonicalMigrationStepNotFound(reinitializerVersion);
+        }
+        MigrationStep storage step = _canonicalMigrationSteps[reinitializerVersion];
+        MigrationRecord storage record = _canonicalMigrationRecords[reinitializerVersion];
+        if (record.status == MigrationStatus.ROLLED_BACK) revert CanonicalMigrationAlreadyRolledBack(reinitializerVersion);
+        if (record.status != MigrationStatus.COMPLETED) revert CanonicalMigrationNotCompleted(reinitializerVersion);
+        if (!step.rollbackable) revert CanonicalMigrationNotRollbackable(reinitializerVersion);
+        if (record.stepHash != stepHash) revert MigrationStepHashMismatch("", uint64(reinitializerVersion));
+
+        record.status = MigrationStatus.ROLLED_BACK;
+        _completedCanonicalStepHashes[stepHash] = false;
+        completedMigrationCount--;
+        _canonicalMigrationManifestHash = keccak256(
+            abi.encode(_canonicalMigrationManifestHash, reinitializerVersion, stepHash, MigrationStatus.ROLLED_BACK)
+        );
+        emit MigrationRolledBack(reinitializerVersion, step.fromVersion, step.toVersion, stepHash);
+        emit MigrationManifestUpdated("GLOBAL", reinitializerVersion, _canonicalMigrationManifestHash);
+    }
+
+    function getMigrationStep(uint256 reinitializerVersion)
+        external
+        view
+        override
+        returns (MigrationStep memory)
+    {
+        if (!_canonicalMigrationStepDefined[reinitializerVersion]) {
+            revert CanonicalMigrationStepNotFound(reinitializerVersion);
+        }
+        return _canonicalMigrationSteps[reinitializerVersion];
+    }
+
+    function getMigrationRecord(uint256 reinitializerVersion)
+        external
+        view
+        override
+        returns (MigrationRecord memory)
+    {
+        if (!_canonicalMigrationStepDefined[reinitializerVersion]) {
+            revert CanonicalMigrationStepNotFound(reinitializerVersion);
+        }
+        return _canonicalMigrationRecords[reinitializerVersion];
+    }
+
+    function isMigrationCompleted(uint256 reinitializerVersion) external view override returns (bool) {
+        return _canonicalMigrationRecords[reinitializerVersion].status == MigrationStatus.COMPLETED;
+    }
+
+    function isMigrationPrerequisiteSatisfied(uint256 reinitializerVersion) public view override returns (bool) {
+        if (!_canonicalMigrationStepDefined[reinitializerVersion]) return false;
+        bytes32 prerequisiteHash = _canonicalMigrationSteps[reinitializerVersion].prerequisiteHash;
+        return prerequisiteHash == bytes32(0) || _completedCanonicalStepHashes[prerequisiteHash];
+    }
+
+    function getCompletedMigrationCount() external view override returns (uint256) {
+        return completedMigrationCount;
+    }
+
+    function getMigrationManifestHash() external view override returns (bytes32) {
+        return _canonicalMigrationManifestHash;
+    }
+
+    function verifyMigrationOrdering(uint256[] calldata reinitializerVersions) external view override returns (bool) {
+        uint256 previous;
+        for (uint256 i = 0; i < reinitializerVersions.length; ++i) {
+            uint256 current = reinitializerVersions[i];
+            if (!_canonicalMigrationStepDefined[current] || current <= previous) return false;
+            if (!isMigrationPrerequisiteSatisfied(current)) return false;
+            previous = current;
+        }
+        return true;
+    }
+
     function _strEq(string memory a, string memory b) internal pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }

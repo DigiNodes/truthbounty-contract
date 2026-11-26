@@ -82,6 +82,11 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
     uint256 public constant MAX_ROLLBACK_WINDOW = 30 days;
 
     /// @notice Whether a rollback is currently supported for a given proposal.
+    /// @inheritdoc IUpgradeController
+    function currentImplementation(address targetContract) external view override returns (address) {
+        return _currentImplementation[targetContract];
+    }
+
     function isRollbackSupported(bytes32 proposalId) public view returns (bool) {
         if (!_proposalExists[proposalId]) return false;
         UpgradeProposal storage proposal = _proposals[proposalId];
@@ -211,7 +216,7 @@ contract UpgradeController is IUpgradeController, AccessControl, ReentrancyGuard
     function proposeUpgrade(
         address targetContract,
         address newImplementation,
-        string caldata version,
+        string calldata version,
         UpgradeType upgradeType,
         bytes32 governanceProposalId
     ) external override nonReentrant whenNotPaused returns (bytes32 proposalId) {

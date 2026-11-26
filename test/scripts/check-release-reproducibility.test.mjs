@@ -55,7 +55,7 @@ function fixtureManifest(dir, overrides = {}) {
     }),
   );
   writeFileSync(join(dir, "hardhat.config.ts"), 'version: "0.8.28", evmVersion: "cancun", viaIR: true, optimizer: { enabled: true, runs: 200 }');
-  writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\noptimizer = true\noptimizer_runs = 200\nvia_ir = true\n');
+  writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\nevm_version = "cancun"\noptimizer = true\noptimizer_runs = 200\nvia_ir = true\n');
   const manifest = {
     schemaVersion: 1,
     toolchain: { solc: "0.8.28", evmVersion: "cancun", viaIR: true, optimizer: { enabled: true, runs: 200 } },
@@ -128,6 +128,20 @@ describe("V2-SC-129 release reproducibility checker", () => {
     assert.deepEqual(problems, []);
   });
 
+  it("positive: resolves Hardhat compiler pins from imported COMPILER_SETTINGS", () => {
+    const { dir, manifestRelative } = freshFixture();
+    writeFileSync(
+      join(dir, "hardhat.config.ts"),
+      'import { COMPILER_SETTINGS } from "./config/networks";\\nexport default { solidity: COMPILER_SETTINGS };',
+    );
+    mkdirSync(join(dir, "config"), { recursive: true });
+    writeFileSync(
+      join(dir, "config/networks.ts"),
+      'export const COMPILER_SETTINGS = { version: "0.8.28", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "cancun", viaIR: true } };',
+    );
+    assert.deepEqual(checkToolchain(dir, loadManifest(dir, manifestRelative).manifest), []);
+  });
+
   it("negative: tampered source bytes fail with a source-drift problem", () => {
     const { dir, manifestRelative, sourcePath } = freshFixture();
     writeFileSync(join(dir, sourcePath), "pragma solidity ^0.8.28;\ncontract Fixture { uint256 x; }");
@@ -137,7 +151,7 @@ describe("V2-SC-129 release reproducibility checker", () => {
 
   it("negative: tampered optimizer runs in toolchain config fail", () => {
     const { dir, manifestRelative } = freshFixture();
-    writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\noptimizer = true\noptimizer_runs = 199\nvia_ir = true\n');
+    writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\nevm_version = "cancun"\noptimizer = true\noptimizer_runs = 199\nvia_ir = true\n');
     const problems = runAllChecks(dir, manifestRelative);
     assert.match(problems.join("\n"), /toolchain drift.*optimizer_runs/);
   });
@@ -182,11 +196,11 @@ describe("V2-SC-129 release reproducibility checker", () => {
   it("boundary: optimizer runs 199 and 201 both fail, 200 passes", () => {
     const { dir, manifestRelative } = freshFixture();
     for (const runs of [199, 201]) {
-      writeFileSync(join(dir, "foundry.toml"), `solc = "0.8.28"\noptimizer = true\noptimizer_runs = ${runs}\nvia_ir = true\n`);
+      writeFileSync(join(dir, "foundry.toml"), `solc = "0.8.28"\nevm_version = "cancun"\noptimizer = true\noptimizer_runs = ${runs}\nvia_ir = true\n`);
       const problems = checkToolchain(dir, loadManifest(dir, manifestRelative).manifest);
       assert.ok(problems.some((problem) => problem.includes("optimizer_runs")), `runs=${runs} must fail`);
     }
-    writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\noptimizer = true\noptimizer_runs = 200\nvia_ir = true\n');
+    writeFileSync(join(dir, "foundry.toml"), 'solc = "0.8.28"\nevm_version = "cancun"\noptimizer = true\noptimizer_runs = 200\nvia_ir = true\n');
     assert.deepEqual(checkToolchain(dir, loadManifest(dir, manifestRelative).manifest), []);
   });
 

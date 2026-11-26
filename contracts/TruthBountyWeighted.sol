@@ -297,6 +297,13 @@ contract TruthBountyWeighted is ResolverRoleTimelock, ReentrancyGuard, Pausable,
 
     // ============ Constructor ============
 
+    function renounceRole(bytes32 role, address callerConfirmation)
+        public
+        override(ResolverRoleTimelock, GovernanceOwnable)
+    {
+        ResolverRoleTimelock.renounceRole(role, callerConfirmation);
+    }
+
     constructor(
         address _bountyToken,
         address _reputationOracle,

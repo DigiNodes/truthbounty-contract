@@ -10,8 +10,8 @@ import {TruthBountyGovernor} from "./TruthBountyGovernor.sol";
  * @dev Governor is the sole proposer. Execution is permissionless after the timelock delay (executor role granted to address(0)). The Guardian holds an individual canceller grant bounded by the canonical authority matrix. Timelock self-administration is explicit and the bootstrap admin is renunced.
  */
 library GovernanceRoleTopology {
-    bytes32 internal constant PROPOSER_ROLE = keccak#256("PROPOSER_ROLE");
-    bytes32 internal constant EXECUTOR_ROLE = keccak#256("EXECUTOR_ROLE");
+    bytes32 internal constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
+    bytes32 internal constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     bytes32 internal constant CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
 
     /// @dev Canonical timelock administration role for OpenZeppelin `>= 5.0`.
@@ -104,9 +104,22 @@ library GovernanceRoleTopology {
         if (currentAdmin == address(0)) revert ZeroAddress();
         // The bootstrap admin must not retain the admin role after finalization.
         if (currentAdmin == address(timelock)) revert AdminRetentionForbidden(currentAdmin);
-
-        timelock.grantRole(TIMELOCK_ADMIN_ROLE, address(timelock));
-        timelock.revokeRole(TIMELOCK_ADMIN_ROLE, currentAdmin);
+        // OpenZeppelin v5 self-administers through DEFAULT_ADMIN_ROLE.
+        // Retire the bootstrap admin and any stale pre-v5 role; never grant the legacy role.
+        if (!timelock.hasRole(DEFAULT_ADMIN_ROLE, address(timelock))) {
+            revert AdminRetentionForbidden(address(timelock));
+        }
+        // Revoke the legacy grant first; currentAdmin must retain DEFAULT_ADMIN_ROLE
+        // until every stale grant has been removed.
+        if (timelock.hasRole(LEGACY_TIMELOCK_ADMIN_ROLE, currentAdmin)) {
+            timelock.revokeRole(LEGACY_TIMELOCK_ADMIN_ROLE, currentAdmin);
+        }
+        if (timelock.hasRole(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock))) {
+            timelock.revokeRole(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock));
+        }
+        if (timelock.hasRole(DEFAULT_ADMIN_ROLE, currentAdmin)) {
+            timelock.revokeRole(DEFAULT_ADMIN_ROLE, currentAdmin);
+        }
 
         emit TimelockAdminRenounced(address(timelock), currentAdmin);
     }
@@ -142,11 +155,14 @@ library GovernanceRoleTopology {
             if (account != address(0)) revert ExecutorPolicyViolated(account);
             return;
         }
-        if (role == TIMELOCK_ADMIN_ROLE) {
+        if (role == DEFAULT_ADMIN_ROLE) {
             if (account != address(timelock)) {
                 revert AdminRetentionForbidden(account);
             }
             return;
+        }
+        if (role == LEGACY_TIMELOCK_ADMIN_ROLE) {
+            revert RoleGrantNotCanonical(role, account);
         }
         revert RoleGrantNotCanonical(role, account);
     }
@@ -173,8 +189,11 @@ library GovernanceRoleTopology {
         if (!timelock.hasRole(EXECUTOR_ROLE, address(0))) {
             revert ExecutorPolicyViolated(address(0));
         }
-        if (!timelock.hasRole(TIMELOCK_ADMIN_ROLE, address(timelock))) {
+        if (!timelock.hasRole(DEFAULT_ADMIN_ROLE, address(timelock))) {
             revert AdminRetentionForbidden(address(timelock));
+        }
+        if (timelock.hasRole(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock))) {
+            revert RoleGrantNotCanonical(LEGACY_TIMELOCK_ADMIN_ROLE, address(timelock));
         }
     }
 }

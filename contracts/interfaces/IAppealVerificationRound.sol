@@ -370,11 +370,6 @@ interface IAppealVerificationRound is IVerificationSource {
     function requiredAppealBond(uint256 roundIndex) external view returns (uint256);
 
     /**
-     * @notice Returns whether a claim's appeal path is irreversibly terminal.
-     */
-    function isAppealPathTerminal(uint256 claimId) external view returns (bool);
-
-    /**
      * @notice Returns the {ISTakeVault} lock ledger record for a claim's current
      *         appeal round (for SC-018 bond disposition).
      */

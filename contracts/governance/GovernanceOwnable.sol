@@ -203,6 +203,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         _grantRole(GOVERNANCE_ROLE, _newController);
         
         emit GovernanceControllerUpdated(oldController, _newController);
+        _afterGovernanceAction();
     }
     
     /**
@@ -212,6 +213,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
     function setGovernanceEnabled(bool _enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
         governanceEnabled = _enabled;
         emit GovernanceEnabledUpdated(_enabled);
+        _afterGovernanceAction();
     }
     
     /**
@@ -226,6 +228,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         emergencyAdmin = _newEmergencyAdmin;
         
         emit EmergencyAdminUpdated(oldAdmin, _newEmergencyAdmin);
+        _afterGovernanceAction();
     }
 
     // ============ View Functions ============
@@ -263,6 +266,7 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         require(account != address(0), ZeroAddress());
         _grantRole(role, account);
         emit RoleRecovered(role, account, msg.sender);
+        _afterGovernanceAction();
     }
     
     /**
@@ -277,7 +281,11 @@ abstract contract GovernanceOwnable is AccessControl, Pausable {
         require(account != address(0), ZeroAddress());
         _revokeRole(role, account);
         emit RoleRevokedByRecovery(role, account, msg.sender);
+        _afterGovernanceAction();
     }
+
+    /// @dev Extension hook for derived contracts to revalidate accounting after governance mutations.
+    function _afterGovernanceAction() internal virtual {}
 
     /**
      * @dev Storage gap to allow future upgrades without shifting variables.

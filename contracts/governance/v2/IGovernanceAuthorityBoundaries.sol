@@ -47,6 +47,7 @@ interface IGovernanceAuthorityBoundaries {
     error CapabilityNotGranted(AuthorityRole role, Capability capability);
     error SharedCapability(Capability capability);
     error NoRoleForCapability(Capability capability);
+    error TimelockGraphInvalid();
 
     /**
      * @notice Bind an authority role to its accountable account.
