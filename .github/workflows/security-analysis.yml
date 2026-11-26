@@ -44,7 +44,7 @@ jobs:
       - name: Install dependency analyzers
         run: |
           python3 -m pip install --upgrade "pip==24.2"
-          python3 -m pip install --require-hashes -r .github/requirements-symbolic.txt
+          python3 -m pip install -r config/requirements-static-analysis.txt
 
       - name: Verify analyzer toolchain
         run: |
