@@ -26,12 +26,32 @@ contract Create2AddressPlannerTest is Test {
     bytes32 internal constant MODULE_B = keccak256("MODULE_B");
     bytes32 internal constant REVIEWED_SALT = keccak256("reviewed-salt-v1");
     bytes32 internal constant OTHER_SALT = keccak256("reviewed-salt-v2");
+    bytes32 internal constant RELEASE_ID = keccak256("CREATE2_TEST_RELEASE");
 
     function setUp() public {
         deployer = address(this);
-        planner = new Create2AddressPlanner(admin);
-        vm.prank(admin);
+        planner = new Create2AddressPlanner(admin, block.chainid, RELEASE_ID, address(this));
+        vm.startPrank(admin);
         planner.grantRole(planner.PLANNER_ROLE(), plannerRole);
+        planner.bindConfiguration(
+            MODULE_A,
+            block.chainid,
+            RELEASE_ID,
+            keccak256(abi.encode("config", MODULE_A)),
+            address(this),
+            1,
+            block.timestamp + planner.MAX_CONFIG_LIFETIME()
+        );
+        planner.bindConfiguration(
+            MODULE_B,
+            block.chainid,
+            RELEASE_ID,
+            keccak256(abi.encode("config", MODULE_B)),
+            address(this),
+            2,
+            block.timestamp + planner.MAX_CONFIG_LIFETIME()
+        );
+        vm.stopPrank();
     }
 
     function _initCodeHash(uint256 marker) internal pure returns (bytes32) {
