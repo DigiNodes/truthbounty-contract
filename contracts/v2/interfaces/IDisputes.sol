@@ -50,7 +50,7 @@ interface IDisputes is IV2Module {
     /// @param disputeId Dispute to appeal.
     /// @param evidence Opaque evidence commitment or reference bytes for the new round.
     /// @return newRound Newly opened appeal round identifier.
-    function appeal(uint256 disputeId, bytes caldata evidence) external returns (uint256 newRound);
+    function appeal(uint256 disputeId, bytes calldata evidence) external returns (uint256 newRound);
 
     /// @notice Reads a dispute record.
     /// @param disputeId Dispute to inspect.
