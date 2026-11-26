@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 -m pip install --upgrade "pip==24.2"
           python3 -m pip install -r config/requirements-static-analysis.txt
+          python3 -m pip check
 
       - name: Verify analyzer toolchain
         run: |
