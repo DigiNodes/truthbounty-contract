@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
-        uses: actions/checkout@08ebaca7b736c59a5d56b1523bc34b34b34b34b3 # v7.0.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v7.0.0
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
         with:
           python-version: '3.11.9'
 
@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload compiler output
         if: always()
-        uses: actions/upload-artifact@334c1523bc34b34b34b34b34b34b34b34b3 # v7.0.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v7.0.0
         with:
           name: sc022-compile-output
           path: compile-output.txt
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload symbolic analysis output
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: sc022-symbolic-output
           path: symbolic-output.txt
