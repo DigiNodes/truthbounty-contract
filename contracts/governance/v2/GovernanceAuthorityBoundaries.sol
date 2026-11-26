@@ -27,7 +27,7 @@ contract GovernanceAuthorityBoundaries is IGovernanceAuthorityBoundaries, Access
     error PredecessorNotExecuted(bytes32 predecessor);
     error OperationAlreadyScheduled(bytes32 operationId);
     error OperationNotScheduled(bytes32 operationId);
-    error OperationCancelled(bytes32 operationId);
+    error OperationAlreadyCancelled(bytes32 operationId);
     error OperationAlreadyExecuted(bytes32 operationId);
     error OperationNotReady(uint256 eta);
     error OperationExpired(uint256 eta);
@@ -283,7 +283,7 @@ contract GovernanceAuthorityBoundaries is IGovernanceAuthorityBoundaries, Access
         Operation storage op = _operations[id];
 
         if (!_operationScheduled[id]) revert OperationNotScheduled(id);
-        if (op.cancelled) revert OperationCancelled(id);
+        if (op.cancelled) revert OperationAlreadyCancelled(id);
         if (op.executed) revert OperationAlreadyExecuted(id);
         if (block.timestamp < op.eta) revert OperationNotReady(op.eta);
         if (block.timestamp > op.eta + GRACE_PERIOD) revert OperationExpired(op.eta);
