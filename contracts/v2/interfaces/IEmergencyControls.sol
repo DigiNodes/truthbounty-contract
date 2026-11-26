@@ -11,7 +11,7 @@ interface IEmergencyControls is IV2Module {
     /// @notice Emitted when a scope is paused.
     /// @param scope Stable module or protocol scope identifier.
     /// @param actor Emergency authority that paused the scope.
-    event EmergencyPaused(bytes32 indexed scope, address actor);
+    event EmergencyPaused(bytes32 indexed scope, address indexed actor);
 
     /// @notice Emitted when a scope is unpaused.
     /// @param scope Stable module or protocol scope identifier.
@@ -30,7 +30,7 @@ interface IEmergencyControls is IV2Module {
         bytes32 indexed incidentRef,
         bytes32 indexed release,
         uint64 etaTimestamp,
-        address indexed actor
+        address actor
     );
 
     /// @notice Emitted when a governed unpause is executed and the scope resumes.
@@ -39,7 +39,7 @@ interface IEmergencyControls is IV2Module {
     /// @param incidentRef Incident reference associated with the pause.
     /// @param release The repaired release identifier authorized for unpause.
     /// @param actor Governed authority that executed the unpause.
-    event GovernedUnpauseExecuted(bytes32 indexed scope, bytes32 indexed incidentRef, bytes32 indexed release, address indexed actor);
+    event GovernedUnpauseExecuted(bytes32 indexed scope, bytes32 indexed incidentRef, bytes32 indexed release, address actor);
 
     /// @notice Emitted when an operation within a scope is paused.
     /// @param scope Stable module or protocol scope identifier.
