@@ -113,7 +113,6 @@ contract EvidenceRegistry is ERC165, AccessControl, Pausable, IEvidence, ITruthB
     /// @param claimId Claim whose existence flag and record disagreed.
     error ClaimRegistryInconsistent(uint256 claimId);
     /// @notice Cursor does not bind the requested claim or contains an invalid order key.
-    /// @param cursor Opaque cursor that failed validation.
     /// @notice Cursor binds a different claim than the requested claim.
     /// @param expectedClaimId Claim id the cursor was expected to bind.
     /// @param actualClaimId Claim id the cursor actually binds.
