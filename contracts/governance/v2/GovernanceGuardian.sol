@@ -232,7 +232,7 @@ contract GovernanceGuardian is AccessControl, Pausable {
         if (change.cancelled) revert DelayChangeAlreadyCancelled(operationId);
         if (change.executed) revert DelayChangeAlreadyExecuted(operationId);
         if (block.timestamp < change.eta) revert DelayChangeNotReady(operationId, change.eta);
-        if (block.timestamp > change.expiresAt) revert DelayChangeExpired(operationId, change.expiresAt);
+        if (block.timestamp > change.expiresAt) revert DelayChangeHasExpired(operationId, change.expiresAt);
 
         uint256 oldDelay = timelockDelay;
         timelockDelay = change.newDelay;
