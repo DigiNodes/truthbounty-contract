@@ -10,9 +10,9 @@ import "../interfaces/ITruthBountyEvents.sol";
 contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITruthBountyEvents {
     uint16 public constant EVENT_SCHEMA_VERSION = 1;
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak(256("PAUSER_ROLE"));
-    bytes32 public constant MIGRATOR_ROLE = keccak(256("MIGRATOR_ROLE"));
-    bytes32 public constant UPGRADER_ROLE = keccak(256("UPGRADER_ROLE"));
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /// @udev Reinitializer version boundaries. Version 0 is the initial deployed
     /// state; version 1 is the first authorized upgrade reinitializer. Each
@@ -389,7 +389,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     }
 
     function executeMigration(
-        string caldata description,
+        string calldata description,
         bytes32 migrationHash
     ) external onlyRole(MIGRATOR_ROLE) nonReentrant {
         uint256 id = migrationCounter++;
@@ -443,7 +443,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
 
     function getAllRegisteredModules() external view returns (bytes32[] memory ids, address[] memory addresses) {
         ids = registeredModuleKeys;
-        addresses = new address ids.length);
+        addresses = new address[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             addresses[i] = addressRegistry[ids[i]];
         }
