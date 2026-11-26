@@ -102,7 +102,7 @@ interface IProtocolUpgradeManager {
         Version calldata toVersion,
         bytes32 newStorageLayoutHash,
         bytes32 migrationHash,
-        string caldata description
+        string calldata description
     ) external returns (uint256 proposalId);
 
     function attestStorageCompatibility(uint256 proposalId, bool compatible) external;
