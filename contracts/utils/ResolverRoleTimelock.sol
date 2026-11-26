@@ -192,7 +192,7 @@ abstract contract ResolverRoleTimelock is AccessControl {
         }
 
         uint256 readyAt = block.timestamp + delay;
-        uint256 expireAt = block.timestamp + MAX_RESOLVER_ROLE_CHANGE_DELAY;.
+        uint256 expireAt = block.timestamp + MAX_RESOLVER_ROLE_CHANGE_DELAY;
 
         pendingRoleChanges[operationId] = PendingRoleChange({
             readyAt: readyAt,
