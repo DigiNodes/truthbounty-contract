@@ -165,24 +165,6 @@ contract AppealVerificationRound is
         return block.timestamp > deadline;
     }
 
-    function _requiredBondForRound(AppealRoundConfig memory cfg, uint256 roundIndex)
-        internal
-        pure
-        returns (uint256)
-    {
-        if (roundIndex <= 1) return cfg.appealBond;
-        uint256 bond = cfg.appealBond;
-        for (uint256 i = 1; i < roundIndex; i++) {
-            bond = Math.mulDiv(bond, cfg.appealBondEscalationBps, BPS_DENOMINATOR);
-            if (bond > cfg.maxAppealBond) return cfg.maxAppealBond;
-        }
-        return bond > cfg.maxAppealBond ? cfg.maxAppealBond : bond;
-    }
-
-    function _appealLockId(uint256 claimId, uint256 roundIndex) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked("appeal-bond", claimId, roundIndex)));
-    }
-
     // =========================================================================
     // Constructor
     // =========================================================================
@@ -736,6 +718,12 @@ contract AppealVerificationRound is
      */
     function _appealLockId(uint256 claimId, uint256 roundIndex) internal pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked("V2_APPEAL_BOND", claimId, roundIndex)));
+    }
+
+    function appealDeadline(uint256 claimId) external view override returns (uint256) {
+        AppealRound storage round = _rounds[claimId];
+        if (round.deadline == 0) revert AppealRoundNotOpen(claimId);
+        return round.deadline;
     }
 
     // =========================================================================
