@@ -52,7 +52,7 @@ library ProtocolExecutionBounds {
     uint256 internal constant MAX_OPEN_CLAIMS_PER_CREATOR = 25;
 
     /// @notice Default minimum verifier stake to reject dust griefing (V2-SC-105).
-    uint256 internal constant DEFAULT_MIN_STKE_AMOUNT = 1 ether;
+    uint256 internal constant DEFAULT_MIN_STAKE_AMOUNT = 1 ether;
 
     /// @notice Default minimum claim bounty / reward (V2-SC-105).
     uint256 internal constant DEFAULT_MIN_BOUNTY_AMOUNT = 1 ether;
