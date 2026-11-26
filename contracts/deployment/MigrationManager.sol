@@ -14,7 +14,7 @@ contract MigrationManager is ReentrancyGuard, Pausable, GovernanceOwnable, ITrut
     bytes32 public constant MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    /// @udev Reinitializer version boundaries. Version 0 is the initial deployed
+    /// @dev Reinitializer version boundaries. Version 0 is the initial deployed
     /// state; version 1 is the first authorized upgrade reinitializer. Each
     /// subsequent upgrade must advance the version by exactly one.
     uint64 public constant INITIAL_REINIT_VERSION = 0;
