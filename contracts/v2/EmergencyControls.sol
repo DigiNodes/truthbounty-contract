@@ -119,14 +119,6 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     /// @notice Mapping from scope hash to paused status
     mapping(bytes32 => bool) private _pausedScopes;
-    mapping(bytes32 => bool) public allowedScope;
-    mapping(bytes32 => bool) public scopeConfigured;
-    mapping(bytes32 => mapping(bytes32 => bool)) private _pausedOperations;
-    mapping(bytes32 => mapping(bytes4 => bytes32)) private _scopeSelectorIds;
-    mapping(bytes32 => mapping(bytes32 => bytes4)) private _scopeIdSelectors;
-    mapping(bytes32 => mapping(bytes32 => bool)) private _scopeOperationRegistered;
-    mapping(bytes32 => bytes32[]) private _scopeOperationIds;
-    mapping(bytes32 => uint256) public pausedOperationCount;
 
     /// @notice Mapping from scope to timestamp when it was paused (0 if not paused)
     mapping(bytes32 => uint256) public pausedAt;
@@ -151,6 +143,17 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
 
     /// @notice Mapping from operation ID to whether it is registered
     mapping(bytes32 => bool) private _operationRegistered;
+
+    // Appended storage for the scoped operation registry and operation-level pause surface.
+    // Keep these declarations after all pre-existing state to preserve proxy storage slots.
+    mapping(bytes32 => bool) public allowedScope;
+    mapping(bytes32 => bool) public scopeConfigured;
+    mapping(bytes32 => mapping(bytes32 => bool)) private _pausedOperations;
+    mapping(bytes32 => mapping(bytes4 => bytes32)) private _scopeSelectorIds;
+    mapping(bytes32 => mapping(bytes32 => bytes4)) private _scopeIdSelectors;
+    mapping(bytes32 => mapping(bytes32 => bool)) private _scopeOperationRegistered;
+    mapping(bytes32 => bytes32[]) private _scopeOperationIds;
+    mapping(bytes32 => uint256) public pausedOperationCount;
 
     // ─── Constructor ──────────────────────────────────────────────────
 
