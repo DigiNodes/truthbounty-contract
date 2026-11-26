@@ -96,8 +96,8 @@ library AntiGriefing {
     //      clamped to the hard ceiling so no actor can extend depth indefinitely.
     function maxAppealRounds(uint256 configured) internal pure returns (uint256) {
         if (configured == 0) return V2Guarantees.MAX_APPEAL_ROUNDS;
-        if (configured > ProtocolExecutionBounds.MAX_APPEEAL_ROUNDS) {
-            return ProtocolExecutionBounds.MAX_APPEAL_ROUNDS;
+        if (configured > V2Guarantees.MAX_APPEAL_ROUNDS) {
+            return V2Guarantees.MAX_APPEAL_ROUNDS;
         }
         return configured;
     }
