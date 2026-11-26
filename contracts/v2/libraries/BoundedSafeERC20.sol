@@ -6,14 +6,14 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @dev Canonical error semantics for token interactions in the V2 EVM/Optimism architecture.
-/// @note This library is a focused wrapper around Openzeppelin's SafeERC20 that adds bounded
+/// @dev This library is a focused wrapper around Openzeppelin's SafeERC20 that adds bounded
 ///       amount checks and normalizes failure signals so that callers observe one canonical
 ///       error per failure class. The canonical mapping is:
 ///         - Token returned false -> SafeERC20.SafeERC20FailedOperation (propagated).
 ///         - Token reverted -> SafeERC20.SafeERC20FailedOperation (propagated).
 ///         - Amount exceeds caller-declared bound -> BoundedAmountExceeded.
 ///         - Amount overflows uint256 -> BoundedAmountOverflow.
-/// @note This library must not swallow token reverts or convert them into success; fail-closed
+/// @dev This library must not swallow token reverts or convert them into success; fail-closed
 ///       behavior is required for custody safety.
 library BoundedSafeERC20 {
     /// @dev Raised when a requested amount exceeds the caller's declared bound.
