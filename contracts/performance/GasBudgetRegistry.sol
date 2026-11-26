@@ -129,6 +129,16 @@ contract GasBudgetRegistry is ICriticalPathGasBudgets, AccessControl {
      * @dev Only the budget administrator may change a budget. Zero or over-ceiling budgets and
      *      blank descriptions revert so CI cannot silently accept an incomplete configuration.
      */
+    error AmplificationRatioOutOfRange(uint256 provided, uint256 maximum);
+
+    /// @inheritdoc ICriticalPathGasBudgets
+    function validateAmplificationRatioBps(uint256 ratioBps) external pure override returns (uint256 normalizedBps) {
+        if (ratioBps > MAX_AMPLIFICATION_RATIO_BPS) {
+            revert AmplificationRatioOutOfRange(ratioBps, MAX_AMPLIFICATION_RATIO_BPS);
+        }
+        return ratioBps;
+    }
+
     function updateBudget(
         Operation operation,
         uint256 maxGasAtMaxConfig,
