@@ -169,6 +169,13 @@ contract FailClosedEmergencyControls is ERC165, AccessControl, IEmergencyControl
         return _isPaused(scope);
     }
 
+    /// @inheritdoc IEmergencyControls
+    function operationIdForSelector(bytes32 scope, bytes4 selector) external view override returns (bytes32) {
+        _requireKnownScope(scope);
+        if (selector == bytes4(0)) revert V2Errors.InvalidArgument("zero selector");
+        return keccak256(abi.encode(scope, selector));
+    }
+
     // -------------------------------------------------------------------------
     // Pause
     // -------------------------------------------------------------------------
