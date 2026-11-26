@@ -11,7 +11,7 @@ interface IEmergencyControls is IV2Module {
     /// @notice Emitted when a scope is paused.
     /// @param scope Stable module or protocol scope identifier.
     /// @param actor Emergency authority that paused the scope.
-    event EmergencyPaused(bytes32 indexed scope, address indexed actor);
+    event EmergencyPaused(bytes32 indexed scope, address actor);
 
     /// @notice Emitted when a scope is unpaused.
     /// @param scope Stable module or protocol scope identifier.
