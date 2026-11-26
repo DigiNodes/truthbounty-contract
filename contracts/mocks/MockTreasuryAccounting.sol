@@ -87,7 +87,7 @@ contract MockTreasuryAccounting is ITreasuryAccounting {
         return stakingReserve + slashedTreasury;
     }
 
-    function getTrackedCustody() external view returns (uint256) {
+    function getTrackedCustody() public view override returns (uint256) {
         return stakingReserve + slashedTreasury;
     }
 
