@@ -250,7 +250,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
      */
     function pause(bytes32 scope) external override {
         if (!hasRole(EMERGENCY_ROLE, msg.sender) && !hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert V2Errors.Unauthorized(msg.sender);
+            revert V2Errors.Unauthorized();
         }
         if (!allowedScope[scope]) {
             revert ScopeNotAllowed(scope);
@@ -286,7 +286,7 @@ contract EmergencyControls is ERC165, AccessControl, IEmergencyControls {
         bytes32[] calldata dependencyHealth
     ) external override {
         if (!hasRole(GOVERNANCE_ROLE, msg.sender)) {
-            revert V2Errors.Unauthorized(msg.sender);
+            revert V2Errors.Unauthorized();
         }
         if (!_operationRegistered[OP_UNPAUSE]) revert UnknownOperation(OP_UNPAUSE);
         if (!_pausedScopes[scope]) revert NotPaused(scope);
