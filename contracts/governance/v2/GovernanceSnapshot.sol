@@ -92,7 +92,7 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
     // ---------------------------------------------------------------------------
 
     /**
-     * @inheritdoc {IGovernanceSnapshot}
+     * @inheritdoc IGovernanceSnapshot
      *
      * @dev Stores the caller-supplied `snapshotTimestamp` as the canonical voting-power
      *      reference timestamp for `proposalId`. Called by {TruthBountyGovernor._propose}
@@ -123,7 +123,7 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
     // ---------------------------------------------------------------------------
 
     /**
-     * @inheritdoc {IGovernanceSnapshot}
+     * @inheritdoc IGovernanceSnapshot
      *
      * @dev Reverts with {SnapshotNotFound} rather than returning zero so callers cannot
      *      silently receive a stale or default timestamp. This is the fail-closed
@@ -135,7 +135,7 @@ contract GovernanceSnapshot is AccessControl, IGovernanceSnapshot {
     }
 
     /**
-     * @inheritdoc {IGovernanceSnapshot}
+     * @inheritdoc IGovernanceSnapshot
      */
     function hasSnapshot(uint256 proposalId) external view returns (bool registered) {
         registered = _snapshots[proposalId] != 0;
