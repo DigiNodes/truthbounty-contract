@@ -110,6 +110,22 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         return keccak256(abi.encodePacked(moduleId, reviewedSalt));
     }
 
+    function _requireActiveDeploymentConfig() private view {
+        if (block.chainid != boundChainId) revert ForkedChainDetected(boundChainId, block.chainid);
+        bytes32 key = _deploymentConfigKey(boundReleaseId, boundChainId);
+        DeploymentConfig storage config = _deploymentConfigs[key];
+        if (config.releaseId == bytes32(0)) {
+            revert DeploymentConfigNotFound(boundReleaseId, boundChainId);
+        }
+        if (_deploymentConfigConsumed[key]) {
+            revert DeploymentConfigAlreadyConsumed(boundReleaseId, boundChainId);
+        }
+        if (config.expiry <= block.timestamp) revert ConfigExpired(config.expiry, uint64(block.timestamp));
+        if (config.broadcaster != boundBroadcaster) {
+            revert UnauthorizedBroadcaster(config.broadcaster, boundBroadcaster);
+        }
+    }
+
     function _deploymentConfigKey(bytes32 releaseId, uint256 chainId) private pure returns (bytes32) {
         return keccak256(abi.encode("TRUTHBOUNTY_DEPLOYMENT_CONFIG_V1", releaseId, chainId));
     }
@@ -280,6 +296,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         uint256 nonce,
         uint256 expiry
     ) external onlyRole(CONFIGURATION_ROLE) {
+        _requireActiveDeploymentConfig();
         if (moduleId == bytes32(0)) revert ZeroModuleId();
         if (chainId != boundChainId) revert WrongChainId(boundChainId, chainId);
         if (releaseId != boundReleaseId) revert StaleReleaseId(boundReleaseId, releaseId);
@@ -325,6 +342,7 @@ contract Create2AddressPlanner is ICreate2AddressPlanner, AccessControl {
         bytes32 initCodeHash,
         address deployer
     ) external override onlyRole(PLANNER_ROLE) returns (address predicted) {
+        _requireActiveDeploymentConfig();
         if (moduleId == bytes32(0)) revert ZeroModuleId();
         if (reviewedSalt == bytes32(0)) revert ZeroSalt();
         if (initCodeHash == bytes32(0)) revert ZeroInitCodeHash();
